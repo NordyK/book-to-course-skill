@@ -95,8 +95,10 @@ math { line-height: 1.2; }
 .rv.in { opacity: 1; transform: none; }
 
 /* Callouts */
-.callout { --c: var(--accent); padding: 14px 18px; border-radius: var(--radius); border: 1px solid color-mix(in srgb, var(--c) 35%, var(--border)); background: color-mix(in srgb, var(--c) 7%, var(--surface)); box-shadow: var(--shadow); }
-.callout .c-title { color: color-mix(in srgb, var(--c) 80%, var(--text)); }
+/* plain border/background/color first: engines without color-mix() (old Android WebView) drop the mixed lines */
+.callout { --c: var(--accent); padding: 14px 18px; border-radius: var(--radius); border: 1px solid var(--border); border-color: color-mix(in srgb, var(--c) 35%, var(--border)); background: var(--surface); background: color-mix(in srgb, var(--c) 7%, var(--surface)); box-shadow: var(--shadow); }
+/* 60% keeps every kind's title above 4.5:1 in both themes (80% put example, tip and warning below it in light) */
+.callout .c-title { color: var(--text); color: color-mix(in srgb, var(--c) 60%, var(--text)); }
 .callout .c-title { font-weight: 700; margin-bottom: 2px; display: flex; gap: 8px; align-items: center; }
 .callout p { margin: .4em 0; }
 .callout.tip { --c: var(--ok); } .callout.note { --c: var(--accent); }
