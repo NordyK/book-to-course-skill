@@ -608,10 +608,10 @@ const CALLOUT_ICON = { tip: "💡", note: "📝", warning: "⚠️", analogy: "�
 
 function renderBlock(b, les) {
   switch (b.type) {
-    case "text": return h("div", { class: "block text" }, b.title ? h("h3", null, b.title) : null, h("div", { html: md(b.md) }));
+    case "text": return h("div", { class: "block text" }, b.title ? h("h2", null, b.title) : null, h("div", { html: md(b.md) }));
     case "callout": { const kind = CALLOUT_ICON[b.kind] ? b.kind : "note"; const nm = t("callout_" + kind);
       return h("aside", { class: "block callout " + kind }, h("div", { class: "c-title" }, CALLOUT_ICON[kind], " ", b.title || nm), h("div", { html: md(b.md) })); }
-    case "code": return h("div", { class: "block" }, b.title ? h("h4", null, b.title) : null, codeBlock(b),
+    case "code": return h("div", { class: "block" }, b.title ? h("h3", null, b.title) : null, codeBlock(b),
       b.output ? [h("div", { class: "out-label" }, "▶ " + (b.output_label || t("output"))), h("pre", { class: "term" }, b.output)] : null, b.explain ? h("div", { class: "text", html: md(b.explain) }) : null);
     case "stepper": return stepperBlock(b);
     case "derivation": return derivationBlock(b);
@@ -623,7 +623,7 @@ function renderBlock(b, les) {
     case "quiz": return quizBlock(b, les);
     case "exercise": return exerciseBlock(b, les);
     case "flashcards": return flashBlock(b);
-    case "summary": return h("div", { class: "block summary" }, h("h3", { class: "block-title" }, "🧾 " + (b.title || t("summary"))), h("ul", null, b.points.map((p, i) => h("li", { style: "animation-delay:" + (i * 120) + "ms", html: inline(p) }))));
+    case "summary": return h("div", { class: "block summary" }, h("h2", { class: "block-title" }, "🧾 " + (b.title || t("summary"))), h("ul", null, b.points.map((p, i) => h("li", { style: "animation-delay:" + (i * 120) + "ms", html: inline(p) }))));
     default: return h("div", { class: "block" }, "[" + b.type + "]");
   }
 }
@@ -651,7 +651,7 @@ function stepperBlock(b) {
     stage.className = "stepper-stage"; void stage.offsetWidth; if (dir) stage.classList.add("anim-" + dir);
     fill(stage, h("div", { class: "step-title" }, (idx + 1) + ". " + (s.title || "")), s.md ? h("div", { html: md(s.md) }) : null, s.code ? codeBlock({ code: s.code, lang: s.lang || b.lang, highlight: s.highlight, file: s.file }) : null, s.output ? [h("div", { class: "out-label" }, "▶ " + t("output")), h("pre", { class: "term" }, s.output)] : null);
   });
-  const root = h("div", { class: "block stepper" }, h("h3", { class: "block-title" }, "🪜 " + (b.title || "")), stage, ctl.dots, ctl.row);
+  const root = h("div", { class: "block stepper" }, h("h2", { class: "block-title" }, "🪜 " + (b.title || "")), stage, ctl.dots, ctl.row);
   ctl.go(0); return root;
 }
 function derivationBlock(b) {
@@ -678,7 +678,7 @@ function derivationBlock(b) {
   ctl.row.append(allBtn);
   const rowsEl = h("div", { class: "dv-rows" }, rows.map(r => r.el));
   const root = h("div", { class: "block derivation" },
-    h("h3", { class: "block-title" }, "🧮 " + (b.title || t("derivation"))),
+    h("h2", { class: "block-title" }, "🧮 " + (b.title || t("derivation"))),
     b.intro ? h("div", { html: md(b.intro) }) : null,
     rowsEl, ctl.dots, ctl.row,
     b.result ? h("div", { class: "dv-result" }, h("strong", null, t("result") + ": "), h("span", { html: tex2mml(String(b.result), false) })) : null,
@@ -704,7 +704,7 @@ function flowBlock(b) {
   }
   const nxt = h("button", { class: "btn sm", type: "button", onclick: () => show(cur + 1) }, t("next") + " ▶");
   const rst = h("button", { class: "btn ghost sm", type: "button", onclick: () => { cur = -1; nodes.forEach(n => n.classList.remove("on", "cur")); arrows.forEach(a => a.classList.remove("on")); detail.textContent = ""; nxt.disabled = false; } }, t("again"));
-  return h("div", { class: "block flow" }, h("h3", { class: "block-title" }, "🔀 " + (b.title || "")), track, detail, h("div", { class: "row", style: "margin-top:10px" }, nxt, rst));
+  return h("div", { class: "block flow" }, h("h2", { class: "block-title" }, "🔀 " + (b.title || "")), track, detail, h("div", { class: "row", style: "margin-top:10px" }, nxt, rst));
 }
 
 /* ───────────── quiz engine ───────────── */
@@ -817,7 +817,7 @@ function quizBlock(b, les) {
     else { badge.className = "chip " + (st.correct.length === b.questions.length ? "ok" : ""); badge.textContent = st.correct.length + "/" + b.questions.length; }
   };
   showBadge();
-  root.append(h("h3", { class: "block-title" }, (isTest ? "🏁 " : "❓ ") + (b.title || (isTest ? t("test") : t("quiz"))), " ", badge));
+  root.append(h("h2", { class: "block-title" }, (isTest ? "🏁 " : "❓ ") + (b.title || (isTest ? t("test") : t("quiz"))), " ", badge));
   if (b.intro) root.append(h("div", { class: "text", html: md(b.intro) }));
   const body = h("div"); root.append(body);
   let qs = [];
@@ -861,12 +861,12 @@ function exerciseBlock(b, les) {
   const statusChip = h("span", { class: "chip" });
   const setChip = () => { statusChip.className = "chip " + (st.status === "passed" ? "ok" : st.status === "failed" ? "bad" : ""); statusChip.textContent = st.status === "passed" ? "✓ " + t("stPassed") : st.status === "failed" ? t("stFailed") : t("stTodo"); };
   setChip();
-  const root = h("section", { class: "block exercise" }, h("h3", { class: "block-title" }, "🛠️ " + t("exercise") + ": " + b.title, " ", b.difficulty ? h("span", { class: "chip accent" }, t(b.difficulty)) : null, " ", statusChip));
-  root.append(h("h4", null, t("goal")), h("div", { class: "text", html: md(b.goal) }));
-  if (b.behavior) root.append(h("h4", null, t("behavior")), h("div", { class: "text", html: md(b.behavior) }));
+  const root = h("section", { class: "block exercise" }, h("h2", { class: "block-title" }, "🛠️ " + t("exercise") + ": " + b.title, " ", b.difficulty ? h("span", { class: "chip accent" }, t(b.difficulty)) : null, " ", statusChip));
+  root.append(h("h3", null, t("goal")), h("div", { class: "text", html: md(b.goal) }));
+  if (b.behavior) root.append(h("h3", null, t("behavior")), h("div", { class: "text", html: md(b.behavior) }));
   if (b.examples && b.examples.length) {
     const hasIn = b.examples.some(e => e.input != null);
-    root.append(h("h4", null, t("examples")), h("div", { class: "tablewrap", style: "box-shadow:none" }, h("table", null,
+    root.append(h("h3", null, t("examples")), h("div", { class: "tablewrap", style: "box-shadow:none" }, h("table", null,
       h("thead", null, h("tr", null, hasIn ? h("th", null, t("input")) : null, h("th", null, t("output")), b.examples.some(e => e.note) ? h("th", null, "") : null)),
       h("tbody", null, b.examples.map(e => h("tr", null, hasIn ? h("td", null, h("code", null, e.input == null ? "" : e.input)) : null, h("td", null, h("code", null, e.output == null ? "" : e.output)), b.examples.some(x => x.note) ? h("td", { html: inline(e.note || "") }) : null))))));
   }
@@ -883,7 +883,7 @@ function exerciseBlock(b, les) {
     if (f.tests && f.tests.length) root.append(h("details", null, h("summary", null, t("testFiles")), f.tests.map(x => codeBlock({ code: x.content, file: x.path, lang: langOf(x.path) }))));
     const cmd = b.command_display || "";
     const copy = h("button", { class: "copy-btn", style: "color:var(--text);border-color:var(--border)", type: "button", onclick: () => copyText("cd exercises/" + b.dir + " && " + cmd, copy) }, t("copy"));
-    root.append(h("h4", null, t("whereToWork")), h("div", { class: "note-small" }, "📁 ", h("code", null, "exercises/" + b.dir + "/")), h("div", { class: "note-small", style: "margin-top:8px" }, t("runCmd") + ":"), h("div", { class: "cmdline" }, h("code", null, "cd exercises/" + b.dir + "\n" + cmd), copy));
+    root.append(h("h3", null, t("whereToWork")), h("div", { class: "note-small" }, "📁 ", h("code", null, "exercises/" + b.dir + "/")), h("div", { class: "note-small", style: "margin-top:8px" }, t("runCmd") + ":"), h("div", { class: "cmdline" }, h("code", null, "cd exercises/" + b.dir + "\n" + cmd), copy));
     const run = h("button", { class: "btn", type: "button", disabled: !serverMode }, "▶ " + t("runTests"));
     run.onclick = async () => {
       run.disabled = true; run.textContent = t("running"); runStatus.className = "run-status"; runStatus.textContent = ""; out.replaceChildren(); st.attempts++;
@@ -901,7 +901,7 @@ function exerciseBlock(b, les) {
     actions.append(run);
     if (!serverMode) root.append(h("div", { class: "note-small", style: "margin-top:8px" }, "ℹ️ " + t("noServer")));
   } else if (b.checklist && b.checklist.length) {
-    root.append(h("h4", null, t("checklist")), h("ul", { class: "checklist" }, b.checklist.map((c, i) => h("li", null, h("label", null,
+    root.append(h("h3", null, t("checklist")), h("ul", { class: "checklist" }, b.checklist.map((c, i) => h("li", null, h("label", null,
       h("input", Object.assign({ type: "checkbox", onchange: e => { const k = st.checked.indexOf(i); if (e.target.checked && k < 0) st.checked.push(i); if (!e.target.checked && k >= 0) st.checked.splice(k, 1); save(); } }, st.checked.indexOf(i) >= 0 ? { checked: true } : {})), h("span", { html: inline(c) }))))));
   }
   actions.append(doneBtn);
@@ -918,7 +918,7 @@ function exerciseBlock(b, les) {
     sb.onclick = () => {
       if (solBox.childNodes.length) { solBox.replaceChildren(); sb.textContent = "👁 " + t("showSolution"); return; }
       ask(t("confirmSolution"), () => {
-        fill(solBox, h("h4", null, t("solution")), sol.map(x => codeBlock({ code: x.content, file: x.path, lang: x.lang || langOf(x.path) })), b.solution_explain ? h("div", { class: "text", html: md(b.solution_explain) }) : null);
+        fill(solBox, h("h3", null, t("solution")), sol.map(x => codeBlock({ code: x.content, file: x.path, lang: x.lang || langOf(x.path) })), b.solution_explain ? h("div", { class: "text", html: md(b.solution_explain) }) : null);
         sb.textContent = "🙈 " + t("hideSolution");
       });
     };
@@ -941,7 +941,7 @@ function flashBlock(b) {
     stage.append(card); meta.textContent = t("cardsLeft", queue.length) + " · " + t("flipHint");
     ctr.append(h("button", { class: "btn ok sm", type: "button", onclick: () => { st.known.push(queue.shift()); save(); draw(); } }, "✓ " + t("know")), h("button", { class: "btn ghost sm", type: "button", onclick: () => { queue.push(queue.shift()); draw(); } }, "↻ " + t("notYet")));
   }
-  root.append(h("h3", { class: "block-title" }, "🗂️ " + (b.title || t("flashcards"))), meta, stage, ctr); draw(); return root;
+  root.append(h("h2", { class: "block-title" }, "🗂️ " + (b.title || t("flashcards"))), meta, stage, ctr); draw(); return root;
 }
 
 /* ───────────── pages ───────────── */
@@ -970,7 +970,7 @@ function renderHome() {
   fill(el,
     h("div", { class: "hero block" }, h("div", { class: "hero-text" }, h("h1", null, C.meta.title), C.meta.subtitle ? h("p", { class: "lead", style: "margin:0 0 6px" }, C.meta.subtitle) : null, C.meta.description ? h("div", { class: "text", html: md(C.meta.description) }) : null, doneAll ? h("p", null, h("strong", null, t("courseDone"))) : cta), ring(pct)),
     h("div", { class: "stats block" }, h("div", { class: "stat" }, h("b", null, ORDER.filter(lessonDone).length + "/" + ORDER.length), h("span", null, t("lessonsDone"))), h("div", { class: "stat" }, h("b", null, ex.p + "/" + ex.t), h("span", null, t("exercisesDone"))), h("div", { class: "stat" }, h("b", null, qz.c + "/" + qz.t), h("span", null, t("quizScore"))), h("div", { class: "stat" }, h("b", null, "~" + minLeft + " " + t("min")), h("span", null, t("minLeft") + "…"))),
-    C.chapters.map((ch, ci) => h("section", { class: "ch-card block" }, h("h3", null, h("span", { class: "ch-num" }, ci + 1), ch.title, h("span", { class: "chip", style: "margin-left:auto" }, chapterPct(ch) + "%")), ch.summary ? h("div", { class: "note-small", html: inline(ch.summary) }) : null, h("div", { class: "bar", style: "margin-top:10px" }, h("div", { class: "bar-fill", style: "width:" + chapterPct(ch) + "%" })),
+    C.chapters.map((ch, ci) => h("section", { class: "ch-card block" }, h("h2", null, h("span", { class: "ch-num" }, ci + 1), ch.title, h("span", { class: "chip", style: "margin-left:auto" }, chapterPct(ch) + "%")), ch.summary ? h("div", { class: "note-small", html: inline(ch.summary) }) : null, h("div", { class: "bar", style: "margin-top:10px" }, h("div", { class: "bar-fill", style: "width:" + chapterPct(ch) + "%" })),
       h("ul", null, ch.lessons.map(id => h("li", null, h("a", { href: "#/lesson/" + id }, h("span", { class: "st" }, lessonDone(id) ? "✓" : lessonStarted(id) ? "◐" : "○"), C.lessons[id].title + (C.lessons[id].kind === "test" ? " 🏁" : ""))))))),
     h("div", { class: "footer-tools" }, h("span", null, serverMode ? t("progressFile") : t("savedBrowser")), h("button", { class: "btn ghost sm", type: "button", onclick: () => ask(t("resetConfirm"), () => { P = { version: 1, lessons: {}, quizzes: {}, exercises: {}, cards: {}, last: null, updated: null }; save(true); route(); }) }, t("reset"))));
   armReveal(el);
@@ -994,13 +994,13 @@ function renderLesson(id) {
     h("div", { class: "chips" }, h("span", { class: "chip" }, "⏱ ~" + (les.minutes || 10) + " " + t("min")), h("span", { class: "chip accent" }, isTest ? t("test") : t("lesson")), lessonDone(id) ? h("span", { class: "chip ok" }, "✓ " + t("lessonDone")) : null),
     les.summary ? h("p", { class: "lead" }, les.summary) : null];
   allBlocks(les).forEach(b => frag.push(renderBlock(b, les)));
-  if (les.terms && les.terms.length) frag.push(h("dl", { class: "terms block" }, h("h3", null, "📚 " + t("terms")), les.terms.map(x => [h("dt", null, x.term), h("dd", { html: inline(x.def) })])));
+  if (les.terms && les.terms.length) frag.push(h("dl", { class: "terms block" }, h("h2", null, "📚 " + t("terms")), les.terms.map(x => [h("dt", null, x.term), h("dd", { html: inline(x.def) })])));
   const pr = practiceOf(les);
   const fin = h("div", { class: "finish" });
   const drawFinish = () => {
     const p2 = practiceOf(les); fin.replaceChildren();
-    if (isTest) { fin.append(h("h3", null, lessonDone(id) ? t("lessonDone") : "🏁 " + t("test")), h("div", { class: "note-small" }, lessonDone(id) ? "" : t("passTest"))); return; }
-    add(fin, h("h3", null, lessonDone(id) ? t("lessonDone") : t("yourPractice")),
+    if (isTest) { fin.append(h("h2", null, lessonDone(id) ? t("lessonDone") : "🏁 " + t("test")), h("div", { class: "note-small" }, lessonDone(id) ? "" : t("passTest"))); return; }
+    add(fin, h("h2", null, lessonDone(id) ? t("lessonDone") : t("yourPractice")),
       h("div", { class: "chips" }, p2.qT ? h("span", { class: "chip " + (p2.qC === p2.qT ? "ok" : "") }, t("quizzes") + ": " + p2.qC + "/" + p2.qT) : null, p2.eT ? h("span", { class: "chip " + (p2.eP === p2.eT ? "ok" : "") }, t("exercises") + ": " + p2.eP + "/" + p2.eT) : null),
       (!lessonDone(id) && (p2.qC < p2.qT || p2.eP < p2.eT)) ? h("div", { class: "note-small" }, t("later")) : null,
       lessonDone(id) ? null : h("button", { class: "btn", type: "button", style: "margin-top:10px", onclick: () => { P.lessons[id] = Object.assign(P.lessons[id] || {}, { completed: true, completedAt: new Date().toISOString() }); save(); celebrate(); drawFinish(); } }, "✓ " + t("finishLesson")));
