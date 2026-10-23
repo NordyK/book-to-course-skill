@@ -1,0 +1,402 @@
+title: "Functions, statements and expressions"
+summary: "Define functions with parameters and return values, learn the difference between statements and expressions that makes Rust's return values work, and write comments."
+minutes: 25
+source:
+  chapter: ch03
+  sections: ["TRPL 3.3 Functions", "TRPL 3.3 Parameters", "TRPL 3.3 Statements and Expressions", "TRPL 3.3 Functions with Return Values", "TRPL 3.4 Comments", "PR ch6 An Expression Language", "PR ch6 Blocks and Semicolons", "CR Blocks and Scopes", "CR Functions"]
+blocks:
+  - type: text
+    md: |
+      You have written one function many times: `main`. This lesson shows how to write your own, pass values in and get a value back. It also explains the single idea that makes Rust code look the way it does: almost everything is an **expression** that produces a value, and a semicolon turns an expression into a **statement** that does not.
+
+  - type: text
+    title: Defining and calling a function
+    md: |
+      A function starts with `fn`, a name, parentheses and a body in braces. Rust uses **snake_case** for function and variable names: lowercase words joined by underscores. A function can be defined before or after the place that calls it; Rust does not care about the order.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          println!("Hello from main");
+          another_function();
+      }
+
+      fn another_function() {
+          println!("Hello from another function");
+      }
+    output: |
+      Hello from main
+      Hello from another function
+
+  - type: text
+    title: Parameters
+    md: |
+      **Parameters** are the variables a function receives. Each one must have its type written out: Rust infers types inside a function body, but never in a function's signature. That is deliberate. The signature is a contract other code relies on, and spelling it out means the compiler rarely needs you to annotate anything else.
+
+  - type: code
+    lang: rust
+    code: |
+      fn print_labeled_measurement(value: i32, unit_label: char) {
+          println!("The measurement is: {value}{unit_label}");
+      }
+
+      fn main() {
+          print_labeled_measurement(5, 'h');
+      }
+    output: "The measurement is: 5h"
+    explain: "The values you pass when calling, `5` and `'h'`, are the **arguments**. They must match the parameters' types exactly; passing `5.0` here is a compile error."
+
+  - type: text
+    title: Statements and expressions
+    md: |
+      This distinction matters more in Rust than in most languages:
+
+      - A **statement** performs an action and produces no value. `let y = 6;` is a statement, and so is a function definition.
+      - An **expression** evaluates to a value. `5 + 6` is an expression, and so is a function call, a macro call, and a **block** in braces.
+
+      Because `let` is a statement, you cannot write `let x = (let y = 6);` as you might in C (`x = y = 6`). But because a block is an expression, you can do this:
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let y = {
+              let x = 3;
+              x + 1
+          };
+          println!("The value of y is: {y}");
+      }
+    output: "The value of y is: 4"
+    explain: "The block's value is its last expression, `x + 1`. Note that `x + 1` has **no semicolon**. Adding one would make it a statement, the block would produce `()`, and `y` would be `()`."
+
+  - type: callout
+    kind: key
+    title: The semicolon rule
+    md: "A semicolon throws a value away. `x + 1` is the value 4; `x + 1;` is a statement whose value is `()`. Whenever a block or function should produce a value, its last line has no semicolon."
+
+  - type: text
+    title: Return values
+    md: |
+      A function declares its return type after an arrow, `->`. The value returned is the **final expression** of the body. You can also leave early with `return value;`, which is the usual way to return from the middle of a function.
+
+  - type: code
+    lang: rust
+    code: |
+      fn five() -> i32 {
+          5
+      }
+
+      fn plus_one(x: i32) -> i32 {
+          x + 1
+      }
+
+      fn main() {
+          let x = plus_one(five());
+          println!("The value of x is: {x}");
+      }
+    output: "The value of x is: 6"
+
+  - type: text
+    md: |
+      The most common beginner error with return values is a stray semicolon. Here is what the compiler says, and it even points at the fix:
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    code: |
+      fn plus_one(x: i32) -> i32 {
+          x + 1;
+      }
+    output: |
+      error[E0308]: mismatched types
+       --> src/main.rs:1:24
+        |
+      1 | fn plus_one(x: i32) -> i32 {
+        |    --------            ^^^ expected `i32`, found `()`
+        |    |
+        |    implicitly returns `()` as its body has no tail or `return` expression
+      2 |     x + 1;
+        |          - help: remove this semicolon to return this value
+    output_label: Compiler output
+
+  - type: playground
+    id: ch03-play-semicolon
+    title: "Find the semicolon"
+    lang: rust
+    md: |
+      This does not compile. Run it, read the error (the console underlines the line it points at), and fix `area` so the program prints `area: 12`.
+    code: |
+      fn area(width: u32, height: u32) -> u32 {
+          width * height;
+      }
+
+      fn main() {
+          println!("area: {}", area(3, 4));
+      }
+    starter_ok: compile_error
+    expected_output: "area: 12"
+    solution_code: |
+      fn area(width: u32, height: u32) -> u32 {
+          width * height
+      }
+
+      fn main() {
+          println!("area: {}", area(3, 4));
+      }
+    hints:
+      - "The compiler says the function returns `()` instead of `u32`. What turns a value into `()`?"
+      - "Remove the semicolon after `width * height`."
+
+  - type: text
+    title: if is an expression too
+    md: |
+      Since `if` is an expression, it can choose a value. Both branches must produce the same type, because the variable that receives the value can only have one type. This replaces the `? :` operator of C and JavaScript.
+
+  - type: code
+    lang: rust
+    code: |
+      fn sign(n: i32) -> &'static str {
+          if n < 0 {
+              "negative"
+          } else if n == 0 {
+              "zero"
+          } else {
+              "positive"
+          }
+      }
+
+      fn main() {
+          let n = -4;
+          let parity = if n % 2 == 0 { "even" } else { "odd" };
+          println!("{n} is {} and {parity}", sign(n));
+      }
+    output: "-4 is negative and even"
+    explain: "`&'static str` is the type of a string literal that lives for the whole program. You will meet the `'static` part properly in chapter 10; for now, read it as \"a fixed piece of text\"."
+
+  - type: text
+    title: Comments
+    md: |
+      `//` starts a comment that runs to the end of the line. Rust programmers write comments on their own line above the code they describe. A comment with three slashes, `///`, is a **documentation comment**: it describes the item below it, and `cargo doc` turns it into web pages. You saw these in the exercise starters.
+
+  - type: code
+    lang: rust
+    code: |
+      /// Converts degrees Fahrenheit to degrees Celsius.
+      fn to_celsius(f: f64) -> f64 {
+          // subtract the offset first, then scale
+          (f - 32.0) * 5.0 / 9.0
+      }
+
+  - type: playground
+    id: ch03-play-celsius
+    title: "Write a conversion function"
+    lang: rust
+    md: |
+      Write `to_fahrenheit`, the opposite of `to_celsius` above: F = C × 9 / 5 + 32. Then the program should print `100°C is 212°F` and `-40°C is -40°F`.
+    code: |
+      fn to_fahrenheit(c: f64) -> f64 {
+          0.0 // replace this
+      }
+
+      fn main() {
+          for c in [100.0, -40.0] {
+              println!("{c}°C is {}°F", to_fahrenheit(c));
+          }
+      }
+    expected_output: |
+      100°C is 212°F
+      -40°C is -40°F
+    solution_code: |
+      fn to_fahrenheit(c: f64) -> f64 {
+          c * 9.0 / 5.0 + 32.0
+      }
+
+      fn main() {
+          for c in [100.0, -40.0] {
+              println!("{c}°C is {}°F", to_fahrenheit(c));
+          }
+      }
+    hints:
+      - "Float literals need a decimal point: `9.0`, not `9`."
+      - "`c * 9.0 / 5.0 + 32.0`, with no semicolon."
+
+  - type: exercise
+    id: ch03-ex-functions
+    exercise_dir: ch03-functions
+    title: "A small toolbox of functions"
+    difficulty: easy
+    goal: "Write functions with parameters and return values, using expressions rather than temporary variables where you can."
+    behavior: |
+      - `pub fn square(n: i64) -> i64`: n times n.
+      - `pub fn hypotenuse(a: f64, b: f64) -> f64`: the length of the longest side of a right triangle, √(a² + b²).
+      - `pub fn clamp_score(score: i32) -> i32`: the score limited to the range 0 to 100.
+      - `pub fn grade(score: i32) -> char`: `'A'` for 90 and above, `'B'` for 80 to 89, `'C'` for 70 to 79, `'F'` below 70. Clamp the score first.
+    examples:
+      - input: "square(-7)"
+        output: "49"
+      - input: "hypotenuse(3.0, 4.0)"
+        output: "5.0"
+      - input: "clamp_score(130)"
+        output: "100"
+      - input: "grade(85)"
+        output: "'B'"
+    hints:
+      - "`f64` has a `.sqrt()` method: `(a * a + b * b).sqrt()`."
+      - "`clamp_score` can be an `if`/`else if`/`else` expression with no `return`."
+      - "In `grade`, start with `let s = clamp_score(score);`, then an `if` chain from the top grade down."
+    rust:
+      starter: |
+        /// n times n.
+        pub fn square(n: i64) -> i64 {
+            todo!()
+        }
+
+        /// The hypotenuse of a right triangle with sides a and b.
+        pub fn hypotenuse(a: f64, b: f64) -> f64 {
+            todo!()
+        }
+
+        /// Limits a score to 0..=100.
+        pub fn clamp_score(score: i32) -> i32 {
+            todo!()
+        }
+
+        /// 'A' (90+), 'B' (80+), 'C' (70+) or 'F', after clamping the score.
+        pub fn grade(score: i32) -> char {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn squares() {
+            assert_eq!(square(-7), 49, "square(-7)");
+            assert_eq!(square(0), 0, "square(0)");
+            assert_eq!(square(100_000), 10_000_000_000, "square(100_000) needs i64");
+        }
+
+        #[test]
+        fn hypotenuses() {
+            assert!((hypotenuse(3.0, 4.0) - 5.0).abs() < 1e-9, "hypotenuse(3.0, 4.0) should be 5.0");
+            assert!((hypotenuse(1.0, 1.0) - 2f64.sqrt()).abs() < 1e-9, "hypotenuse(1.0, 1.0) should be √2");
+        }
+
+        #[test]
+        fn clamping() {
+            assert_eq!(clamp_score(130), 100, "clamp_score(130)");
+            assert_eq!(clamp_score(-5), 0, "clamp_score(-5)");
+            assert_eq!(clamp_score(64), 64, "clamp_score(64)");
+        }
+
+        #[test]
+        fn grades_at_the_edges() {
+            assert_eq!(grade(90), 'A', "grade(90)");
+            assert_eq!(grade(89), 'B', "grade(89)");
+            assert_eq!(grade(80), 'B', "grade(80)");
+            assert_eq!(grade(79), 'C', "grade(79)");
+            assert_eq!(grade(70), 'C', "grade(70)");
+            assert_eq!(grade(69), 'F', "grade(69)");
+        }
+
+        #[test]
+        fn grades_out_of_range() {
+            assert_eq!(grade(250), 'A', "grade(250) is clamped to 100");
+            assert_eq!(grade(-3), 'F', "grade(-3) is clamped to 0");
+        }
+      solution: |
+        /// n times n.
+        pub fn square(n: i64) -> i64 {
+            n * n
+        }
+
+        /// The hypotenuse of a right triangle with sides a and b.
+        pub fn hypotenuse(a: f64, b: f64) -> f64 {
+            (a * a + b * b).sqrt()
+        }
+
+        /// Limits a score to 0..=100.
+        pub fn clamp_score(score: i32) -> i32 {
+            if score < 0 {
+                0
+            } else if score > 100 {
+                100
+            } else {
+                score
+            }
+        }
+
+        /// 'A' (90+), 'B' (80+), 'C' (70+) or 'F', after clamping the score.
+        pub fn grade(score: i32) -> char {
+            let s = clamp_score(score);
+            if s >= 90 {
+                'A'
+            } else if s >= 80 {
+                'B'
+            } else if s >= 70 {
+                'C'
+            } else {
+                'F'
+            }
+        }
+    solution_explain: "Every function body ends in an expression, so none needs `return`. `clamp_score` also exists in the standard library as `score.clamp(0, 100)`; writing it once yourself shows why an `if` expression works there."
+
+  - type: quiz
+    id: ch03-quiz-functions
+    title: Check yourself
+    questions:
+      - type: single
+        q: "Which signature is valid Rust?"
+        options: ["`fn add(a, b) -> i32`", "`fn add(a: i32, b: i32) -> i32`", "`fn add(a: i32, b: i32): i32`", "`function add(a: i32, b: i32) -> i32`"]
+        answer: 1
+        explanation: "Every parameter needs a type, and the return type follows `->`."
+      - type: single
+        q: "What is the value of `y`?"
+        code: |
+          let y = {
+              let x = 10;
+              x * 2;
+          };
+        lang: rust
+        options: ["20", "10", "`()`", "It does not compile"]
+        answer: 2
+        hints: ["Look at the end of the last line inside the block."]
+        explanation: "`x * 2;` ends with a semicolon, so it is a statement and the block's value is `()`. It does compile; `y` is simply `()`."
+      - type: multi
+        q: "Which of these are expressions?"
+        options: ["`5 + 6`", "`let a = 1;`", "`plus_one(4)`", "`{ 3 }`", "`if a > 0 { 1 } else { 2 }`"]
+        answer: [0, 2, 3, 4]
+        explanation: "`let` is a statement. Arithmetic, calls, blocks and `if` all produce values."
+      - type: truefalse
+        q: "A function must be defined above the code that calls it."
+        answer: false
+        explanation: "Rust does not care about order; a function can be defined anywhere in scope."
+      - type: single
+        q: "Why does this not compile? `let n = if ok { 1 } else { \"none\" };`"
+        options: ["`if` cannot return values", "The branches have different types", "`else` is not allowed with `let`", "`ok` must be an integer"]
+        answer: 1
+        explanation: "Both branches must have one type, because `n` can only have one type."
+      - type: fill
+        q: "A comment that documents the item below it starts with ___ (three characters)."
+        answer: ["///"]
+        explanation: "`///` doc comments become documentation with `cargo doc`."
+
+  - type: summary
+    points:
+      - "`fn name(param: Type) -> Return { ... }`; parameter types are always written out."
+      - "Statements (like `let`) do something; expressions (arithmetic, calls, blocks, `if`) produce a value."
+      - "A block's value is its last expression; a trailing semicolon turns it into `()`."
+      - "A function returns its final expression; `return` leaves early."
+      - "`if` is an expression, so it can choose a value; both branches must have the same type."
+      - "`//` comments a line; `///` documents the next item."
+terms:
+  - term: parameter
+    def: "A variable in a function's signature that receives a value when the function is called."
+  - term: argument
+    def: "The value passed for a parameter when calling a function."
+  - term: statement
+    def: "An instruction that performs an action and produces no value, like let x = 5;"
+  - term: expression
+    def: "Code that evaluates to a value, like 5 + 6, a function call, a block or an if."
+  - term: doc comment
+    def: "A comment starting with /// that documents the item below it and is turned into documentation by cargo doc."

@@ -17,7 +17,7 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
 ## Decisions (keep consistent)
 
 - Course language English; code and identifiers English. Spine = TRPL 2024 edition; older TRPL editions are duplicates (see plan.md).
-- Exercise layout: library crate, learner edits `src/lib.rs`; tests in `src/tests.rs` via `#[cfg(test)] mod tests;`; command `cargo test --offline --quiet`; edition 2024; std only.
+- Exercise layout: library crate, learner edits `src/lib.rs`; tests in `src/tests.rs` via `#[cfg(test)] mod tests;`; command `cargo test --offline` (no `--quiet`: the player reads the per-test lines); edition 2024; std only.
 - Block ids: `<ch>-quiz-<topic>`, `<ch>-ex-<topic>`, `<ch>-cards-<topic>`, `<ch>-play-<topic>`; tests `<ch>-test`.
 - `playground` block = editable, runnable Rust snippet (local rustc via serve.py, else play.rust-lang.org).
 
@@ -39,3 +39,14 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
 - Chapter 2 done (Guessing Game): 3 lessons + test; exercises ch02-compare, ch02-parse-guess, ch02-play-game
   (all verified: fail on starter, pass on solution); 6 playgrounds verified.
 - impeccable: critique running next; log of every command goes in `design-log.md`.
+- impeccable sequence finished: init, shape, craft, critique (26/40), audit (14/20), layout, typeset, colorize,
+  clarify, animate, delight, onboard, distill, adapt, harden, overdrive (Lukasz chose: compiler errors marked in
+  the editor), quieter/bolder (evaluated, not needed), polish, extract, document. `DESIGN.md` and
+  `.impeccable/design.json` written; final `impeccable detect` is clean apart from the deliberate grid background.
+  Every step is in `design-log.md`.
+- Chapter 3 done (Common Programming Concepts): 5 lessons + 12-question test; exercises ch03-safe-arithmetic,
+  ch03-tuples-arrays, ch03-functions, ch03-loops (all verified); 10 playgrounds verified.
+- New check: `.build/tools/verify_codeblocks.py . chNN` compiles every runnable `code` block and compares its shown
+  output. Add it to the per-chapter loop. (The ch02 `cargo run -- 4 8 15` block needs arguments and is the one
+  expected difference.)
+- Next: chapter 4 (Ownership), following `.build/plan.md`.

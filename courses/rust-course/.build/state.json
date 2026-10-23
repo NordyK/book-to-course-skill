@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created": "2026-10-23T02:32:57+00:00",
-  "updated": "2026-10-23T03:00:19+00:00",
+  "updated": "2026-10-23T03:21:17+00:00",
   "book": {
     "title": "Rust: From First Program to Systems Programming",
     "author": "Merged from 5 books (see .build/plan.md)",
@@ -34,8 +34,8 @@
       "title": "Common Programming Concepts",
       "words": 44758,
       "file": "chapters/ch03.md",
-      "status": "pending",
-      "lessons_built": 2,
+      "status": "done",
+      "lessons_built": 6,
       "note": ""
     },
     {
@@ -256,6 +256,10 @@
     {
       "at": "2026-10-23T03:00:19+00:00",
       "msg": "ch02 written: 3 lessons + test, 3 tested exercises, 6 playgrounds"
+    },
+    {
+      "at": "2026-10-23T03:21:17+00:00",
+      "msg": "ch03 → done"
     }
   ]
 }

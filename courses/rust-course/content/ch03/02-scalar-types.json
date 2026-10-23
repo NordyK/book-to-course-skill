@@ -157,7 +157,7 @@
       "type": "code",
       "lang": "rust",
       "code": "fn main() {\n    let small: u8 = 200;\n    let wide: u32 = small.into();      // always fits: u8 -> u32\n    let f = small as f64 / 3.0;         // `as` converts to f64\n    let truncated = 3.99_f64 as i32;    // 3: `as` drops the fraction\n    let squeezed = 300_i32 as u8;       // 44: `as` silently keeps the low 8 bits!\n    let checked: Result<u8, _> = 300_i32.try_into(); // Err: does not fit\n    println!(\"{wide} {f:.2} {truncated} {squeezed} {checked:?}\");\n}\n",
-      "output": "200 66.67 3 44 Err(TryFromIntError(()))",
+      "output": "200 66.67 3 44 Err(TryFromIntError(PosOverflow))",
       "explain": "`{f:.2}` prints with two decimals. Prefer `into` and `try_into`; `as` is handy but quietly loses information when the value does not fit."
     },
     {

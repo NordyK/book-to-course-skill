@@ -159,13 +159,13 @@
       "id": "ch03-play-const",
       "title": "Name the magic number",
       "lang": "rust",
-      "task": "Add a constant `SECONDS_PER_MINUTE` (type `u32`, value 60) above `main` and use it instead of `60`, so the program prints `5 minutes = 300 seconds`. The output must not change.",
+      "task": "Add two constants above `main`, `SECONDS_PER_MINUTE` and `MINUTES_PER_HOUR` (both `u32`, both 60). Use them instead of the bare `60`, then add a second line that prints the seconds in 2 hours: `2 hours = 7200 seconds`.",
       "code": "fn main() {\n    let minutes: u32 = 5;\n    let seconds = minutes * 60;\n    println!(\"{minutes} minutes = {seconds} seconds\");\n}\n",
-      "expected_output": "5 minutes = 300 seconds",
-      "must_contain": [],
+      "expected_output": "5 minutes = 300 seconds\n2 hours = 7200 seconds\n",
       "hints": [
         "`const SECONDS_PER_MINUTE: u32 = 60;` goes on its own line above `fn main()`.",
-        "The output is the same either way: this exercise is about making the code say what 60 *means*."
+        "Seconds in an hour are `MINUTES_PER_HOUR * SECONDS_PER_MINUTE`. A second `let seconds` can shadow the first.",
+        "The point is readability: `hours * MINUTES_PER_HOUR * SECONDS_PER_MINUTE` says what `2 * 60 * 60` only implies."
       ]
     },
     {

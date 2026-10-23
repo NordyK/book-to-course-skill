@@ -125,7 +125,7 @@ blocks:
           let checked: Result<u8, _> = 300_i32.try_into(); // Err: does not fit
           println!("{wide} {f:.2} {truncated} {squeezed} {checked:?}");
       }
-    output: "200 66.67 3 44 Err(TryFromIntError(()))"
+    output: "200 66.67 3 44 Err(TryFromIntError(PosOverflow))"
     explain: "`{f:.2}` prints with two decimals. Prefer `into` and `try_into`; `as` is handy but quietly loses information when the value does not fit."
 
   - type: text

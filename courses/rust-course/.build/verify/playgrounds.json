@@ -35,20 +35,44 @@
   "solution_code": "fn main() {\n    let x = 5;\n    let y = 10;\n\n    println!(\"x = {x} and y = {y}\");\n    println!(\"{} + {} = {}\", x, y, x + y);\n}\n",
   "starter_ok": "run"
  },
+ "ch03-play-bounds": {
+  "solution_code": null,
+  "starter_ok": "panic"
+ },
+ "ch03-play-break-value": {
+  "solution_code": "fn main() {\n    let mut n = 0;\n    let first = loop {\n        n += 1;\n        if n * n > 500 {\n            break n * n;\n        }\n    };\n    println!(\"first square over 500: {first}\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch03-play-celsius": {
+  "solution_code": "fn to_fahrenheit(c: f64) -> f64 {\n    c * 9.0 / 5.0 + 32.0\n}\n\nfn main() {\n    for c in [100.0, -40.0] {\n        println!(\"{c}°C is {}°F\", to_fahrenheit(c));\n    }\n}\n",
+  "starter_ok": "run"
+ },
  "ch03-play-chars": {
   "solution_code": null,
   "starter_ok": "run"
  },
  "ch03-play-const": {
-  "solution_code": "const SECONDS_PER_MINUTE: u32 = 60;\n\nfn main() {\n    let minutes: u32 = 5;\n    let seconds = minutes * SECONDS_PER_MINUTE;\n    println!(\"{minutes} minutes = {seconds} seconds\");\n}\n",
+  "solution_code": "const SECONDS_PER_MINUTE: u32 = 60;\nconst MINUTES_PER_HOUR: u32 = 60;\n\nfn main() {\n    let minutes: u32 = 5;\n    let seconds = minutes * SECONDS_PER_MINUTE;\n    println!(\"{minutes} minutes = {seconds} seconds\");\n    let hours: u32 = 2;\n    let seconds = hours * MINUTES_PER_HOUR * SECONDS_PER_MINUTE;\n    println!(\"{hours} hours = {seconds} seconds\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch03-play-fizzbuzz": {
+  "solution_code": "fn main() {\n    for n in 1..=15 {\n        if n % 15 == 0 {\n            println!(\"FizzBuzz\");\n        } else if n % 3 == 0 {\n            println!(\"Fizz\");\n        } else if n % 5 == 0 {\n            println!(\"Buzz\");\n        } else {\n            println!(\"{n}\");\n        }\n    }\n}\n",
   "starter_ok": "run"
  },
  "ch03-play-overflow": {
   "solution_code": null,
   "starter_ok": "panic"
  },
+ "ch03-play-semicolon": {
+  "solution_code": "fn area(width: u32, height: u32) -> u32 {\n    width * height\n}\n\nfn main() {\n    println!(\"area: {}\", area(3, 4));\n}\n",
+  "starter_ok": "compile_error"
+ },
  "ch03-play-shadow": {
   "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch03-play-tuple": {
+  "solution_code": "fn divide(a: u32, b: u32) -> (u32, u32) {\n    (a / b, a % b)\n}\n\nfn main() {\n    let (q, r) = divide(17, 5);\n    println!(\"17 / 5 = {q} remainder {r}\");\n}\n",
   "starter_ok": "run"
  }
 }
