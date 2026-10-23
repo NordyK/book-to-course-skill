@@ -60,3 +60,5 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
 - Chapter 6 done (Enums and Pattern Matching): 3 lessons + 10-question test; exercises ch06-commands (stack
   machine), ch06-config (let...else parsing), both verified; 3 playgrounds verified. A playground whose starter
   already prints the target output gets no expected_output (the verifier rejects that), only a task.
+- Chapter 7 done (Packages, Crates and Modules): 3 lessons + 10-question test; exercise ch07-library (verified);
+  2 playgrounds. `fix_compiler_output.py` compiles `file: src/lib.rs` blocks as a library.

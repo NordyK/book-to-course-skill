@@ -114,5 +114,13 @@
  "ch06-play-traffic": {
   "solution_code": "#[derive(Debug, Clone, Copy)]\nenum Light {\n    Red,\n    Yellow,\n    Green,\n}\n\nimpl Light {\n    fn next(self) -> Light {\n        match self {\n            Light::Red => Light::Green,\n            Light::Green => Light::Yellow,\n            Light::Yellow => Light::Red,\n        }\n    }\n\n    fn wait_seconds(self) -> u32 {\n        match self {\n            Light::Red => 30,\n            Light::Yellow => 5,\n            Light::Green => 45,\n        }\n    }\n}\n\nfn main() {\n    let mut light = Light::Red;\n    for _ in 0..4 {\n        println!(\"{light:?} {}s\", light.wait_seconds());\n        light = light.next();\n    }\n}\n",
   "starter_ok": "run"
+ },
+ "ch07-play-privacy": {
+  "solution_code": "mod sensors {\n    pub struct Reading {\n        pub id: u32,\n        celsius: f64,\n    }\n\n    impl Reading {\n        pub fn new(id: u32, raw: f64) -> Reading {\n            Reading { id, celsius: calibrate(raw) }\n        }\n\n        pub fn celsius(&self) -> f64 {\n            self.celsius\n        }\n    }\n\n    fn calibrate(raw: f64) -> f64 {\n        raw - 0.5\n    }\n}\n\nfn main() {\n    let r = sensors::Reading::new(7, 22.0);\n    println!(\"sensor {}: {}°C\", r.id, r.celsius());\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch07-play-use": {
+  "solution_code": null,
+  "starter_ok": "run"
  }
 }

@@ -1,0 +1,11 @@
+{
+  "title": "Packages, Crates and Modules",
+  "summary": "Organize code as it grows: packages and crates, modules and privacy, paths, use, re-exports, splitting modules into files, and depending on other people's crates.",
+  "goals": [
+    "Tell packages, crates, binary crates and library crates apart",
+    "Group code into modules and control what is public with pub",
+    "Refer to items with absolute and relative paths, self and super",
+    "Bring names into scope with use, rename with as, and re-export with pub use",
+    "Move modules into their own files and add external crates"
+  ]
+}

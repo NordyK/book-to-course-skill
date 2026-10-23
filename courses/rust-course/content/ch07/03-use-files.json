@@ -1,0 +1,221 @@
+{
+  "title": "use, re-exports, files and external crates",
+  "summary": "Shorten paths with use, follow the idioms for what to import, rename with as, re-export with pub use, depend on external crates, and split a module tree across files.",
+  "minutes": 26,
+  "source": {
+    "chapter": "ch07",
+    "sections": [
+      "TRPL 7.4 Bringing Paths into Scope with the use Keyword",
+      "TRPL 7.4 Creating Idiomatic use Paths",
+      "TRPL 7.4 Providing New Names with the as Keyword",
+      "TRPL 7.4 Re-exporting Names with pub use",
+      "TRPL 7.4 Using External Packages",
+      "TRPL 7.4 Using Nested Paths to Clean Up Large use Lists",
+      "TRPL 7.4 Importing Items with the Glob Operator",
+      "TRPL 7.5 Separating Modules into Different Files",
+      "PR ch8 Modules in Separate Files",
+      "PR ch8 The Standard Prelude",
+      "PR ch8 Publishing Public Items"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Writing `crate::front_of_house::hosting::add_to_waitlist()` every time gets old fast. `use` creates a shortcut: a name in the current scope that stands for a path. It works like a symbolic link in a file system.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "mod front_of_house {\n    pub mod hosting {\n        pub fn add_to_waitlist() {\n            println!(\"added\");\n        }\n    }\n}\n\nuse crate::front_of_house::hosting;\n\nfn main() {\n    hosting::add_to_waitlist();\n    hosting::add_to_waitlist();\n}\n",
+      "output": "added\nadded\n",
+      "explain": "A `use` only applies to the scope it is written in. If you moved `main` into a child module, the shortcut would not follow it: that module would need its own `use` (or `super::hosting`)."
+    },
+    {
+      "type": "text",
+      "title": "Idiomatic use paths",
+      "md": "Rust code follows two conventions, and following them makes code easier to read:\n\n- For **functions**, bring the **parent module** into scope and call `hosting::add_to_waitlist()`. The module name shows the function is not defined locally.\n- For **structs, enums and other types**, bring the **item itself** into scope: `use std::collections::HashMap;` then `HashMap::new()`.\n\nThe exception is two types with the same name from different modules. Then import the parent modules (`fmt::Result` and `io::Result`), or rename one with **`as`**:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::fmt::Result;\nuse std::io::Result as IoResult;\n\nfn function1() -> Result {\n    Ok(())\n}\n\nfn function2() -> IoResult<()> {\n    Ok(())\n}\n"
+    },
+    {
+      "type": "text",
+      "title": "Nested paths and globs",
+      "md": "Several imports from the same place can share a prefix in braces. `self` inside the braces imports the prefix itself:\n\n```rust\nuse std::{cmp::Ordering, io};\nuse std::io::{self, Write};          // std::io and std::io::Write\nuse std::collections::*;             // every public item: use sparingly\n```\n\nThe `*` **glob** brings everything public into scope. It makes it hard to tell where a name came from, so it is mostly used in tests (`use super::*;`, as in every exercise in this course) and for **preludes**: modules a library designs to be glob-imported.\n"
+    },
+    {
+      "type": "callout",
+      "kind": "note",
+      "title": "The standard prelude",
+      "md": "Why can you use `String`, `Vec`, `Option`, `Some` and `println!` without any `use`? Every module automatically imports the **standard prelude**, a short list of the most common items. Everything else in `std`, like `HashMap` or `io`, needs a `use`."
+    },
+    {
+      "type": "text",
+      "title": "Re-exporting with pub use",
+      "md": "A `use` is private by default: the shortcut works inside the module but is not part of its public API. `pub use` **re-exports** the name, so outside code can use the shorter path too. This lets you organize your code one way internally and present a simpler structure to users. Many crates re-export their most important types at the root: you write `use serde::Serialize`, not the deep path where it is defined.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/lib.rs",
+      "code": "mod front_of_house {\n    pub mod hosting {\n        pub fn add_to_waitlist() {}\n    }\n}\n\npub use crate::front_of_house::hosting;\n// users now write restaurant::hosting::add_to_waitlist()\n// instead of restaurant::front_of_house::hosting::add_to_waitlist()\n"
+    },
+    {
+      "type": "text",
+      "title": "External crates",
+      "md": "In chapter 2 you added `rand` to `Cargo.toml` and wrote `use rand::prelude::*;`. That is all an external crate needs: a line under `[dependencies]` (or `cargo add rand`), then paths that start with the crate's name. Thousands of crates are published on [crates.io](https://crates.io). The standard library, `std`, is a crate too; it ships with Rust, so it never needs a `Cargo.toml` line, only `use` paths starting with `std`.\n"
+    },
+    {
+      "type": "text",
+      "title": "Splitting modules into files",
+      "md": "As modules grow, move each into its own file. Replace the module's body with a semicolon, `mod front_of_house;`, and the compiler loads its contents from a file whose path follows the module tree:\n"
+    },
+    {
+      "type": "table",
+      "title": "Where the compiler looks for a module",
+      "headers": [
+        "Declaration",
+        "In file",
+        "Contents loaded from"
+      ],
+      "rows": [
+        [
+          "`mod front_of_house;`",
+          "`src/lib.rs` (crate root)",
+          "`src/front_of_house.rs`"
+        ],
+        [
+          "`pub mod hosting;`",
+          "`src/front_of_house.rs`",
+          "`src/front_of_house/hosting.rs`"
+        ],
+        [
+          "`mod tests;`",
+          "`src/lib.rs`",
+          "`src/tests.rs` (this is how every exercise in the course loads its tests)"
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "title": "The restaurant split across three files",
+      "code": "// src/lib.rs\nmod front_of_house;\npub use crate::front_of_house::hosting;\npub fn eat_at_restaurant() {\n    hosting::add_to_waitlist();\n}\n\n// src/front_of_house.rs\npub mod hosting;\n\n// src/front_of_house/hosting.rs\npub fn add_to_waitlist() {}\n",
+      "explain": "`mod` is a declaration, written **once** in the module tree, not an include. Other files refer to the module by path. An older layout, `src/front_of_house/mod.rs`, also works and is common in older code, but do not mix the two styles for the same module."
+    },
+    {
+      "type": "playground",
+      "id": "ch07-play-use",
+      "title": "Tidy up with use",
+      "lang": "rust",
+      "md": "This program works but repeats long paths. Add `use` declarations at the top so that `main` can write `HashMap::new()`, `max(...)` and `geometry::area(...)`. Follow the idioms: import types directly, but import the **module** for your own function. The output must stay the same.\n",
+      "task": "Make main use `HashMap::new()`, `max(a, b)` and `geometry::area(...)` with three use lines; the output must still be `largest: 12` and `area: 12` and `1 entry`.",
+      "code": "mod shapes {\n    pub mod geometry {\n        pub fn area(w: u32, h: u32) -> u32 {\n            w * h\n        }\n    }\n}\n\nfn main() {\n    let a = crate::shapes::geometry::area(3, 4);\n    let b = std::cmp::max(a, 7);\n    let mut seen = std::collections::HashMap::new();\n    seen.insert(\"area\", a);\n    println!(\"largest: {b}\");\n    println!(\"area: {}\", seen[\"area\"]);\n    println!(\"{} entry\", seen.len());\n}\n",
+      "hints": [
+        "`use std::collections::HashMap;` imports the type itself.",
+        "`use std::cmp::max;` is the usual exception for well-known standard functions; `use std::cmp;` then `cmp::max` is fine too.",
+        "`use crate::shapes::geometry;` then call `geometry::area(3, 4)`."
+      ]
+    },
+    {
+      "type": "quiz",
+      "id": "ch07-quiz-use",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which is the idiomatic way to call `add_to_waitlist` from `crate::front_of_house::hosting`?",
+          "options": [
+            "`use crate::front_of_house::hosting::add_to_waitlist;` then `add_to_waitlist()`",
+            "`use crate::front_of_house::hosting;` then `hosting::add_to_waitlist()`",
+            "`use crate::*;`",
+            "Always write the full path"
+          ],
+          "answer": 1,
+          "explanation": "For functions, import the parent module so it is clear the function is not local."
+        },
+        {
+          "type": "single",
+          "q": "How do you import both `std::fmt::Result` and `std::io::Result`?",
+          "options": [
+            "You cannot",
+            "`use std::io::Result as IoResult;` and `use std::fmt::Result;`",
+            "`use std::{fmt, io}::Result;`",
+            "`use std::*::Result;`"
+          ],
+          "answer": 1,
+          "explanation": "Rename one with `as`, or import the parent modules and write `fmt::Result` and `io::Result`."
+        },
+        {
+          "type": "single",
+          "q": "What does `pub use crate::a::b::Thing;` at the crate root do?",
+          "options": [
+            "Makes `Thing` public everywhere in the crate only",
+            "Re-exports `Thing` so users of the library can write `mycrate::Thing`",
+            "Copies `Thing` into the root",
+            "Nothing different from `use`"
+          ],
+          "answer": 1,
+          "explanation": "A re-export adds the shorter path to the public API."
+        },
+        {
+          "type": "single",
+          "q": "In `src/lib.rs` you write `mod network;`. Where does the compiler look for its code?",
+          "options": [
+            "`src/network.rs` (or `src/network/mod.rs`)",
+            "`network/lib.rs`",
+            "`Cargo.toml`",
+            "Nowhere: `mod` needs a body"
+          ],
+          "answer": 0,
+          "explanation": "The file path follows the module path."
+        },
+        {
+          "type": "truefalse",
+          "q": "`Vec` and `Option` need a `use` line before you can use them.",
+          "answer": false,
+          "explanation": "They are in the standard prelude, imported automatically."
+        },
+        {
+          "type": "fill",
+          "q": "`use std::io::{______, Write};` imports both `std::io` itself and `std::io::Write`.",
+          "answer": [
+            "self"
+          ],
+          "explanation": "`self` in a nested path refers to the prefix."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "`use path;` creates a shortcut in the current scope.",
+        "Idioms: import the parent module for functions, the item itself for types; rename clashes with `as`.",
+        "Nested paths `use std::{cmp::Ordering, io};` and `self` shorten import lists; globs `*` are for tests and preludes.",
+        "`pub use` re-exports, letting a library present a simpler public structure.",
+        "External crates: add to `[dependencies]`, then use paths starting with the crate name.",
+        "`mod name;` loads `name.rs` (or `name/mod.rs`); nested modules live in a folder named after the parent."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "use",
+      "def": "A declaration that brings a path into scope under a short name."
+    },
+    {
+      "term": "re-export",
+      "def": "Making an imported name part of your own public API with pub use."
+    },
+    {
+      "term": "glob import",
+      "def": "use path::*; imports every public item from a module."
+    },
+    {
+      "term": "prelude",
+      "def": "A set of items imported automatically; the standard prelude includes Option, Vec, String and more."
+    }
+  ]
+}

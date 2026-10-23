@@ -1,0 +1,66 @@
+title: "Chapter test: Packages, Crates and Modules"
+kind: test
+summary: Ten questions on crates, modules, privacy, paths and use. You need 70% to pass; you can retry and your best score is kept.
+blocks:
+  - type: quiz
+    id: ch07-test
+    pass_score: 0.7
+    questions:
+      - type: single
+        q: "How many library crates can one package contain?"
+        options: ["None", "At most one", "Exactly two", "Any number"]
+        answer: 1
+        explanation: "Any number of binaries, at most one library."
+      - type: single
+        q: "Where does Cargo expect an extra binary called `migrate`?"
+        options: ["`src/migrate.rs`", "`src/bin/migrate.rs`", "`bin/migrate/main.rs` only", "It must be declared in `Cargo.toml` with a path"]
+        answer: 1
+        explanation: "Each file in `src/bin/` is a binary crate."
+      - type: single
+        q: "Does this compile?"
+        code: |
+          mod a {
+              pub mod b {
+                  fn hidden() {}
+              }
+          }
+          fn main() {
+              a::b::hidden();
+          }
+        lang: rust
+        options: ["Yes", "No: `hidden` is private", "No: `a` must be `pub`", "No: absolute paths are required"]
+        answer: 1
+        explanation: "`a` is a sibling of `main`, so it may be named; `b` is `pub`; but `hidden` is private to `b`."
+      - type: single
+        q: "Code in `mod kitchen` (a child of the crate root) wants to call `serve()` defined at the crate root. Which path works?"
+        options: ["`super::serve()`", "`self::serve()`", "`kitchen::serve()`", "`child::serve()`"]
+        answer: 0
+        explanation: "`super` is the parent module, here the crate root. `crate::serve()` would also work."
+      - type: multi
+        q: "Given `pub struct Config { pub name: String, secret: String }` in module `settings`, which can code outside `settings` do?"
+        options: ["Read `config.name`", "Read `config.secret`", "Create one with `Config { name, secret }`", "Call a `pub fn new` that `settings` provides"]
+        answer: [0, 3]
+        explanation: "Private fields block both access and struct literals from outside."
+      - type: truefalse
+        q: "To make an enum's variants usable outside its module, each variant must be marked `pub`."
+        answer: false
+        explanation: "A `pub enum` makes all variants public."
+      - type: single
+        q: "Which `use` follows the convention for a type?"
+        options: ["`use std::collections;` then `collections::HashMap::new()`", "`use std::collections::HashMap;` then `HashMap::new()`", "`use std::*;`", "`use HashMap;`"]
+        answer: 1
+        explanation: "Types are imported directly."
+      - type: single
+        q: "A module declares `use crate::utils::helper;`. Can a child module of it call `helper()` without its own `use`?"
+        options: ["Yes, `use` applies to child modules", "No, a `use` only applies to the scope where it is written", "Only if the child is `pub`", "Only with `pub use`"]
+        answer: 1
+        explanation: "Each scope needs its own `use` (or `super::helper`)."
+      - type: fill
+        q: "The automatically imported list of common items such as `Vec` and `Option` is called the standard ______."
+        answer: ["prelude"]
+        explanation: "The standard prelude."
+      - type: single
+        q: "`src/lib.rs` has `mod net;` and `src/net.rs` has `pub mod tcp;`. Where is `tcp`'s code?"
+        options: ["`src/tcp.rs`", "`src/net/tcp.rs`", "`src/lib/net/tcp.rs`", "Inside `src/net.rs` only"]
+        answer: 1
+        explanation: "A child module's file sits in a folder named after its parent."
