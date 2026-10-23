@@ -1,0 +1,510 @@
+title: "Readers, writers, files and paths"
+summary: "The Read, BufRead and Write traits and why code should accept them generically, Cursor and Vec<u8> as in-memory streams, File, OpenOptions and file modes, BufReader and BufWriter, std::fs convenience functions, Path and PathBuf, directories and metadata, and io::Error."
+minutes: 40
+source:
+  chapter: ch22
+  sections: ["PR ch18 Input and Output", "PR ch18 Readers and Writers", "PR ch18 Readers", "PR ch18 Buffered Readers", "PR ch18 Reading Lines", "PR ch18 Collecting Lines", "PR ch18 Writers", "PR ch18 Files", "PR ch18 Seeking", "PR ch18 Other Reader and Writer Types", "PR ch18 Files and Directories", "PR ch18 OsStr and Path", "PR ch18 Path and PathBuf Methods", "PR ch18 Filesystem Access Functions", "PR ch18 Reading Directories", "RiA 7.4 File operations in Rust", "RiA 7.4.1 Opening a file in Rust and controlling its file mode", "RiA 7.4.2 Interacting with the file system in a type-safe manner"]
+blocks:
+  - type: text
+    md: |
+      Rust's I/O is built on three traits in `std::io`:
+
+      - **`Read`**: something you can pull bytes from: `read(&mut buf)`, `read_to_end`, `read_to_string`, `read_exact`.
+      - **`BufRead`**: a reader with an internal buffer, which adds `read_line`, `lines()` and `split()`.
+      - **`Write`**: something you can push bytes into: `write_all`, `flush`, and the `write!`/`writeln!` macros.
+
+      Files, standard input and output, TCP sockets, byte slices and vectors all implement them. *Programming Rust* stresses the consequence: a function that takes `impl Read` or `impl Write` works with **all** of them, and can be tested in memory without touching the disk.
+
+  - type: table
+    title: Common readers and writers
+    headers: ["Type", "Read", "BufRead", "Write"]
+    rows:
+      - ["`std::fs::File`", "yes", "wrap in `BufReader`", "yes (wrap in `BufWriter`)"]
+      - ["`std::io::Stdin` / `StdinLock`", "yes", "the lock is", ""]
+      - ["`std::io::Stdout`, `Stderr`", "", "", "yes"]
+      - ["`&[u8]`", "yes", "yes", ""]
+      - ["`Vec<u8>`", "", "", "yes (appends)"]
+      - ["`std::io::Cursor<Vec<u8>>`", "yes", "yes", "yes, and `Seek`"]
+      - ["`std::net::TcpStream`", "yes", "wrap in `BufReader`", "yes"]
+
+  - type: code
+    lang: rust
+    code: |
+      use std::io::{self, BufRead, Write};
+
+      // works with files, stdin, sockets and in-memory data alike
+      fn number_lines<R: BufRead, W: Write>(input: R, mut out: W) -> io::Result<usize> {
+          let mut count = 0;
+          for line in input.lines() {
+              let line = line?;
+              count += 1;
+              writeln!(out, "{count:>3}: {line}")?;
+          }
+          Ok(count)
+      }
+
+      fn main() -> io::Result<()> {
+          let text = "fn main() {\n    println!(\"hi\");\n}\n";
+          let mut output: Vec<u8> = Vec::new();
+          let n = number_lines(text.as_bytes(), &mut output)?;
+          print!("{}", String::from_utf8_lossy(&output));
+          println!("{n} lines");
+
+          let stdout = io::stdout();
+          let handle = stdout.lock();
+          number_lines(io::Cursor::new("one\ntwo"), handle)?;
+          Ok(())
+      }
+    output: |2
+        1: fn main() {
+        2:     println!("hi");
+        3: }
+      3 lines
+        1: one
+        2: two
+    explain: "`&mut output` works because `&mut W` implements `Write` whenever `W` does, so the caller keeps the vector. `lines()` strips the newline and yields `io::Result<String>`, since reading can fail mid-way."
+
+  - type: text
+    title: Files and OpenOptions
+    md: |
+      `File::open(path)` opens for reading; `File::create(path)` creates or **truncates** for writing. For anything else, *Rust in Action* uses **`OpenOptions`**, a builder that sets the mode flag by flag: `read`, `write`, `append`, `create`, `create_new` (fail if it exists), `truncate`.
+
+      Every system call is slow compared with memory. Reading a file byte by byte, or writing many small pieces, makes one call each. **`BufReader`** and **`BufWriter`** keep an 8 KB buffer in between. A `BufWriter` writes its remainder when dropped, but errors at that point are lost, so call `flush()` yourself when it matters.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::fs::{self, File, OpenOptions};
+      use std::io::{self, BufRead, BufReader, BufWriter, Write};
+
+      fn main() -> io::Result<()> {
+          let path = std::env::temp_dir().join(format!("rust-course-log-{}.txt", std::process::id()));
+
+          {
+              let mut w = BufWriter::new(File::create(&path)?);
+              for i in 1..=3 {
+                  writeln!(w, "entry {i}")?;
+              }
+              w.flush()?;
+          }
+
+          let mut f = OpenOptions::new().append(true).open(&path)?;
+          writeln!(f, "entry 4 (appended)")?;
+
+          let reader = BufReader::new(File::open(&path)?);
+          for line in reader.lines() {
+              println!("{}", line?);
+          }
+
+          println!("{} bytes", fs::metadata(&path)?.len());
+          fs::remove_file(&path)?;
+          println!("exists afterwards: {}", path.exists());
+          Ok(())
+      }
+    output: |
+      entry 1
+      entry 2
+      entry 3
+      entry 4 (appended)
+      43 bytes
+      exists afterwards: false
+
+  - type: table
+    title: Handy std::fs functions
+    headers: ["Function", "Does"]
+    rows:
+      - ["`fs::read_to_string(p)`, `fs::read(p)`", "read a whole file as `String` or `Vec<u8>`"]
+      - ["`fs::write(p, data)`", "create or truncate, then write everything"]
+      - ["`fs::create_dir_all(p)`", "create a directory and any missing parents"]
+      - ["`fs::read_dir(p)`", "iterate the entries of a directory"]
+      - ["`fs::metadata(p)`", "size, type, permissions, modification time"]
+      - ["`fs::copy`, `fs::rename`, `fs::remove_file`, `fs::remove_dir_all`", "what they say"]
+      - ["`fs::canonicalize(p)`", "absolute path with symlinks resolved"]
+
+  - type: text
+    title: Paths
+    md: |
+      File names are not always valid UTF-8 (Linux allows almost any bytes, Windows uses UTF-16), so Rust has its own string types for them: **`Path`** (borrowed, like `str`) and **`PathBuf`** (owned, like `String`), built on `OsStr`/`OsString`. *Rust in Action* calls this interacting with the file system "in a type-safe manner": `join` uses the right separator for the platform, and `file_name`, `extension`, `parent` and `components` take a path apart without string surgery. Converting to `&str` returns an `Option`, because it can fail.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::path::{Path, PathBuf};
+
+      fn main() {
+          let mut p = PathBuf::from("/home/ferris");
+          p.push("projects");
+          p.push("game.tar.gz");
+
+          println!("{}", p.display());
+          println!("{:?}", p.file_name());
+          println!("{:?}", p.extension());
+          println!("{:?}", p.file_stem());
+          println!("{:?}", p.parent());
+          println!("{}", p.is_absolute());
+
+          let parts: Vec<_> = p.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+          println!("{parts:?}");
+
+          let config = Path::new("settings").join("app.toml").with_extension("json");
+          println!("{} {:?}", config.display(), config.to_str());
+      }
+    output: |
+      /home/ferris/projects/game.tar.gz
+      Some("game.tar.gz")
+      Some("gz")
+      Some("game.tar")
+      Some("/home/ferris/projects")
+      true
+      ["/", "home", "ferris", "projects", "game.tar.gz"]
+      settings/app.json Some("settings/app.json")
+    explain: "Output from Linux; on Windows the separator is `\\`. `display()` is for printing only: it replaces bytes that are not valid UTF-8."
+
+  - type: code
+    lang: rust
+    code: |
+      use std::fs;
+      use std::io;
+
+      fn main() -> io::Result<()> {
+          let root = std::env::temp_dir().join(format!("rust-course-dir-{}", std::process::id()));
+          fs::create_dir_all(root.join("src/bin"))?;
+          fs::write(root.join("Cargo.toml"), "[package]\n")?;
+          fs::write(root.join("src/main.rs"), "fn main() {}\n")?;
+
+          let mut names: Vec<String> = Vec::new();
+          for entry in fs::read_dir(&root)? {
+              let entry = entry?;
+              let kind = if entry.file_type()?.is_dir() { "dir " } else { "file" };
+              names.push(format!("{kind} {}", entry.file_name().to_string_lossy()));
+          }
+          names.sort(); // read_dir has no guaranteed order
+          for n in &names {
+              println!("{n}");
+          }
+
+          let text = fs::read_to_string(root.join("src/main.rs"))?;
+          println!("main.rs: {}", text.trim());
+
+          fs::remove_dir_all(&root)?;
+          Ok(())
+      }
+    output: |
+      dir  src
+      file Cargo.toml
+      main.rs: fn main() {}
+
+  - type: text
+    title: io::Error
+    md: |
+      Every I/O operation returns `io::Result<T>`, an alias for `Result<T, io::Error>`. An `io::Error` has a **`kind()`** you can match on: `NotFound`, `PermissionDenied`, `AlreadyExists`, `UnexpectedEof`, and so on. That lets you treat "the file does not exist yet" differently from "the disk is broken":
+
+  - type: code
+    lang: rust
+    code: |
+      use std::fs;
+      use std::io::ErrorKind;
+
+      fn load_or_default(path: &str) -> String {
+          match fs::read_to_string(path) {
+              Ok(text) => text,
+              Err(e) if e.kind() == ErrorKind::NotFound => String::from("(defaults)"),
+              Err(e) => panic!("cannot read {path}: {e}"),
+          }
+      }
+
+      fn main() {
+          println!("{}", load_or_default("/definitely/not/here.toml"));
+          let e = fs::File::open("/definitely/not/here.toml").unwrap_err();
+          println!("{:?}: {}", e.kind(), e);
+      }
+    output: |
+      (defaults)
+      NotFound: No such file or directory (os error 2)
+
+  - type: playground
+    id: ch22-play-wc
+    title: "Word count over any reader"
+    lang: rust
+    md: |
+      Write `wc<R: BufRead>(input: R) -> io::Result<(usize, usize, usize)>` returning lines, words and bytes, like the Unix `wc`. Count bytes from each line's length plus its newline: use `read_line` in a loop (it keeps the `\n` and returns 0 at the end) rather than `lines()`, which drops it.
+    task: "Print `(3, 7, 34)` and `(0, 0, 0)`."
+    code: |
+      use std::io::{self, BufRead};
+
+      fn wc<R: BufRead>(mut input: R) -> io::Result<(usize, usize, usize)> {
+          let mut line = String::new();
+          // loop with input.read_line(&mut line)?
+          Ok((0, 0, 0))
+      }
+
+      fn main() -> io::Result<()> {
+          let text = "the quick brown\nfox jumps\nover it\n";
+          println!("{:?}", wc(text.as_bytes())?);
+          println!("{:?}", wc(io::Cursor::new(""))?);
+          Ok(())
+      }
+    expected_output: |
+      (3, 7, 34)
+      (0, 0, 0)
+    solution_code: |
+      use std::io::{self, BufRead};
+
+      fn wc<R: BufRead>(mut input: R) -> io::Result<(usize, usize, usize)> {
+          let (mut lines, mut words, mut bytes) = (0, 0, 0);
+          let mut line = String::new();
+          loop {
+              line.clear();
+              let n = input.read_line(&mut line)?;
+              if n == 0 {
+                  break;
+              }
+              bytes += n;
+              if line.ends_with('\n') {
+                  lines += 1;
+              }
+              words += line.split_whitespace().count();
+          }
+          Ok((lines, words, bytes))
+      }
+
+      fn main() -> io::Result<()> {
+          let text = "the quick brown\nfox jumps\nover it\n";
+          println!("{:?}", wc(text.as_bytes())?);
+          println!("{:?}", wc(io::Cursor::new(""))?);
+          Ok(())
+      }
+    hints:
+      - "`read_line` appends, so `line.clear()` at the start of each round."
+      - "`wc` counts newline characters as lines, which is why a last line without `\\n` is not counted."
+
+  - type: exercise
+    id: ch22-ex-io
+    exercise_dir: ch22-io
+    title: "Text tools over readers and writers"
+    difficulty: medium
+    goal: "Write I/O code once against Read, BufRead and Write so it runs on files and in memory, and handle io::Error kinds."
+    behavior: |
+      - `pub fn grep<R: BufRead, W: Write>(input: R, pattern: &str, out: W) -> io::Result<usize>`: write every line containing `pattern` as `"<line number>:<line>\n"` (numbers start at 1); return the number of matches.
+      - `pub fn parse_config<R: BufRead>(input: R) -> io::Result<HashMap<String, String>>`: lines `key = value`; trim both sides; skip blank lines and lines starting with `#`; a line without `=` is an error of kind `InvalidData` whose message mentions the line number, e.g. `"line 3: expected key = value"`.
+      - `pub fn save_lines(path: &Path, lines: &[&str]) -> io::Result<()>`: write the lines, each followed by `\n`, through a `BufWriter`, creating parent directories as needed.
+      - `pub fn load_lines(path: &Path) -> io::Result<Vec<String>>`: read them back; a missing file gives an empty `Vec` (not an error).
+      - `pub fn largest_file(dir: &Path) -> io::Result<Option<(String, u64)>>`: the name and size of the largest regular file directly inside `dir` (ignore subdirectories); `None` if there are none.
+    examples:
+      - input: "grep(\"a\\nbanana\\ncherry\".as_bytes(), \"an\", &mut out)"
+        output: "Ok(1), out = \"2:banana\\n\""
+    hints:
+      - "`io::Error::new(io::ErrorKind::InvalidData, format!(\"line {n}: expected key = value\"))`."
+      - "`if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }`."
+      - "`Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Vec::new())`."
+      - "`entry.metadata()?.is_file()` and `.len()`."
+    rust:
+      starter: |
+        use std::collections::HashMap;
+        use std::fs;
+        use std::io::{self, BufRead, BufWriter, Write};
+        use std::path::Path;
+
+        pub fn grep<R: BufRead, W: Write>(input: R, pattern: &str, mut out: W) -> io::Result<usize> {
+            todo!()
+        }
+
+        pub fn parse_config<R: BufRead>(input: R) -> io::Result<HashMap<String, String>> {
+            todo!()
+        }
+
+        pub fn save_lines(path: &Path, lines: &[&str]) -> io::Result<()> {
+            todo!()
+        }
+
+        pub fn load_lines(path: &Path) -> io::Result<Vec<String>> {
+            todo!()
+        }
+
+        pub fn largest_file(dir: &Path) -> io::Result<Option<(String, u64)>> {
+            todo!()
+        }
+      tests: |
+        use super::*;
+        use std::io::Cursor;
+        use std::path::PathBuf;
+
+        fn scratch(name: &str) -> PathBuf {
+            let p = std::env::temp_dir().join(format!("ch22-io-{}-{name}", std::process::id()));
+            let _ = fs::remove_dir_all(&p);
+            p
+        }
+
+        #[test]
+        fn grepping() {
+            let mut out = Vec::new();
+            let n = grep("apple\nbanana\ncherry\nmango".as_bytes(), "an", &mut out).unwrap();
+            assert_eq!(n, 2);
+            assert_eq!(String::from_utf8(out).unwrap(), "2:banana\n4:mango\n");
+            let mut none = Vec::new();
+            assert_eq!(grep(Cursor::new(""), "x", &mut none).unwrap(), 0);
+            assert!(none.is_empty());
+        }
+
+        #[test]
+        fn config() {
+            let text = "# settings\nname = ferris\n\n  port=8080  \nmotto = a = b\n";
+            let cfg = parse_config(text.as_bytes()).unwrap();
+            assert_eq!(cfg["name"], "ferris");
+            assert_eq!(cfg["port"], "8080");
+            assert_eq!(cfg["motto"], "a = b", "split at the first =");
+            assert_eq!(cfg.len(), 3);
+        }
+
+        #[test]
+        fn config_errors() {
+            let err = parse_config("a = 1\n\njust words\n".as_bytes()).unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+            assert!(err.to_string().contains("line 3"), "{err}");
+        }
+
+        #[test]
+        fn files_roundtrip() {
+            let dir = scratch("roundtrip");
+            let path = dir.join("nested/deeper/notes.txt");
+            save_lines(&path, &["first", "second", ""]).unwrap();
+            assert_eq!(fs::read_to_string(&path).unwrap(), "first\nsecond\n\n");
+            assert_eq!(load_lines(&path).unwrap(), ["first", "second", ""]);
+            assert!(load_lines(&dir.join("missing.txt")).unwrap().is_empty());
+            fs::remove_dir_all(&dir).unwrap();
+        }
+
+        #[test]
+        fn biggest() {
+            let dir = scratch("biggest");
+            fs::create_dir_all(dir.join("sub")).unwrap();
+            assert_eq!(largest_file(&dir).unwrap(), None);
+            fs::write(dir.join("a.txt"), "12345").unwrap();
+            fs::write(dir.join("b.txt"), "123456789").unwrap();
+            fs::write(dir.join("sub/huge.txt"), "x".repeat(1000)).unwrap();
+            assert_eq!(largest_file(&dir).unwrap(), Some((String::from("b.txt"), 9)));
+            fs::remove_dir_all(&dir).unwrap();
+        }
+      solution: |
+        use std::collections::HashMap;
+        use std::fs;
+        use std::io::{self, BufRead, BufWriter, Write};
+        use std::path::Path;
+
+        pub fn grep<R: BufRead, W: Write>(input: R, pattern: &str, mut out: W) -> io::Result<usize> {
+            let mut matches = 0;
+            for (i, line) in input.lines().enumerate() {
+                let line = line?;
+                if line.contains(pattern) {
+                    matches += 1;
+                    writeln!(out, "{}:{}", i + 1, line)?;
+                }
+            }
+            Ok(matches)
+        }
+
+        pub fn parse_config<R: BufRead>(input: R) -> io::Result<HashMap<String, String>> {
+            let mut map = HashMap::new();
+            for (i, line) in input.lines().enumerate() {
+                let line = line?;
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                let Some((k, v)) = line.split_once('=') else {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("line {}: expected key = value", i + 1),
+                    ));
+                };
+                map.insert(k.trim().to_string(), v.trim().to_string());
+            }
+            Ok(map)
+        }
+
+        pub fn save_lines(path: &Path, lines: &[&str]) -> io::Result<()> {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut w = BufWriter::new(fs::File::create(path)?);
+            for line in lines {
+                writeln!(w, "{line}")?;
+            }
+            w.flush()
+        }
+
+        pub fn load_lines(path: &Path) -> io::Result<Vec<String>> {
+            match fs::File::open(path) {
+                Ok(f) => io::BufReader::new(f).lines().collect(),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+                Err(e) => Err(e),
+            }
+        }
+
+        pub fn largest_file(dir: &Path) -> io::Result<Option<(String, u64)>> {
+            let mut best: Option<(String, u64)> = None;
+            for entry in fs::read_dir(dir)? {
+                let entry = entry?;
+                let meta = entry.metadata()?;
+                if !meta.is_file() {
+                    continue;
+                }
+                let size = meta.len();
+                if best.as_ref().map_or(true, |(_, b)| size > *b) {
+                    best = Some((entry.file_name().to_string_lossy().into_owned(), size));
+                }
+            }
+            Ok(best)
+        }
+    solution_explain: "`grep` and `parse_config` never mention files, so the tests feed them byte slices and capture output in a `Vec<u8>`. `lines().collect()` into `io::Result<Vec<String>>` stops at the first error, as in chapter 13. Matching on `e.kind()` separates the expected missing file from real failures."
+
+  - type: quiz
+    id: ch22-quiz-io
+    title: Check yourself
+    questions:
+      - type: single
+        q: "Why write `fn f<R: Read>(r: R)` instead of `fn f(file: File)`?"
+        options: ["It is faster", "It works with files, stdin, sockets and in-memory bytes, and is easy to test", "File cannot be passed by value", "Style only"]
+        answer: 1
+        explanation: "Generic over the trait."
+      - type: single
+        q: "Which adds `lines()` and `read_line`?"
+        options: ["Read", "Write", "BufRead", "Seek"]
+        answer: 2
+        explanation: "Wrap a File in BufReader to get it."
+      - type: single
+        q: "What does `File::create` do to an existing file?"
+        options: ["Appends", "Truncates it to zero length", "Fails", "Renames it"]
+        answer: 1
+        explanation: "Use OpenOptions with append(true) to append."
+      - type: single
+        q: "Why does `path.to_str()` return an Option?"
+        options: ["Paths may be empty", "File names need not be valid UTF-8", "It allocates", "For speed"]
+        answer: 1
+        explanation: "Paths are OsStr underneath."
+      - type: single
+        q: "How do you tell a missing file from other errors?"
+        options: ["Parse the message", "Match `e.kind()` against `ErrorKind::NotFound`", "Check the path first", "You cannot"]
+        answer: 1
+        explanation: "Checking first races with other processes anyway."
+
+  - type: summary
+    points:
+      - "Read, BufRead and Write unify files, standard streams, sockets and memory."
+      - "Write functions generic over the traits and test them with byte slices and Vec<u8>."
+      - "OpenOptions controls the file mode; BufReader and BufWriter cut system calls; flush explicitly."
+      - "Path and PathBuf handle file names portably; std::fs covers whole-file and directory operations."
+      - "io::Error::kind() lets you handle expected failures like NotFound."
+terms:
+  - term: Read
+    def: "The trait for byte sources, with read, read_exact, read_to_end and read_to_string."
+  - term: BufRead
+    def: "A buffered reader trait adding read_line and lines."
+  - term: Write
+    def: "The trait for byte sinks, with write_all and flush."
+  - term: OpenOptions
+    def: "A builder for opening files with a chosen combination of read, write, append, create and truncate."
+  - term: PathBuf
+    def: "An owned, growable file system path; Path is its borrowed form."
+  - term: Cursor
+    def: "An in-memory buffer that implements Read, Write and Seek."

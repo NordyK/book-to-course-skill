@@ -1,0 +1,223 @@
+{
+  "title": "actionkv: a log-structured key-value store",
+  "summary": "Rust in Action's actionkv: the key-value model, the Bitcask record format, an append-only log with an in-memory index, loading by scanning, insert, get with seek, update and delete with tombstones, why append-only survives crashes, compaction, and choosing between HashMap and BTreeMap for the index.",
+  "minutes": 45,
+  "source": {
+    "chapter": "ch22",
+    "sections": [
+      "RiA 7.5 Implementing a key-value store with a log-structured, append-only storage architecture",
+      "RiA 7.5.1 The key-value model",
+      "RiA 7.5.2 Introducing actionkv v0.1",
+      "RiA 7.6 actionkv v0.1 front-end code",
+      "RiA 7.7 Understanding the core of actionkv: the libactionkv crate",
+      "RiA 7.7.1 Initializing the ActionKV struct",
+      "RiA 7.7.2 Processing an individual record",
+      "RiA 7.7.5 Inserting a new key-value pair into an existing database",
+      "RiA 7.7.6 libactionkv full code listing",
+      "RiA 7.7.7 Working with keys and values with HashMap and BTreeMap",
+      "RiA 7.7.10 How to decide between HashMap and BTreeMap"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Time for something larger. *Rust in Action* builds **actionkv**, a small database. It is a **key-value store**: it stores values (arbitrary bytes) under keys (also bytes) and supports four operations: `get`, `insert`, `update` and `delete`. You can ask \"what is the capital of Fiji?\" but not \"list every capital in the Pacific\"; that trade-off makes key-value stores simple and fast.\n\nactionkv uses the **log-structured, append-only** design of **Bitcask**, the storage engine of the Riak database:\n\n- the data file is a **log**: records are only ever **appended**, never changed in place;\n- an **index** in memory maps each key to the byte position of its latest record;\n- an update is a new record for the same key; the index moves to it;\n- a delete is a **tombstone**: a record with an empty value.\n"
+    },
+    {
+      "type": "svg",
+      "caption": "The log on disk and the index in memory after insert a, insert b, update a",
+      "svg": "<svg viewBox=\"0 0 640 190\" xmlns=\"http://www.w3.org/2000/svg\" font-family=\"monospace\" font-size=\"13\" fill=\"none\" stroke=\"currentColor\">\n  <text x=\"20\" y=\"22\" fill=\"currentColor\" stroke=\"none\">log file (append only) →</text>\n  <rect x=\"20\" y=\"32\" width=\"180\" height=\"40\" stroke-dasharray=\"4 3\"/><text x=\"30\" y=\"57\" fill=\"currentColor\" stroke=\"none\">@0  a = \"1\" (stale)</text>\n  <rect x=\"200\" y=\"32\" width=\"180\" height=\"40\"/><text x=\"210\" y=\"57\" fill=\"currentColor\" stroke=\"none\">@14 b = \"2\"</text>\n  <rect x=\"380\" y=\"32\" width=\"200\" height=\"40\"/><text x=\"390\" y=\"57\" fill=\"currentColor\" stroke=\"none\">@28 a = \"3\"</text>\n  <text x=\"20\" y=\"122\" fill=\"currentColor\" stroke=\"none\">index (HashMap in memory)</text>\n  <rect x=\"20\" y=\"132\" width=\"140\" height=\"28\"/><text x=\"30\" y=\"151\" fill=\"currentColor\" stroke=\"none\">\"a\" → 28</text>\n  <rect x=\"20\" y=\"160\" width=\"140\" height=\"28\"/><text x=\"30\" y=\"179\" fill=\"currentColor\" stroke=\"none\">\"b\" → 14</text>\n  <path d=\"M160 146 C 300 146, 420 120, 470 72\"/><path d=\"M462 78 L470 72 L472 82\"/>\n  <path d=\"M160 174 C 240 174, 280 120, 290 72\"/><path d=\"M284 80 L290 72 L294 81\"/>\n</svg>\n"
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "title": "Why append-only?",
+      "md": "Old data is never overwritten, so a crash in the middle of a write can only damage the **last** record, and its checksum reveals that. Appending is also the fastest way to write to a disk. The costs: the file grows with every update, and the index must be rebuilt by scanning the log on startup (or saved separately, which is what *Rust in Action*'s `akv_disk` does)."
+    },
+    {
+      "type": "text",
+      "title": "The record format",
+      "md": "Each record is the format from the previous lesson: a 12-byte header of little-endian `u32`s (CRC32 checksum, key length, value length), then the key and the value. *Rust in Action* reads it with the `byteorder` and `crc` crates; below, the same logic uses only the standard library. `process_record` accepts any `Read`, so it works on files and on byte slices.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::collections::HashMap;\nuse std::fs::{File, OpenOptions};\nuse std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};\nuse std::path::Path;\n\ntype ByteString = Vec<u8>;\ntype ByteStr = [u8];\n\npub struct KeyValuePair {\n    pub key: ByteString,\n    pub value: ByteString,\n}\n\npub struct ActionKV {\n    f: File,\n    pub index: HashMap<ByteString, u64>,\n}\n\nfn crc32(data: &[u8]) -> u32 {\n    let mut crc = !0u32;\n    for &byte in data {\n        crc ^= byte as u32;\n        for _ in 0..8 {\n            crc = (crc >> 1) ^ (0xEDB8_8320 & (crc & 1).wrapping_neg());\n        }\n    }\n    !crc\n}\n\nfn read_u32<R: Read>(f: &mut R) -> io::Result<u32> {\n    let mut b = [0u8; 4];\n    f.read_exact(&mut b)?;\n    Ok(u32::from_le_bytes(b))\n}\n\nimpl ActionKV {\n    pub fn open(path: &Path) -> io::Result<Self> {\n        let f = OpenOptions::new().read(true).write(true).create(true).append(true).open(path)?;\n        Ok(ActionKV { f, index: HashMap::new() })\n    }\n\n    fn process_record<R: Read>(f: &mut R) -> io::Result<KeyValuePair> {\n        let saved_checksum = read_u32(f)?;\n        let key_len = read_u32(f)?;\n        let val_len = read_u32(f)?;\n        let data_len = key_len + val_len;\n\n        let mut data = ByteString::with_capacity(data_len as usize);\n        f.by_ref().take(data_len as u64).read_to_end(&mut data)?;\n        debug_assert_eq!(data.len(), data_len as usize);\n\n        let checksum = crc32(&data);\n        if checksum != saved_checksum {\n            panic!(\"data corruption encountered ({:08x} != {:08x})\", checksum, saved_checksum);\n        }\n\n        let value = data.split_off(key_len as usize);\n        let key = data;\n        Ok(KeyValuePair { key, value })\n    }\n\n    pub fn load(&mut self) -> io::Result<()> {\n        let mut f = BufReader::new(&mut self.f);\n        f.seek(SeekFrom::Start(0))?;\n        loop {\n            let position = f.stream_position()?;\n            let kv = match ActionKV::process_record(&mut f) {\n                Ok(kv) => kv,\n                Err(err) => match err.kind() {\n                    io::ErrorKind::UnexpectedEof => break,\n                    _ => return Err(err),\n                },\n            };\n            self.index.insert(kv.key, position);\n        }\n        Ok(())\n    }\n\n    pub fn get(&mut self, key: &ByteStr) -> io::Result<Option<ByteString>> {\n        let position = match self.index.get(key) {\n            None => return Ok(None),\n            Some(position) => *position,\n        };\n        let kv = self.get_at(position)?;\n        // an empty value is a tombstone left by delete\n        Ok(if kv.value.is_empty() { None } else { Some(kv.value) })\n    }\n\n    pub fn get_at(&mut self, position: u64) -> io::Result<KeyValuePair> {\n        let mut f = BufReader::new(&mut self.f);\n        f.seek(SeekFrom::Start(position))?;\n        ActionKV::process_record(&mut f)\n    }\n\n    pub fn insert(&mut self, key: &ByteStr, value: &ByteStr) -> io::Result<()> {\n        let position = self.insert_but_ignore_index(key, value)?;\n        self.index.insert(key.to_vec(), position);\n        Ok(())\n    }\n\n    fn insert_but_ignore_index(&mut self, key: &ByteStr, value: &ByteStr) -> io::Result<u64> {\n        let key_len = key.len();\n        let val_len = value.len();\n        let mut tmp = ByteString::with_capacity(key_len + val_len);\n        tmp.extend_from_slice(key);\n        tmp.extend_from_slice(value);\n        let checksum = crc32(&tmp);\n\n        let position = self.f.seek(SeekFrom::End(0))?;\n        let mut f = BufWriter::new(&mut self.f);\n        f.write_all(&checksum.to_le_bytes())?;\n        f.write_all(&(key_len as u32).to_le_bytes())?;\n        f.write_all(&(val_len as u32).to_le_bytes())?;\n        f.write_all(&tmp)?;\n        f.flush()?;\n        Ok(position)\n    }\n\n    #[inline]\n    pub fn update(&mut self, key: &ByteStr, value: &ByteStr) -> io::Result<()> {\n        self.insert(key, value)\n    }\n\n    #[inline]\n    pub fn delete(&mut self, key: &ByteStr) -> io::Result<()> {\n        self.insert(key, b\"\")\n    }\n}\n\nfn main() -> io::Result<()> {\n    let path = std::env::temp_dir().join(format!(\"akv-{}.db\", std::process::id()));\n    let _ = std::fs::remove_file(&path);\n\n    {\n        let mut store = ActionKV::open(&path)?;\n        store.load()?;\n        store.insert(b\"Fiji\", b\"Suva\")?;\n        store.insert(b\"Kiribati\", b\"South Tarawa\")?;\n        store.insert(b\"Cook Islands\", b\"Avarua\")?;\n        store.update(b\"Kiribati\", b\"Tarawa\")?;\n        store.delete(b\"Cook Islands\")?;\n    } // the store is dropped: only the file remains\n\n    let mut store = ActionKV::open(&path)?;\n    store.load()?;\n    for key in [&b\"Fiji\"[..], b\"Kiribati\", b\"Cook Islands\"] {\n        match store.get(key)? {\n            Some(v) => println!(\"{} -> {}\", String::from_utf8_lossy(key), String::from_utf8_lossy(&v)),\n            None => println!(\"{} not found\", String::from_utf8_lossy(key)),\n        }\n    }\n    println!(\"{} records on disk, {} bytes\", 5, std::fs::metadata(&path)?.len());\n    std::fs::remove_file(&path)?;\n    Ok(())\n}\n",
+      "output": "Fiji -> Suva\nKiribati -> Tarawa\nCook Islands not found\n5 records on disk, 132 bytes\n",
+      "explain": "After reopening, `load` replays the whole log: later records for the same key overwrite earlier positions in the index, so the update and the tombstone win. Five records are on disk even though only two keys are alive; that waste is what compaction removes."
+    },
+    {
+      "type": "stepper",
+      "title": "What each operation costs",
+      "steps": [
+        {
+          "title": "open + load: O(size of the log)",
+          "md": "Read every record once and remember the newest position per key. This is the price of not saving the index."
+        },
+        {
+          "title": "insert / update / delete: one append",
+          "md": "Seek to the end, write header and body, flush. No existing byte is touched."
+        },
+        {
+          "title": "get: one hash lookup and one seek",
+          "md": "The index gives the position; `seek` jumps there and `process_record` reads one record, checking its checksum."
+        },
+        {
+          "title": "compaction: rewrite live records",
+          "md": "Copy only the records the index points to (and skip tombstones) into a new file, then rename it over the old one. Real systems do this in the background."
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "HashMap or BTreeMap for the index?",
+      "md": "Both store key-value pairs. A **`HashMap`** hashes the key to find a bucket: lookups are O(1) on average, but iteration order is arbitrary. A **`BTreeMap`** keeps keys **sorted** in a B-tree: lookups are O(log n), iteration is in order, and **range queries** are possible. *Rust in Action*'s rule: use `HashMap` unless you need ordering or ranges.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::collections::BTreeMap;\n\nfn main() {\n    let mut voc = BTreeMap::new();\n    voc.insert(3_697_915, \"Amsterdam\");\n    voc.insert(1_300_405, \"Middelburg\");\n    voc.insert(540_000, \"Enkhuizen\");\n    voc.insert(469_400, \"Delft\");\n    voc.insert(266_868, \"Hoorn\");\n    voc.insert(173_000, \"Rotterdam\");\n\n    for (guilders, kamer) in &voc {\n        println!(\"{kamer} invested {guilders}\");\n    }\n\n    print!(\"smaller chambers: \");\n    for (_guilders, kamer) in voc.range(0..500_000) {\n        print!(\"{kamer} \");\n    }\n    println!();\n}\n",
+      "output": "Rotterdam invested 173000\nHoorn invested 266868\nDelft invested 469400\nEnkhuizen invested 540000\nMiddelburg invested 1300405\nAmsterdam invested 3697915\nsmaller chambers: Rotterdam Hoorn Delft\n",
+      "explain": "The investments of the Dutch East India Company's chambers, keyed by amount. Iteration is sorted by key, and `range(0..500_000)` visits only the keys in that range."
+    },
+    {
+      "type": "playground",
+      "id": "ch22-play-kv",
+      "title": "A tiny in-memory log",
+      "lang": "rust",
+      "md": "Without files: keep the log as a `Vec<(String, Option<String>)>` (None is a tombstone) and an index `HashMap<String, usize>` of positions. Implement `set`, `del` and `get`, then `compact`, which builds a new log with only live entries and a fresh index.\n",
+      "task": "Print `Some(\"3\") None 4` and then `Some(\"3\") 1` after compaction.",
+      "code": "use std::collections::HashMap;\n\nstruct Log {\n    entries: Vec<(String, Option<String>)>,\n    index: HashMap<String, usize>,\n}\n\nimpl Log {\n    fn set(&mut self, k: &str, v: &str) { /* TODO */ }\n    fn del(&mut self, k: &str) { /* TODO */ }\n    fn get(&self, k: &str) -> Option<&str> { None /* TODO */ }\n    fn compact(&mut self) { /* TODO */ }\n}\n\nfn main() {\n    let mut log = Log { entries: vec![], index: HashMap::new() };\n    log.set(\"a\", \"1\");\n    log.set(\"b\", \"2\");\n    log.set(\"a\", \"3\");\n    log.del(\"b\");\n    println!(\"{:?} {:?} {}\", log.get(\"a\"), log.get(\"b\"), log.entries.len());\n    log.compact();\n    println!(\"{:?} {}\", log.get(\"a\"), log.entries.len());\n}\n",
+      "expected_output": "Some(\"3\") None 4\nSome(\"3\") 1\n",
+      "hints": [
+        "Every operation pushes to `entries` and points the index at the new position.",
+        "`as_deref()` turns `&Option<String>` into `Option<&str>`."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch22-ex-kv",
+      "exercise_dir": "ch22-actionkv",
+      "title": "actionkv over any storage",
+      "difficulty": "hard",
+      "goal": "Implement the log-structured store generically over Read + Write + Seek so it runs on files and in memory, with crash safety and compaction.",
+      "behavior": "`pub struct ActionKV<F: Read + Write + Seek> { f: F, pub index: HashMap<Vec<u8>, u64> }`. Records use the Bitcask layout: `[crc32 u32 LE][key_len u32 LE][val_len u32 LE][key][value]`, the checksum covering key + value.\n- `pub fn open(f: F) -> io::Result<Self>`: scan the whole log from the start, building the index. A clean end (no bytes left) stops the scan. A **truncated last record** (a crash during a write) also stops it: ignore that partial record. A record whose checksum is wrong is an error of kind `InvalidData`.\n- The index holds **live keys only**: a tombstone (a record with an empty value) removes its key from the index, both in `delete` and while scanning in `open` (as in *Rust in Action*, storing an empty value therefore means deleting).\n- `pub fn get(&mut self, key: &[u8]) -> io::Result<Option<Vec<u8>>>`: seek to the indexed position and read that record.\n- `pub fn insert`, `update` (same as insert) and `delete` (appends a tombstone; deleting a missing key does nothing and writes nothing).\n- `pub fn len(&self) -> usize`: the number of live keys.\n- `pub fn compact<G: Read + Write + Seek>(&mut self, into: G) -> io::Result<ActionKV<G>>`: write only the live records, in sorted key order, to `into` and return a store over it.\n- `pub fn into_inner(self) -> F`.\n",
+      "examples": [
+        {
+          "input": "insert a=1, insert b=2, update a=3, delete b; reopen; get a",
+          "output": "Some(b\"3\")"
+        }
+      ],
+      "hints": [
+        "Write with `self.f.seek(SeekFrom::End(0))?` and remember that position: it is where the record starts.",
+        "In `open`, read the 12-byte header with `read_exact`. `UnexpectedEof` on the header or the body means a clean end or a torn write: stop.",
+        "While scanning: `if value.is_empty() { index.remove(&key); } else { index.insert(key, pos); }`.",
+        "Compaction: collect the index keys into a `Vec`, sort it, `get` each one and insert the live ones into `ActionKV::open(into)?`."
+      ],
+      "solution_explain": "The store never assumes a file: `Cursor<Vec<u8>>` in the tests, `File` in a real program. Treating `UnexpectedEof` while reading as the end of the log is what makes a torn last write harmless; a checksum mismatch in a complete record is real corruption and is reported."
+    },
+    {
+      "type": "quiz",
+      "id": "ch22-quiz-kv",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "How does actionkv update a value?",
+          "options": [
+            "Overwrites the old record in place",
+            "Appends a new record and points the index at it",
+            "Deletes the file and rewrites it",
+            "Edits the index only"
+          ],
+          "answer": 1,
+          "explanation": "Append-only."
+        },
+        {
+          "type": "single",
+          "q": "How is a delete stored?",
+          "options": [
+            "The record is removed from the file",
+            "A tombstone: a record with an empty value",
+            "The key is renamed",
+            "It is not stored"
+          ],
+          "answer": 1,
+          "explanation": "So a reload knows the key is gone."
+        },
+        {
+          "type": "single",
+          "q": "Why does an append-only log survive crashes well?",
+          "options": [
+            "It uses no disk",
+            "Existing data is never overwritten, so only the last record can be damaged, and its checksum shows it",
+            "It writes twice",
+            "It does not"
+          ],
+          "answer": 1,
+          "explanation": "Torn writes affect only the tail."
+        },
+        {
+          "type": "single",
+          "q": "What does the in-memory index store?",
+          "options": [
+            "The values",
+            "For each key, the byte position of its latest record",
+            "Checksums",
+            "File names"
+          ],
+          "answer": 1,
+          "explanation": "get seeks there."
+        },
+        {
+          "type": "single",
+          "q": "When should the index be a BTreeMap rather than a HashMap?",
+          "options": [
+            "Always",
+            "When you need keys in order or range queries",
+            "When keys are strings",
+            "Never"
+          ],
+          "answer": 1,
+          "explanation": "Otherwise HashMap is faster."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "A key-value store maps byte keys to byte values with get, insert, update and delete.",
+        "actionkv appends Bitcask records (checksum, lengths, key, value) and keeps an index of positions in memory.",
+        "Updates append; deletes append tombstones; loading replays the log so the latest record wins.",
+        "Append-only logs are crash-friendly and fast to write but grow until compacted.",
+        "Writing against Read + Write + Seek lets the same store run on files and in memory."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "key-value store",
+      "def": "A database that stores values under keys and retrieves them by exact key."
+    },
+    {
+      "term": "append-only log",
+      "def": "A file that is only ever written at its end; old records are never modified."
+    },
+    {
+      "term": "index",
+      "def": "A data structure that maps keys to the positions of their records."
+    },
+    {
+      "term": "tombstone",
+      "def": "A record that marks a key as deleted."
+    },
+    {
+      "term": "compaction",
+      "def": "Rewriting a log to keep only the latest live record for each key."
+    },
+    {
+      "term": "Bitcask",
+      "def": "The log-structured storage format from the Riak database that actionkv implements."
+    }
+  ]
+}

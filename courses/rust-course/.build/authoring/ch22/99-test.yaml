@@ -1,0 +1,58 @@
+title: "Chapter test: Files, Storage and I/O"
+kind: test
+summary: Ten questions on readers and writers, files and paths, binary formats and the key-value store. You need 70% to pass; you can retry and your best score is kept.
+blocks:
+  - type: quiz
+    id: ch22-test
+    pass_score: 0.7
+    questions:
+      - type: single
+        q: "Which type lets you test a function taking `impl BufRead` without a file?"
+        options: ["`&[u8]` or `Cursor<Vec<u8>>`", "`String` only", "`PathBuf`", "`File::temp()`"]
+        answer: 0
+        explanation: "Both implement BufRead."
+      - type: single
+        q: "Which opens a file for appending, creating it if needed?"
+        options: ["`File::create(p)`", "`OpenOptions::new().append(true).create(true).open(p)`", "`File::open(p)`", "`fs::write(p, data)`"]
+        answer: 1
+        explanation: "create truncates; open is read-only."
+      - type: single
+        q: "Why wrap a File in a BufWriter when writing many small pieces?"
+        options: ["To make it thread-safe", "To group writes into fewer system calls", "To compress the data", "To add checksums"]
+        answer: 1
+        explanation: "Remember to flush."
+      - type: single
+        q: "What does `Path::new(\"a\").join(\"b.txt\").extension()` return?"
+        options: ["`\"txt\"`", "`Some(\"txt\")` as an OsStr", "`None`", "`\".txt\"`"]
+        answer: 1
+        explanation: "It returns Option<&OsStr>."
+      - type: single
+        q: "Which error kind does `read_exact` return when the data ends too early?"
+        options: ["NotFound", "UnexpectedEof", "InvalidData", "Interrupted"]
+        answer: 1
+        explanation: "Useful as an end-of-log signal."
+      - type: single
+        q: "How many bytes does `0xABCDu16.to_be_bytes()` produce, and which comes first?"
+        options: ["2, 0xAB", "2, 0xCD", "4, 0x00", "1, 0xAB"]
+        answer: 0
+        explanation: "Big-endian: most significant first."
+      - type: single
+        q: "What does a CRC32 stored next to a record let you do?"
+        options: ["Encrypt it", "Detect accidental corruption when reading it back", "Compress it", "Find it faster"]
+        answer: 1
+        explanation: "Recompute and compare."
+      - type: single
+        q: "In actionkv, what does loading the store do?"
+        options: ["Reads a saved index file only", "Scans the whole log and records each key's latest position", "Nothing", "Sorts the file"]
+        answer: 1
+        explanation: "Later records win."
+      - type: single
+        q: "What is compaction?"
+        options: ["Zipping the file", "Rewriting the log with only the live, latest records", "Deleting the index", "Merging two databases"]
+        answer: 1
+        explanation: "It removes stale records and tombstones."
+      - type: multi
+        q: "Which are true of an append-only log?"
+        options: ["Writes go to the end only", "A crash can damage at most the last record", "Updates overwrite old records", "The file grows until compacted"]
+        answer: [0, 1, 3]
+        explanation: "Updates append."

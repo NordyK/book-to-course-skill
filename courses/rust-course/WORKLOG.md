@@ -116,3 +116,9 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
   Q7 fixed-point and mock_rand; the CHIP-8 style CPU emulator (adder, loop over memory, CALL/RET stack).
   10-question test; exercises ch21-bits, ch21-fixed (Q8.8), ch21-cpu (jumps, skips, loops in machine code);
   4 playgrounds. 49 exercises verified.
+- Chapter 22 done (Files, Storage and I/O): Read/BufRead/Write and generic I/O, files, OpenOptions, buffering,
+  std::fs, Path/PathBuf, io::ErrorKind; byte strings, fview hexdump and its read_exact pitfall, explicit byte order
+  (std replacement for byteorder), Seek, serde/bincode as a note, CRC32 by hand; actionkv (Bitcask records, log +
+  index, tombstones, reload, compaction, HashMap vs BTreeMap). 10-question test; exercises ch22-io, ch22-hexdump,
+  ch22-actionkv (generic over Read + Write + Seek, torn writes, corruption); 3 playgrounds. 52 exercises verified.
+  YAML note: an output block whose first line starts with spaces needs `output: |2`.
