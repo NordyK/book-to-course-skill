@@ -28,5 +28,7 @@ for ch in chs:
                 if not good: print("DIFF",ch,fn,b.get("title"),"\n  want:",exp,"\n  got:",st,out[:600])
                 elif n(out[:len(b['output'])+400]).find(n(b['output']))<0: print("NOTE text differs",ch,fn,"\n"+out[:900])
                 continue
+            # a main returning Result may exit non-zero on purpose; the stdout must still match
+            if st=="panic" and re.search(r"fn main\(\) -> Result", code): st="ok"
             if st!="ok" or n(out)!=n(b["output"]): print("DIFF",ch,fn,b.get("title"),st,"\n  want:",repr(n(b["output"])),"\n  got: ",repr(n(out) if st!='CE' else out[:400]))
 print("done")

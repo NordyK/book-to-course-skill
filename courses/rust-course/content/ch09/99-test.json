@@ -1,0 +1,130 @@
+{
+  "title": "Chapter test: Error Handling",
+  "kind": "test",
+  "summary": "Ten questions on panic!, Result, the ? operator and error types. You need 70% to pass; you can retry and your best score is kept.",
+  "blocks": [
+    {
+      "type": "quiz",
+      "id": "ch09-test",
+      "pass_score": 0.7,
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which of these is best handled with `panic!`?",
+          "options": [
+            "A config file is missing",
+            "A user enters a negative age",
+            "An internal invariant your code guarantees has been broken",
+            "A download times out"
+          ],
+          "answer": 2,
+          "explanation": "A broken invariant is a bug; the rest are expected failures."
+        },
+        {
+          "type": "single",
+          "q": "What does this print?",
+          "code": "let r: Result<i32, String> = Err(String::from(\"no\"));\nprintln!(\"{}\", r.unwrap_or(7));\n",
+          "lang": "rust",
+          "options": [
+            "no",
+            "7",
+            "It panics",
+            "Err(\"no\")"
+          ],
+          "answer": 1,
+          "explanation": "`unwrap_or` returns the default on `Err`."
+        },
+        {
+          "type": "single",
+          "q": "Inside `fn f() -> Result<u8, ParseIntError>`, what does `let n: u8 = \"300\".parse()?;` do?",
+          "options": [
+            "Sets n to 255",
+            "Panics",
+            "Returns `Err(...)` from `f` because 300 does not fit in a u8",
+            "Does not compile"
+          ],
+          "answer": 2,
+          "explanation": "The parse fails with an overflow error, which `?` returns early."
+        },
+        {
+          "type": "truefalse",
+          "q": "`?` can be used on an `Option` inside a function that returns `Option`.",
+          "answer": true,
+          "explanation": "On `None` it returns `None` from the function."
+        },
+        {
+          "type": "single",
+          "q": "What lets `?` turn a `ParseIntError` into your `MyError`?",
+          "options": [
+            "`impl Display for MyError`",
+            "`impl From<ParseIntError> for MyError`",
+            "`#[derive(Debug)]`",
+            "Nothing; it is automatic for all types"
+          ],
+          "answer": 1,
+          "explanation": "`?` calls `From::from` on the error."
+        },
+        {
+          "type": "single",
+          "q": "Which is the best `expect` message for parsing the literal `\"127.0.0.1\"` as an IP address?",
+          "options": [
+            "`expect(\"error\")`",
+            "`expect(\"hardcoded IP address should be valid\")`",
+            "`expect(\"\")`",
+            "`expect(\"failed\")`"
+          ],
+          "answer": 1,
+          "explanation": "Say why you expect it to succeed."
+        },
+        {
+          "type": "single",
+          "q": "What does `\"8\".parse::<i32>().map(|n| n * 2)` evaluate to?",
+          "options": [
+            "`16`",
+            "`Ok(16)`",
+            "`Some(16)`",
+            "`Err(16)`"
+          ],
+          "answer": 1,
+          "explanation": "`map` changes the `Ok` value and keeps the `Result` wrapper."
+        },
+        {
+          "type": "multi",
+          "q": "Which signatures allow `?` in `main`?",
+          "options": [
+            "`fn main()`",
+            "`fn main() -> Result<(), String>`",
+            "`fn main() -> Result<(), Box<dyn std::error::Error>>`",
+            "`fn main() -> i32`"
+          ],
+          "answer": [
+            1,
+            2
+          ],
+          "explanation": "`main` may return `Result<(), E>` where E implements Debug."
+        },
+        {
+          "type": "fill",
+          "q": "To print a backtrace when a program panics, set the environment variable RUST_BACKTRACE to ___.",
+          "answer": [
+            "1",
+            "full"
+          ],
+          "explanation": "`1` gives a short backtrace; `full` gives everything."
+        },
+        {
+          "type": "single",
+          "q": "Why keep a validated type's field private?",
+          "options": [
+            "It makes the code faster",
+            "So the only way to create a value is through the constructor that checks it",
+            "Rust requires it",
+            "To allow mutation"
+          ],
+          "answer": 1,
+          "explanation": "Then every value of the type is known to be valid."
+        }
+      ]
+    }
+  ]
+}

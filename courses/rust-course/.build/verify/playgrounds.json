@@ -134,5 +134,17 @@
  "ch08-play-vec": {
   "solution_code": "fn main() {\n    let mut grades = vec![76, 95, 63, 88, 70];\n    let total: i32 = grades.iter().sum();\n    let average = total as f64 / grades.len() as f64;\n    let best = grades.iter().max().unwrap();\n    println!(\"{} scores, average {average:.1}, best {best}\", grades.len());\n    grades.sort();\n    grades.reverse();\n    println!(\"{grades:?}\");\n}\n",
   "starter_ok": "run"
+ },
+ "ch09-play-panic": {
+  "solution_code": null,
+  "starter_ok": "panic"
+ },
+ "ch09-play-question": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch09-play-try-new": {
+  "solution_code": "struct Percent(u8);\n\nimpl Percent {\n    fn try_new(value: u8) -> Result<Percent, String> {\n        if value > 100 {\n            return Err(format!(\"{value} is more than 100\"));\n        }\n        Ok(Percent(value))\n    }\n}\n\nfn main() {\n    for v in [42, 120] {\n        match Percent::try_new(v) {\n            Ok(p) => println!(\"ok: {}%\", p.0),\n            Err(e) => println!(\"error: {e}\"),\n        }\n    }\n}\n",
+  "starter_ok": "compile_error"
  }
 }

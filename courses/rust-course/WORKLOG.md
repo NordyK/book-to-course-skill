@@ -65,3 +65,6 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
 - Chapter 8 done (Common Collections and Text): vectors, strings/UTF-8, hash maps + collection guide, 10-question
   test; exercises ch08-vectors, ch08-text, ch08-maps (verified); 3 playgrounds verified. Examples that print maps use
   BTreeMap so their output is deterministic.
+- Chapter 9 done (Error Handling): panic!/backtraces, Result + combinators + ? + custom error enums + Box<dyn Error>,
+  when to panic + validation types, 10-question test; exercises ch09-errors, ch09-validated (verified); 3 playgrounds
+  verified. `verify_codeblocks.py` lets a `fn main() -> Result` block exit non-zero (its stdout must still match).
