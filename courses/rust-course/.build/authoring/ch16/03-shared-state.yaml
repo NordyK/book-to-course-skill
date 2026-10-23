@@ -1,0 +1,470 @@
+title: "Shared-state concurrency"
+summary: "Mutex and its lock guard, why Rc fails across threads, Arc for atomic reference counting, Arc<Mutex<T>>, RwLock, atomics, condition variables in brief, deadlocks and poisoning, and the parallels with Rc<RefCell<T>>."
+minutes: 40
+source:
+  chapter: ch16
+  sections: ["TRPL 16.3 Shared-State Concurrency", "TRPL 16.3 Controlling Access with Mutexes", "TRPL 16.3 The API of Mutex<T>", "TRPL 16.3 Sharing Access to Mutex<T>", "TRPL 16.3 Multiple Ownership with Multiple Threads", "TRPL 16.3 Atomic Reference Counting with Arc<T>", "TRPL 16.3 Comparing RefCell<T>/Rc<T> and Mutex<T>/Arc<T>", "PR ch19 Shared Mutable State", "PR ch19 What Is a Mutex?", "PR ch19 Mutex<T>", "PR ch19 mut and Mutex", "PR ch19 Why Mutexes Are Not Always a Good Idea", "PR ch19 Deadlock", "PR ch19 Poisoned Mutexes", "PR ch19 Read/Write Locks (RwLock<T>)", "PR ch19 Condition Variables (Condvar)", "PR ch19 Atomics", "RiA 10.4 Thread pool", "CR Concurrency Afternoon Arc", "CR Concurrency Afternoon Mutex"]
+blocks:
+  - type: text
+    md: |
+      Message passing is one way to cooperate. The other is **shared state**: several threads access the same memory. Channels are like single ownership (a value moves from one owner to the next); shared state is like multiple ownership. Rust's types and ownership make it far less error-prone than in most languages.
+
+      The basic tool is a **mutex** (*mutual exclusion*): it lets only one thread at a time access the data. A thread must **lock** the mutex to get access and **unlock** it when done. In many languages forgetting either step is a common bug. In Rust, you cannot get at the data without locking, and unlocking happens automatically.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::sync::Mutex;
+
+      fn main() {
+          let m = Mutex::new(5);
+
+          {
+              let mut num = m.lock().unwrap();
+              *num = 6;
+          } // the guard is dropped here: the lock is released
+
+          println!("m = {m:?}");
+      }
+    output: "m = Mutex { data: 6, poisoned: false, .. }"
+    explain: "`lock()` blocks until the lock is free and returns a `MutexGuard`, a smart pointer to the data: `Deref` gives access, `Drop` releases the lock. The data inside a `Mutex` is only reachable through a guard, so you cannot forget to lock."
+
+  - type: text
+    title: Sharing a Mutex between threads
+    md: |
+      Ten threads should each increment one counter. A first attempt moves the mutex into the first thread, so the second cannot use it. Wrapping it in `Rc` to give it several owners fails too:
+
+  - type: code
+    lang: rust
+    code: |
+      use std::rc::Rc;
+      use std::sync::Mutex;
+      use std::thread;
+
+      fn main() {
+          let counter = Rc::new(Mutex::new(0));
+          let mut handles = vec![];
+
+          for _ in 0..10 {
+              let counter = Rc::clone(&counter);
+              let handle = thread::spawn(move || {
+                  let mut num = counter.lock().unwrap();
+                  *num += 1;
+              });
+              handles.push(handle);
+          }
+
+          for handle in handles {
+              handle.join().unwrap();
+          }
+
+          println!("Result: {}", *counter.lock().unwrap());
+      }
+    output: |
+      error[E0277]: `Rc<std::sync::Mutex<i32>>` cannot be sent between threads safely
+        --> src/main.rs:11:36
+         |
+      11 |           let handle = thread::spawn(move || {
+         |                        ------------- ^------
+         |                        |             |
+         |  ______________________|_____________within this `{closure@src/main.rs:11:36: 11:43}`
+         | |                      |
+         | |                      required by a bound introduced by this call
+      12 | |             let mut num = counter.lock().unwrap();
+      13 | |             *num += 1;
+      14 | |         });
+         | |_________^ `Rc<std::sync::Mutex<i32>>` cannot be sent between threads safely
+         |
+         = help: within `{closure@src/main.rs:11:36: 11:43}`, the trait `Send` is not implemented for `Rc<std::sync::Mutex<i32>>`
+      note: required because it's used within this closure
+        --> src/main.rs:11:36
+         |
+      11 |         let handle = thread::spawn(move || {
+         |                                    ^^^^^^^
+      note: required by a bound in `spawn`
+        --> /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/thread/functions.rs:125:0
+    output_label: Compiler output
+    explain: "`Rc` updates its count without synchronization. Two threads cloning or dropping at the same moment could corrupt the count and free the data too early or never. The compiler knows `Rc` is not `Send` (lesson 4) and refuses."
+
+  - type: text
+    title: Arc<T>
+    md: |
+      **`Arc<T>`** is the **atomically reference counted** version of `Rc<T>`: it updates the count with atomic CPU instructions that are safe across threads. Atomic operations cost a little more, which is why the standard library does not make every `Rc` atomic. The API is the same:
+
+  - type: code
+    lang: rust
+    code: |
+      use std::sync::{Arc, Mutex};
+      use std::thread;
+
+      fn main() {
+          let counter = Arc::new(Mutex::new(0));
+          let mut handles = vec![];
+
+          for _ in 0..10 {
+              let counter = Arc::clone(&counter);
+              let handle = thread::spawn(move || {
+                  let mut num = counter.lock().unwrap();
+                  *num += 1;
+              });
+              handles.push(handle);
+          }
+
+          for handle in handles {
+              handle.join().unwrap();
+          }
+
+          println!("Result: {}", *counter.lock().unwrap());
+      }
+    output: "Result: 10"
+    explain: "`counter` is not `mut`, yet each thread changes the number inside. `Mutex<T>` provides **interior mutability**, like `RefCell<T>`, but safe across threads."
+
+  - type: table
+    title: The single-threaded and multi-threaded pairs
+    headers: ["Single thread", "Across threads", "Purpose"]
+    rows:
+      - ["`Rc<T>`", "`Arc<T>`", "shared ownership"]
+      - ["`RefCell<T>`", "`Mutex<T>` / `RwLock<T>`", "mutation through a shared reference"]
+      - ["`Cell<T>`", "atomic types (`AtomicUsize`, `AtomicBool`...)", "lock-free updates of small values"]
+      - ["`Rc<RefCell<T>>`", "`Arc<Mutex<T>>`", "shared mutable data"]
+      - ["borrow error: panic", "lock contention: wait; deadlock possible", "what goes wrong"]
+
+  - type: text
+    title: RwLock and atomics
+    md: |
+      **`RwLock<T>`** allows **many readers or one writer**, the borrowing rules as a lock: `read()` returns a shared guard, `write()` an exclusive one. It suits data that is read often and changed rarely, such as configuration.
+
+      **Atomics** (`std::sync::atomic`) are integers and booleans that threads can update without a lock, using special CPU instructions. They are the fastest option for counters and flags:
+
+  - type: code
+    lang: rust
+    code: |
+      use std::sync::atomic::{AtomicUsize, Ordering};
+      use std::sync::{Arc, RwLock};
+      use std::thread;
+
+      fn main() {
+          let hits = Arc::new(AtomicUsize::new(0));
+          let config = Arc::new(RwLock::new(String::from("v1")));
+
+          thread::scope(|s| {
+              for _ in 0..4 {
+                  s.spawn(|| {
+                      for _ in 0..1000 {
+                          hits.fetch_add(1, Ordering::Relaxed);
+                      }
+                      let _version = config.read().unwrap(); // many readers at once
+                  });
+              }
+          });
+
+          *config.write().unwrap() = String::from("v2"); // one writer
+          println!("hits = {}", hits.load(Ordering::Relaxed));
+          println!("config = {}", config.read().unwrap());
+      }
+    output: |
+      hits = 4000
+      config = v2
+    explain: "`Ordering` says how the atomic operation is ordered relative to other memory accesses. `Relaxed` is enough for an independent counter; flags that guard other data need `Acquire`/`Release`. *Programming Rust* and the Rustonomicon cover memory ordering in depth; when unsure, `SeqCst` is the safest choice."
+
+  - type: callout
+    kind: warning
+    title: Deadlocks and poisoning
+    md: "Rust prevents data races, not **logic** errors. If thread 1 locks A then B while thread 2 locks B then A, each can wait for the other forever: a **deadlock**. Always acquire several locks in the same order, and hold locks as briefly as possible. If a thread **panics while holding a lock**, the mutex becomes **poisoned**: later `lock()` calls return `Err`, because the data may be half-updated. That is why examples call `.unwrap()` on `lock()`."
+
+  - type: text
+    title: Condition variables
+    md: |
+      Sometimes a thread must wait until some condition on shared data becomes true: a queue is no longer empty, a flag is set. Polling in a loop wastes CPU. A **`Condvar`** lets a thread sleep until another thread calls `notify_one` or `notify_all`. It is always paired with a `Mutex`:
+
+      ```rust
+      let pair = Arc::new((Mutex::new(false), Condvar::new()));
+      // waiting thread:
+      let (lock, cvar) = &*pair;
+      let mut ready = lock.lock().unwrap();
+      while !*ready {
+          ready = cvar.wait(ready).unwrap(); // releases the lock while asleep
+      }
+      // notifying thread:
+      *lock.lock().unwrap() = true;
+      cvar.notify_one();
+      ```
+
+      Channels are built on this mechanism; in application code, a channel is usually simpler.
+
+  - type: playground
+    id: ch16-play-bank
+    title: "A thread-safe bank"
+    lang: rust
+    md: |
+      Four threads each make 250 deposits of 1 into a shared account. Make the code compile and give the right total by choosing the right wrapper for `balance` (it currently uses `Rc<RefCell<i64>>`, which cannot cross threads).
+    task: "Print `balance = 1000`."
+    code: |
+      use std::cell::RefCell;
+      use std::rc::Rc;
+      use std::thread;
+
+      fn main() {
+          let balance = Rc::new(RefCell::new(0i64));
+          let mut handles = Vec::new();
+          for _ in 0..4 {
+              let balance = Rc::clone(&balance);
+              handles.push(thread::spawn(move || {
+                  for _ in 0..250 {
+                      *balance.borrow_mut() += 1;
+                  }
+              }));
+          }
+          for h in handles {
+              h.join().unwrap();
+          }
+          println!("balance = {}", balance.borrow());
+      }
+    starter_ok: compile_error
+    expected_output: "balance = 1000"
+    solution_code: |
+      use std::sync::{Arc, Mutex};
+      use std::thread;
+
+      fn main() {
+          let balance = Arc::new(Mutex::new(0i64));
+          let mut handles = Vec::new();
+          for _ in 0..4 {
+              let balance = Arc::clone(&balance);
+              handles.push(thread::spawn(move || {
+                  for _ in 0..250 {
+                      *balance.lock().unwrap() += 1;
+                  }
+              }));
+          }
+          for h in handles {
+              h.join().unwrap();
+          }
+          println!("balance = {}", balance.lock().unwrap());
+      }
+    hints:
+      - "Replace `Rc` with `Arc` and `RefCell` with `Mutex` (both in `std::sync`)."
+      - "`borrow_mut()` becomes `lock().unwrap()`."
+      - "An `AtomicI64` with `fetch_add` would work too, without a lock."
+
+  - type: exercise
+    id: ch16-ex-shared
+    exercise_dir: ch16-shared
+    title: "A concurrent word counter"
+    difficulty: hard
+    goal: "Share a map between threads with Arc<Mutex<...>>, use an atomic counter, and keep locks short."
+    behavior: |
+      - `pub fn count_words(texts: Vec<String>, threads: usize) -> (BTreeMap<String, usize>, usize)`: split `texts` among `threads` worker threads (at least 1; text `i` goes to worker `i % threads`). Each worker counts lowercase words (split on whitespace, trim `.,!?;:` from both ends, skip empty) into a **local** `HashMap`, then merges it into one shared `Arc<Mutex<BTreeMap<String, usize>>>` with a single lock. A shared `Arc<AtomicUsize>` counts how many texts were processed. Return the merged map and that count.
+      - `pub struct Stats { inner: Mutex<Vec<u64>> }` with `pub fn new() -> Stats`, `pub fn record(&self, v: u64)` and `pub fn mean(&self) -> Option<f64>`. Note that `record` takes `&self`: the tests share a `Stats` between scoped threads.
+    examples:
+      - input: "count_words(vec![\"Hi, there.\".into(), \"hi!\".into()], 2)"
+        output: "({\"hi\": 2, \"there\": 1}, 2)"
+    hints:
+      - "Buckets: `let mut buckets = vec![Vec::new(); w]; for (i, t) in texts.into_iter().enumerate() { buckets[i % w].push(t); }`"
+      - "Normalize: `let word = raw.trim_matches(|c: char| \".,!?;:\".contains(c)).to_lowercase();`"
+      - "Merge with one lock: `let mut map = shared.lock().unwrap(); for (k, v) in local { *map.entry(k).or_insert(0) += v; }`"
+      - "After joining, take the map out with `Arc::try_unwrap(shared).unwrap().into_inner().unwrap()` or clone it under the lock."
+    rust:
+      starter: |
+        use std::collections::{BTreeMap, HashMap};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+
+        pub fn count_words(texts: Vec<String>, threads: usize) -> (BTreeMap<String, usize>, usize) {
+            todo!()
+        }
+
+        pub struct Stats {
+            inner: Mutex<Vec<u64>>,
+        }
+
+        impl Stats {
+            pub fn new() -> Stats {
+                todo!()
+            }
+
+            pub fn record(&self, v: u64) {
+                todo!()
+            }
+
+            pub fn mean(&self) -> Option<f64> {
+                todo!()
+            }
+        }
+      tests: |
+        use super::*;
+
+        fn s(v: &[&str]) -> Vec<String> {
+            v.iter().map(|x| x.to_string()).collect()
+        }
+
+        #[test]
+        fn counts_across_threads() {
+            let (map, n) = count_words(s(&["Hi, there.", "hi!", "There there"]), 2);
+            assert_eq!(n, 3);
+            assert_eq!(map.get("hi"), Some(&2));
+            assert_eq!(map.get("there"), Some(&3));
+            assert_eq!(map.len(), 2);
+        }
+
+        #[test]
+        fn many_texts_many_threads() {
+            let texts: Vec<String> = (0..200).map(|i| format!("word{} common", i % 5)).collect();
+            let (map, n) = count_words(texts, 8);
+            assert_eq!(n, 200);
+            assert_eq!(map["common"], 200);
+            assert_eq!(map["word3"], 40);
+        }
+
+        #[test]
+        fn edge_cases() {
+            let (map, n) = count_words(vec![], 4);
+            assert!(map.is_empty());
+            assert_eq!(n, 0);
+            let (map, _) = count_words(s(&["... !!"]), 0);
+            assert!(map.is_empty(), "punctuation-only words are skipped");
+        }
+
+        #[test]
+        fn stats_shared_by_threads() {
+            let stats = Stats::new();
+            assert_eq!(stats.mean(), None);
+            thread::scope(|sc| {
+                for t in 0..4u64 {
+                    let stats = &stats;
+                    sc.spawn(move || {
+                        for i in 0..10u64 {
+                            stats.record(t * 10 + i);
+                        }
+                    });
+                }
+            });
+            assert_eq!(stats.mean(), Some(19.5));
+        }
+      solution: |
+        use std::collections::{BTreeMap, HashMap};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Mutex};
+        use std::thread;
+
+        pub fn count_words(texts: Vec<String>, threads: usize) -> (BTreeMap<String, usize>, usize) {
+            let w = threads.max(1);
+            let mut buckets: Vec<Vec<String>> = vec![Vec::new(); w];
+            for (i, t) in texts.into_iter().enumerate() {
+                buckets[i % w].push(t);
+            }
+
+            let shared = Arc::new(Mutex::new(BTreeMap::new()));
+            let processed = Arc::new(AtomicUsize::new(0));
+            let mut handles = Vec::new();
+
+            for bucket in buckets {
+                let shared = Arc::clone(&shared);
+                let processed = Arc::clone(&processed);
+                handles.push(thread::spawn(move || {
+                    let mut local: HashMap<String, usize> = HashMap::new();
+                    for text in &bucket {
+                        for raw in text.split_whitespace() {
+                            let word = raw.trim_matches(|c: char| ".,!?;:".contains(c)).to_lowercase();
+                            if !word.is_empty() {
+                                *local.entry(word).or_insert(0) += 1;
+                            }
+                        }
+                        processed.fetch_add(1, Ordering::Relaxed);
+                    }
+                    let mut map = shared.lock().unwrap();
+                    for (k, v) in local {
+                        *map.entry(k).or_insert(0) += v;
+                    }
+                }));
+            }
+            for h in handles {
+                h.join().unwrap();
+            }
+
+            let map = Arc::try_unwrap(shared).unwrap().into_inner().unwrap();
+            (map, processed.load(Ordering::Relaxed))
+        }
+
+        pub struct Stats {
+            inner: Mutex<Vec<u64>>,
+        }
+
+        impl Stats {
+            pub fn new() -> Stats {
+                Stats { inner: Mutex::new(Vec::new()) }
+            }
+
+            pub fn record(&self, v: u64) {
+                self.inner.lock().unwrap().push(v);
+            }
+
+            pub fn mean(&self) -> Option<f64> {
+                let v = self.inner.lock().unwrap();
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v.iter().sum::<u64>() as f64 / v.len() as f64)
+                }
+            }
+        }
+    solution_explain: "Counting into a local map and merging once keeps each thread's time under the lock tiny; locking for every word would make the threads queue up behind one another. After all threads are joined, `Arc::try_unwrap` succeeds because only one owner remains, and `into_inner` takes the map out of the mutex without cloning."
+
+  - type: quiz
+    id: ch16-quiz-shared
+    title: Check yourself
+    questions:
+      - type: single
+        q: "When is a Mutex unlocked?"
+        options: ["When you call unlock()", "When the MutexGuard is dropped", "At the end of main", "After every statement"]
+        answer: 1
+        explanation: "RAII: the guard's Drop releases the lock."
+      - type: single
+        q: "Why does `Rc<Mutex<i32>>` not work across threads?"
+        options: ["Mutex is not thread-safe", "Rc's reference count is not updated atomically, so Rc is not Send", "i32 cannot be shared", "It does work"]
+        answer: 1
+        explanation: "Use Arc."
+      - type: single
+        q: "Which is the thread-safe counterpart of `Rc<RefCell<T>>`?"
+        options: ["`Box<Cell<T>>`", "`Arc<Mutex<T>>`", "`Rc<Mutex<T>>`", "`Arc<RefCell<T>>`"]
+        answer: 1
+        explanation: "Arc for owners, Mutex for mutation."
+      - type: single
+        q: "Data is read by many threads and changed rarely. Which lock fits best?"
+        options: ["Mutex", "RwLock", "Condvar", "None"]
+        answer: 1
+        explanation: "Many readers or one writer."
+      - type: single
+        q: "Thread A locks X then Y; thread B locks Y then X. What can happen?"
+        options: ["A compile error", "A deadlock", "A data race", "Nothing bad"]
+        answer: 1
+        explanation: "Lock in a consistent order."
+      - type: single
+        q: "What does it mean when `lock()` returns Err?"
+        options: ["The lock is busy", "The mutex is poisoned: a thread panicked while holding it", "Out of memory", "The data is empty"]
+        answer: 1
+        explanation: "The data may be inconsistent."
+
+  - type: summary
+    points:
+      - "`Mutex<T>` guards data; `lock()` returns a guard that unlocks when dropped."
+      - "`Arc<T>` is the thread-safe `Rc<T>`; `Arc<Mutex<T>>` is shared mutable state across threads."
+      - "`RwLock` allows many readers or one writer; atomics update numbers and flags without locks."
+      - "Rust prevents data races but not deadlocks: lock in a consistent order and briefly."
+      - "A panic while holding a lock poisons the mutex."
+terms:
+  - term: mutex
+    def: "A lock that allows only one thread at a time to access the data it guards."
+  - term: MutexGuard
+    def: "The smart pointer returned by lock(); it gives access to the data and releases the lock when dropped."
+  - term: "Arc<T>"
+    def: "An atomically reference-counted pointer: Rc that is safe to share between threads."
+  - term: RwLock
+    def: "A lock allowing many simultaneous readers or one writer."
+  - term: atomic
+    def: "A type whose operations happen indivisibly across threads, without a lock."
+  - term: poisoning
+    def: "A mutex marking itself as possibly inconsistent after a thread panicked while holding it."
+  - term: Condvar
+    def: "A condition variable: lets threads sleep until another thread signals that a condition changed."

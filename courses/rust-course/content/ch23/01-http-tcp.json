@@ -1,0 +1,233 @@
+{
+  "title": "HTTP by hand over TCP",
+  "summary": "The layers of the networking stack, what an HTTP request and response look like on the wire, TcpStream and TcpListener with a local server, ports and sockets, converting host names to addresses with ToSocketAddrs, UDP datagrams, timeouts, and where reqwest fits in.",
+  "minutes": 40,
+  "source": {
+    "chapter": "ch23",
+    "sections": [
+      "RiA 8 Networking",
+      "RiA 8.1 Just enough HTTP",
+      "RiA 8.2 Generating an HTTP GET request with reqwest",
+      "RiA 8.4 TCP",
+      "RiA 8.4.1 What is a port number?",
+      "RiA 8.4.2 Converting a hostname to an IP address"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Networking is built in **layers**. Each layer uses the one below and knows nothing about the one above:\n\n- **Application**: HTTP, DNS, SMTP. What programs say to each other.\n- **Security**: TLS, which encrypts HTTP into HTTPS.\n- **Transport**: TCP (a reliable, ordered byte stream) or UDP (independent datagrams, no guarantees).\n- **Network**: IP, which routes packets between addresses.\n- **Link**: Ethernet or Wi-Fi, which moves frames between neighbouring machines identified by MAC addresses.\n\n*Rust in Action* works down the stack. It starts with HTTP, because almost every program talks it.\n"
+    },
+    {
+      "type": "text",
+      "title": "An HTTP request is text",
+      "md": "HTTP/1.x messages are lines of text separated by **`\\r\\n`** (carriage return, line feed). A request has a **request line** (method, path, version), **headers**, an empty line, and an optional body. The response has a **status line** (`HTTP/1.1 200 OK`), headers, an empty line and the body:\n\n```text\nGET /index.html HTTP/1.1\\r\\n\nHost: www.rustinaction.com\\r\\n\n\\r\\n\n```\n\n```text\nHTTP/1.1 200 OK\\r\\n\nContent-Type: text/html; charset=utf-8\\r\\n\nContent-Length: 13\\r\\n\n\\r\\n\nHello, world!\n```\n\nThe `Host` header matters because one IP address can serve many websites. `Content-Length` tells the client where the body ends.\n"
+    },
+    {
+      "type": "text",
+      "title": "TCP in the standard library",
+      "md": "`std::net::TcpStream::connect(addr)` opens a TCP connection; the stream implements `Read` and `Write`, so everything from chapter 22 applies. *Rust in Action* connects to `www.rustinaction.com:80` and writes the request with `write_all`. The course console has no internet access, so the example below starts its own tiny server with **`TcpListener`** on the loopback address `127.0.0.1`, port `0` (meaning \"pick any free port\"), in a second thread, and then talks to it like a browser would.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::io::{BufRead, BufReader, Read, Write};\nuse std::net::{TcpListener, TcpStream};\nuse std::thread;\n\nfn main() -> std::io::Result<()> {\n    let listener = TcpListener::bind(\"127.0.0.1:0\")?;\n    let addr = listener.local_addr()?;\n\n    // a server that answers exactly one request\n    let server = thread::spawn(move || -> std::io::Result<()> {\n        let (stream, _peer) = listener.accept()?;\n        let mut reader = BufReader::new(&stream);\n        let mut request_line = String::new();\n        reader.read_line(&mut request_line)?;\n        loop {\n            let mut header = String::new();\n            reader.read_line(&mut header)?;\n            if header == \"\\r\\n\" {\n                break;\n            }\n        }\n        let body = format!(\"you asked for {}\", request_line.split(' ').nth(1).unwrap_or(\"?\"));\n        let mut stream = &stream;\n        write!(stream, \"HTTP/1.0 200 OK\\r\\nContent-Length: {}\\r\\n\\r\\n{}\", body.len(), body)?;\n        Ok(())\n    });\n\n    // the client, as in Rust in Action's ch8-stdlib\n    let mut connection = TcpStream::connect(addr)?;\n    connection.write_all(b\"GET /hello HTTP/1.0\")?;\n    connection.write_all(b\"\\r\\n\")?;\n    connection.write_all(b\"Host: localhost\")?;\n    connection.write_all(b\"\\r\\n\\r\\n\")?;\n\n    let mut response = String::new();\n    connection.read_to_string(&mut response)?;\n    print!(\"{}\", response.replace(\"\\r\\n\", \"\\n\"));\n    println!();\n\n    server.join().unwrap()?;\n    Ok(())\n}\n",
+      "output": "HTTP/1.0 200 OK\nContent-Length: 20\n\nyou asked for /hello\n",
+      "explain": "HTTP/1.0 closes the connection after the response, so `read_to_string` ends when the server's stream is dropped. Real HTTP/1.1 keeps connections alive and needs `Content-Length` to know when to stop reading. `\\r\\n` is replaced only to print the response neatly."
+    },
+    {
+      "type": "stepper",
+      "title": "What happens on the wire",
+      "steps": [
+        {
+          "title": "bind and listen",
+          "md": "`TcpListener::bind` asks the operating system for a **socket** on an address and port and starts accepting connections."
+        },
+        {
+          "title": "The three-way handshake",
+          "md": "`TcpStream::connect` sends SYN, the server's kernel replies SYN-ACK, the client sends ACK. Only then does `accept` return a stream on the server side."
+        },
+        {
+          "title": "Bytes, not messages",
+          "md": "TCP delivers a **stream** of bytes, in order, retransmitting lost packets. It has no idea where one HTTP message ends: that is HTTP's job (the blank line, `Content-Length`)."
+        },
+        {
+          "title": "Closing",
+          "md": "Dropping a stream closes it (FIN). The reader on the other side sees end of file: `read` returns 0."
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Ports and addresses",
+      "md": "A **port** is just a `u16` that lets one IP address host many services: 80 for HTTP, 443 for HTTPS, 22 for SSH, 53 for DNS. Ports below 1024 usually need administrator rights. An IP address plus a port is a **socket address**, `SocketAddr` in Rust, either `SocketAddrV4` (`127.0.0.1:8080`) or `SocketAddrV6` (`[::1]:8080`).\n\nTCP knows nothing about names like `www.rustinaction.com`. **DNS** turns names into IP addresses. *Rust in Action* writes a DNS resolver with a crate; the standard library offers **`ToSocketAddrs`**, which asks the operating system's resolver and is what `connect(\"host:port\")` uses internally:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};\n\nfn main() -> std::io::Result<()> {\n    let addr: SocketAddr = \"192.168.1.20:8080\".parse().unwrap();\n    println!(\"ip {} port {} v4? {}\", addr.ip(), addr.port(), addr.is_ipv4());\n\n    let local = IpAddr::V4(Ipv4Addr::LOCALHOST);\n    println!(\"{local} loopback? {}\", local.is_loopback());\n    println!(\"{}\", \"10.0.0.1\".parse::<Ipv4Addr>().unwrap().is_private());\n    println!(\"{:?}\", \"999.1.1.1\".parse::<Ipv4Addr>().is_err());\n\n    // name resolution through the operating system\n    let v4: Vec<SocketAddr> = \"localhost:80\".to_socket_addrs()?.filter(|a| a.is_ipv4()).collect();\n    println!(\"{v4:?}\");\n    Ok(())\n}\n",
+      "output": "ip 192.168.1.20 port 8080 v4? true\n127.0.0.1 loopback? true\ntrue\ntrue\n[127.0.0.1:80]\n"
+    },
+    {
+      "type": "text",
+      "title": "UDP",
+      "md": "**UDP** sends individual **datagrams**. There is no connection, no ordering and no retransmission: a datagram arrives whole or not at all. That makes it fast and simple, which is why DNS and NTP (lesson 3) use it. `UdpSocket::bind` gets a socket; `send_to` and `recv_from` move one datagram at a time.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::net::UdpSocket;\nuse std::time::Duration;\n\nfn main() -> std::io::Result<()> {\n    let server = UdpSocket::bind(\"127.0.0.1:0\")?;\n    let client = UdpSocket::bind(\"127.0.0.1:0\")?;\n    client.set_read_timeout(Some(Duration::from_secs(2)))?;\n\n    client.send_to(b\"ping\", server.local_addr()?)?;\n\n    let mut buf = [0u8; 512];\n    let (n, from) = server.recv_from(&mut buf)?;\n    println!(\"server got {:?}\", String::from_utf8_lossy(&buf[..n]));\n    server.send_to(b\"pong\", from)?;\n\n    let (n, _) = client.recv_from(&mut buf)?;\n    println!(\"client got {:?}\", String::from_utf8_lossy(&buf[..n]));\n    Ok(())\n}\n",
+      "output": "server got \"ping\"\nclient got \"pong\"\n",
+      "explain": "A read timeout matters with UDP: if the reply datagram is lost, `recv_from` would otherwise wait forever. It returns an error of kind `WouldBlock` or `TimedOut` when the time runs out."
+    },
+    {
+      "type": "callout",
+      "kind": "note",
+      "title": "reqwest",
+      "md": "For real HTTP clients, *Rust in Action* starts with the **reqwest** crate: `reqwest::blocking::get(url)?.text()?` handles DNS, TLS, redirects, keep-alive and chunked bodies. Use it (or `ureq`) in practice. It needs crates.io, so this course shows the protocol by hand instead."
+    },
+    {
+      "type": "playground",
+      "id": "ch23-play-echo",
+      "title": "An echo server",
+      "lang": "rust",
+      "md": "Complete the server thread: accept one connection, then read lines with a `BufReader` and write each one back in upper case, until the client closes. The client sends three lines and then shuts down its writing half with `shutdown(Shutdown::Write)` so the server sees end of file.\n",
+      "task": "Print `HELLO`, `RUST`, `BYE`.",
+      "code": "use std::io::{BufRead, BufReader, Write};\nuse std::net::{Shutdown, TcpListener, TcpStream};\nuse std::thread;\n\nfn main() -> std::io::Result<()> {\n    let listener = TcpListener::bind(\"127.0.0.1:0\")?;\n    let addr = listener.local_addr()?;\n\n    let server = thread::spawn(move || -> std::io::Result<()> {\n        let (stream, _) = listener.accept()?;\n        for line in BufReader::new(stream).lines() {\n            let _line = line?;\n            // TODO: write the line back upper-cased (you need a second handle to write with)\n        }\n        Ok(())\n    });\n\n    let mut client = TcpStream::connect(addr)?;\n    client.write_all(b\"hello\\nrust\\nbye\\n\")?;\n    client.shutdown(Shutdown::Write)?;\n    for line in BufReader::new(client).lines() {\n        println!(\"{}\", line?);\n    }\n    server.join().unwrap()\n}\n",
+      "expected_output": "HELLO\nRUST\nBYE\n",
+      "hints": [
+        "`stream.try_clone()?` gives a second handle to the same connection: read from one, write to the other.",
+        "`for line in BufReader::new(stream).lines() { writeln!(writer, \"{}\", line?.to_uppercase())?; }`"
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch23-ex-http",
+      "exercise_dir": "ch23-http",
+      "title": "A minimal HTTP client and parser",
+      "difficulty": "hard",
+      "goal": "Build and parse HTTP/1.x messages, and run a request against a real TCP server on the loopback interface.",
+      "behavior": "- `pub fn build_request(method: &str, host: &str, path: &str, body: &str) -> String`: request line `METHOD PATH HTTP/1.1`, headers `Host`, `Connection: close` and, if the body is not empty, `Content-Length`; every line ends with `\\r\\n`, then a blank line, then the body.\n- `pub struct Response { pub status: u16, pub reason: String, pub headers: Vec<(String, String)>, pub body: String }` with `pub fn header(&self, name: &str) -> Option<&str>` (case-insensitive).\n- `pub fn parse_response(raw: &str) -> Result<Response, String>`: split head and body at the first `\\r\\n\\r\\n`; parse the status line (`HTTP/1.x CODE REASON`, reason may contain spaces); headers are `Name: value` (trim the value); if `Content-Length` is present, the body is exactly that many bytes. Errors (as `Err(String)`) for a missing blank line, a bad status line or a malformed header.\n- `pub fn fetch(addr: SocketAddr, path: &str) -> std::io::Result<Response>`: connect, send a GET, read everything, parse (map a parse error to `io::ErrorKind::InvalidData`).\n",
+      "examples": [
+        {
+          "input": "build_request(\"GET\", \"example.com\", \"/\", \"\")",
+          "output": "\"GET / HTTP/1.1\\r\\nHost: example.com\\r\\nConnection: close\\r\\n\\r\\n\""
+        }
+      ],
+      "hints": [
+        "`raw.split_once(\"\\r\\n\\r\\n\")` separates head and body.",
+        "Status line: `let mut parts = line.splitn(3, ' ');` gives version, code and the rest.",
+        "`name.eq_ignore_ascii_case(other)` compares header names.",
+        "`fetch`: `TcpStream::connect(addr)?`, `write_all(build_request(...).as_bytes())`, `read_to_string`."
+      ],
+      "solution_explain": "`split_once` and `splitn(3, ' ')` do most of the parsing; the reason phrase keeps its spaces because it is the third, unsplit part. `Connection: close` makes the server close after responding, which is why `read_to_string` in `fetch` terminates."
+    },
+    {
+      "type": "quiz",
+      "id": "ch23-quiz-http",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which layer guarantees ordered, reliable delivery of bytes?",
+          "options": [
+            "IP",
+            "TCP",
+            "UDP",
+            "HTTP"
+          ],
+          "answer": 1,
+          "explanation": "UDP gives no such guarantee."
+        },
+        {
+          "type": "single",
+          "q": "How do HTTP/1.x headers end?",
+          "options": [
+            "With a NUL byte",
+            "With an empty line: \\r\\n\\r\\n",
+            "With END",
+            "They have a length prefix"
+          ],
+          "answer": 1,
+          "explanation": "Then the body begins."
+        },
+        {
+          "type": "single",
+          "q": "What does binding a listener to port 0 do?",
+          "options": [
+            "Fails",
+            "Lets the operating system pick a free port",
+            "Uses port 80",
+            "Listens on every port"
+          ],
+          "answer": 1,
+          "explanation": "local_addr() tells you which one."
+        },
+        {
+          "type": "single",
+          "q": "Why is the Host header needed?",
+          "options": [
+            "For encryption",
+            "Many websites can share one IP address",
+            "TCP requires it",
+            "It is not"
+          ],
+          "answer": 1,
+          "explanation": "The server picks the site by it."
+        },
+        {
+          "type": "single",
+          "q": "Which protocol do DNS and NTP usually use?",
+          "options": [
+            "TCP",
+            "UDP",
+            "HTTP",
+            "TLS"
+          ],
+          "answer": 1,
+          "explanation": "Small, independent messages."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Networks are layered: application (HTTP), security (TLS), transport (TCP/UDP), network (IP), link (Ethernet).",
+        "HTTP/1.x is text: a request line, headers, a blank line and an optional body, with \\r\\n line endings.",
+        "TcpStream and TcpListener give byte streams that implement Read and Write.",
+        "A socket address is an IP and a port; ToSocketAddrs resolves names through the OS.",
+        "UdpSocket sends datagrams without connections; set timeouts because packets can be lost."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "protocol",
+      "def": "An agreed set of message formats and rules for two programs to communicate."
+    },
+    {
+      "term": "TCP",
+      "def": "Transmission Control Protocol: a reliable, ordered byte stream between two sockets."
+    },
+    {
+      "term": "UDP",
+      "def": "User Datagram Protocol: independent datagrams with no delivery guarantees."
+    },
+    {
+      "term": "port",
+      "def": "A 16-bit number identifying a service on a host."
+    },
+    {
+      "term": "socket address",
+      "def": "An IP address combined with a port."
+    },
+    {
+      "term": "DNS",
+      "def": "The Domain Name System, which maps names like example.com to IP addresses."
+    },
+    {
+      "term": "loopback",
+      "def": "The address 127.0.0.1 (or ::1) that always refers to the local machine."
+    }
+  ]
+}

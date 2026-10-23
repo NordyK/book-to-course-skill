@@ -1,0 +1,377 @@
+title: "Deref and Drop"
+summary: "Following a pointer with *, building MyBox and implementing Deref, deref coercion and its rules with mutability, running cleanup code with Drop, and dropping early with std::mem::drop."
+minutes: 30
+source:
+  chapter: ch15
+  sections: ["TRPL 15.2 Treating Smart Pointers Like Regular References", "TRPL 15.2 Following the Reference to the Value", "TRPL 15.2 Using Box<T> Like a Reference", "TRPL 15.2 Defining Our Own Smart Pointer", "TRPL 15.2 Implementing the Deref Trait", "TRPL 15.2 Using Deref Coercion in Functions and Methods", "TRPL 15.2 Handling Deref Coercion with Mutable References", "TRPL 15.3 Running Code on Cleanup with the Drop Trait", "TRPL 15.3 Dropping a Value Early", "PR ch13 Deref and DerefMut", "PR ch13 Drop", "RiA 6.2 Smart pointer building blocks"]
+blocks:
+  - type: text
+    md: |
+      Two traits make a struct behave like a smart pointer. **`Deref`** lets `*` and method calls go "through" it to the data, so code written for references also works with it. **`Drop`** runs custom code when it goes out of scope, so it can free what it owns.
+
+      The **dereference operator** `*` follows a reference to the value:
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let x = 5;
+          let y = &x;
+          let z = Box::new(x);
+
+          assert_eq!(5, x);
+          assert_eq!(5, *y); // follow the reference
+          assert_eq!(5, *z); // follow the box, the same way
+          println!("ok");
+      }
+    output: "ok"
+    explain: "`assert_eq!(5, y)` would not compile: you cannot compare a number with a reference to a number. `Box` supports `*` because it implements `Deref`."
+
+  - type: text
+    title: Building our own smart pointer
+    md: |
+      A tuple struct holding one value is enough to see how `Deref` works. (Unlike `Box`, `MyBox` keeps its value on the stack; the point here is the trait, not the storage.)
+
+  - type: code
+    lang: rust
+    code: |
+      use std::ops::Deref;
+
+      struct MyBox<T>(T);
+
+      impl<T> MyBox<T> {
+          fn new(x: T) -> MyBox<T> {
+              MyBox(x)
+          }
+      }
+
+      impl<T> Deref for MyBox<T> {
+          type Target = T;
+
+          fn deref(&self) -> &Self::Target {
+              &self.0
+          }
+      }
+
+      fn hello(name: &str) {
+          println!("Hello, {name}!");
+      }
+
+      fn main() {
+          let y = MyBox::new(5);
+          assert_eq!(5, *y);
+
+          let m = MyBox::new(String::from("Rust"));
+          hello(&m);
+      }
+    output: "Hello, Rust!"
+    explain: "`*y` is rewritten by the compiler as `*(y.deref())`: `deref` returns an ordinary reference, which `*` then follows. It returns a reference rather than the value so that `*` does not move the value out of the box."
+
+  - type: text
+    title: Deref coercion
+    md: |
+      Look at `hello(&m)` again. `hello` takes `&str`, and `&m` is a `&MyBox<String>`. It compiles because of **deref coercion**: when a reference's type does not match a parameter, Rust calls `deref` as many times as needed to make it match, at compile time and at no run-time cost:
+
+      `&MyBox<String>` → (`MyBox::deref`) → `&String` → (`String::deref`) → `&str`
+
+      Without coercion you would write `hello(&(*m)[..])`. Coercion is why you can pass `&String` to functions taking `&str`, `&Vec<T>` to functions taking `&[T]`, and `&Box<List>` to functions taking `&List`, as in the last lesson.
+
+  - type: table
+    title: The three coercion rules
+    headers: ["From", "To", "When"]
+    rows:
+      - ["`&T`", "`&U`", "`T: Deref<Target = U>`"]
+      - ["`&mut T`", "`&mut U`", "`T: DerefMut<Target = U>`"]
+      - ["`&mut T`", "`&U`", "`T: Deref<Target = U>`: mutable can become shared"]
+
+  - type: callout
+    kind: note
+    title: Never shared to mutable
+    md: "A shared reference never coerces to a mutable one. The borrowing rules say a mutable reference must be the only reference; converting a `&T` (one of possibly many) into a `&mut U` would break that guarantee."
+
+  - type: callout
+    kind: warning
+    title: "Deref is for pointers (Programming Rust)"
+    md: "Implement `Deref` only for smart-pointer-like types, whose main job is to give access to a `Target`. Using it to make one type \"inherit\" another's methods is tempting but confusing: method lookup becomes surprising, and trait bounds do not see through it."
+
+  - type: text
+    title: The Drop trait
+    md: |
+      `Drop` lets you run code when a value goes out of scope: release memory, close a file or a network connection, unlock a lock. `Box` uses it to free its heap allocation. Its one method is `drop(&mut self)`:
+
+  - type: code
+    lang: rust
+    code: |
+      struct CustomSmartPointer {
+          data: String,
+      }
+
+      impl Drop for CustomSmartPointer {
+          fn drop(&mut self) {
+              println!("Dropping CustomSmartPointer with data `{}`!", self.data);
+          }
+      }
+
+      fn main() {
+          let _c = CustomSmartPointer { data: String::from("my stuff") };
+          let _d = CustomSmartPointer { data: String::from("other stuff") };
+          println!("CustomSmartPointers created.");
+      }
+    output: |
+      CustomSmartPointers created.
+      Dropping CustomSmartPointer with data `other stuff`!
+      Dropping CustomSmartPointer with data `my stuff`!
+    explain: "Variables are dropped in the **reverse** order of their creation, so `_d` goes first. Each struct's fields are dropped after its own `drop` runs."
+
+  - type: text
+    title: Dropping a value early
+    md: |
+      You cannot call `c.drop()` yourself: Rust would then call it again at the end of scope, a **double free**. The compiler refuses with error E0040, "explicit destructor calls not allowed". To clean up early, for example to release a lock before the scope ends, call **`std::mem::drop`**, which is in the prelude as `drop`:
+
+  - type: code
+    lang: rust
+    code: |
+      struct CustomSmartPointer {
+          data: String,
+      }
+
+      impl Drop for CustomSmartPointer {
+          fn drop(&mut self) {
+              println!("Dropping CustomSmartPointer with data `{}`!", self.data);
+          }
+      }
+
+      fn main() {
+          let c = CustomSmartPointer { data: String::from("some data") };
+          println!("CustomSmartPointer created.");
+          drop(c);
+          println!("CustomSmartPointer dropped before the end of main.");
+      }
+    output: |
+      CustomSmartPointer created.
+      Dropping CustomSmartPointer with data `some data`!
+      CustomSmartPointer dropped before the end of main.
+    explain: "`drop` is an ordinary function that takes ownership: `pub fn drop<T>(_x: T) {}`. The value moves into it and is dropped when that empty function returns. Ownership guarantees `c` cannot be used, or dropped, again."
+
+  - type: playground
+    id: ch15-play-drop-order
+    title: "Predict the drop order"
+    lang: rust
+    md: |
+      Before running, write down the order of the `drop` lines. Then run it and compare. Consider: reverse declaration order, a value moved into a function, a value moved into a vector, and shadowing (the old value lives until the end of scope).
+    code: |
+      struct Noisy(&'static str);
+
+      impl Drop for Noisy {
+          fn drop(&mut self) {
+              println!("drop {}", self.0);
+          }
+      }
+
+      fn take(n: Noisy) {
+          println!("take got {}", n.0);
+      }
+
+      fn main() {
+          let a = Noisy("a");
+          let b = Noisy("b");
+          take(b);
+          let v = vec![Noisy("v1"), Noisy("v2")];
+          let a = Noisy("a2"); // shadows a; the first a is still alive
+          {
+              let _c = Noisy("c");
+          }
+          println!("end of main ({} items in v, a is {})", v.len(), a.0);
+      }
+    hints:
+      - "`b` is dropped at the end of `take`, right after `take got b`."
+      - "`_c` is dropped at the inner `}`."
+      - "At the end of `main`: the second `a`, then `v` (its elements in order: v1, v2), then the first `a`."
+
+  - type: exercise
+    id: ch15-ex-deref
+    exercise_dir: ch15-deref
+    title: "A guard that counts and cleans up"
+    difficulty: hard
+    goal: "Implement Deref, DerefMut and Drop for a wrapper type, and rely on deref coercion."
+    behavior: |
+      `pub struct Tracked<T> { value: T, log: Rc<RefCell<Vec<String>>>, name: String }` wraps a value and records events in a shared log (the `Rc<RefCell<...>>` is explained in the next lesson; just use it as shown in the starter).
+      - `pub fn new(name: &str, value: T, log: &Rc<RefCell<Vec<String>>>) -> Self` records `"create <name>"`.
+      - `Deref<Target = T>` and `DerefMut`, so `*t`, `t.len()` and `&t` passed as `&T` all work.
+      - `Drop` records `"drop <name>"`.
+      - `pub fn total_len(items: &[&str]) -> usize` (the tests pass `&Tracked<String>` values through deref coercion).
+    examples:
+      - input: "{ let t = Tracked::new(\"x\", String::from(\"hi\"), &log); t.len() }"
+        output: "2, and the log is [\"create x\", \"drop x\"]"
+    hints:
+      - "`log.borrow_mut().push(format!(\"create {name}\"));` adds to the log."
+      - "Store `Rc::clone(log)` in the struct so it can log in `drop`."
+      - "`impl<T> DerefMut for Tracked<T> { fn deref_mut(&mut self) -> &mut T { &mut self.value } }` (requires `Deref` too)."
+    rust:
+      starter: |
+        use std::cell::RefCell;
+        use std::ops::{Deref, DerefMut};
+        use std::rc::Rc;
+
+        pub struct Tracked<T> {
+            value: T,
+            log: Rc<RefCell<Vec<String>>>,
+            name: String,
+        }
+
+        impl<T> Tracked<T> {
+            pub fn new(name: &str, value: T, log: &Rc<RefCell<Vec<String>>>) -> Self {
+                log.borrow_mut().push(format!("create {name}"));
+                todo!()
+            }
+        }
+
+        // impl<T> Deref for Tracked<T>
+
+        // impl<T> DerefMut for Tracked<T>
+
+        // impl<T> Drop for Tracked<T>
+
+        pub fn total_len(items: &[&str]) -> usize {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        fn new_log() -> Rc<RefCell<Vec<String>>> {
+            Rc::new(RefCell::new(Vec::new()))
+        }
+
+        #[test]
+        fn derefs_to_inner() {
+            let log = new_log();
+            let t = Tracked::new("x", String::from("hello"), &log);
+            assert_eq!(t.len(), 5, "method call through Deref");
+            assert_eq!(*t, "hello");
+        }
+
+        #[test]
+        fn deref_mut_changes_inner() {
+            let log = new_log();
+            let mut v = Tracked::new("v", vec![1, 2], &log);
+            v.push(3);
+            *v = vec![9];
+            assert_eq!(*v, vec![9]);
+        }
+
+        #[test]
+        fn logs_create_and_drop_in_order() {
+            let log = new_log();
+            {
+                let _a = Tracked::new("a", 1, &log);
+                let _b = Tracked::new("b", 2, &log);
+            }
+            assert_eq!(*log.borrow(), vec!["create a", "create b", "drop b", "drop a"]);
+        }
+
+        #[test]
+        fn early_drop() {
+            let log = new_log();
+            let a = Tracked::new("a", 1, &log);
+            drop(a);
+            log.borrow_mut().push(String::from("after"));
+            assert_eq!(*log.borrow(), vec!["create a", "drop a", "after"]);
+        }
+
+        #[test]
+        fn coercion_to_str() {
+            let log = new_log();
+            let x = Tracked::new("x", String::from("abc"), &log);
+            let y = Tracked::new("y", String::from("de"), &log);
+            assert_eq!(total_len(&[&x, &y, "f"]), 6, "&Tracked<String> coerces to &str");
+        }
+      solution: |
+        use std::cell::RefCell;
+        use std::ops::{Deref, DerefMut};
+        use std::rc::Rc;
+
+        pub struct Tracked<T> {
+            value: T,
+            log: Rc<RefCell<Vec<String>>>,
+            name: String,
+        }
+
+        impl<T> Tracked<T> {
+            pub fn new(name: &str, value: T, log: &Rc<RefCell<Vec<String>>>) -> Self {
+                log.borrow_mut().push(format!("create {name}"));
+                Tracked { value, log: Rc::clone(log), name: name.to_string() }
+            }
+        }
+
+        impl<T> Deref for Tracked<T> {
+            type Target = T;
+            fn deref(&self) -> &T {
+                &self.value
+            }
+        }
+
+        impl<T> DerefMut for Tracked<T> {
+            fn deref_mut(&mut self) -> &mut T {
+                &mut self.value
+            }
+        }
+
+        impl<T> Drop for Tracked<T> {
+            fn drop(&mut self) {
+                self.log.borrow_mut().push(format!("drop {}", self.name));
+            }
+        }
+
+        pub fn total_len(items: &[&str]) -> usize {
+            items.iter().map(|s| s.len()).sum()
+        }
+    solution_explain: "In `total_len(&[&x, &y, \"f\"])`, each `&Tracked<String>` is coerced twice, through `Tracked::deref` and `String::deref`, to `&str`. `v.push(3)` works through `DerefMut`. The drop log confirms reverse order and that `drop(a)` runs the destructor immediately."
+
+  - type: quiz
+    id: ch15-quiz-deref
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What does the compiler turn `*y` into when `y` is a `MyBox<i32>`?"
+        options: ["`y.0`", "`*(y.deref())`", "`y.drop()`", "`&y`"]
+        answer: 1
+        explanation: "deref returns a reference; * follows it."
+      - type: single
+        q: "Why can you pass `&String` to a function taking `&str`?"
+        options: ["They are the same type", "Deref coercion: String implements Deref<Target = str>", "Strings are Copy", "The function is generic"]
+        answer: 1
+        explanation: "Coercion happens at compile time."
+      - type: single
+        q: "Which coercion is never allowed?"
+        options: ["&mut T to &U", "&T to &U", "&T to &mut U", "&mut T to &mut U"]
+        answer: 2
+        explanation: "It would break the uniqueness of mutable borrows."
+      - type: single
+        q: "Why is `c.drop()` a compile error?"
+        options: ["drop is private", "Rust would drop c again at the end of scope: a double free", "Drop is not a trait", "Only Box can be dropped"]
+        answer: 1
+        explanation: "Use std::mem::drop(c)."
+      - type: single
+        q: "Three values a, b, c are created in that order in main. In which order are they dropped?"
+        options: ["a, b, c", "c, b, a", "random", "all at once"]
+        answer: 1
+        explanation: "Reverse order of creation."
+
+  - type: summary
+    points:
+      - "`Deref` makes `*` and method calls work through a smart pointer; `*x` is `*(x.deref())`."
+      - "Deref coercion converts `&Wrapper` to `&Inner` automatically, as many steps as needed."
+      - "Mutable can coerce to shared, never the other way."
+      - "`Drop::drop` runs at the end of scope, in reverse creation order."
+      - "Use `drop(value)` to clean up early; calling the method directly is not allowed."
+terms:
+  - term: Deref
+    def: "The trait that customizes the * operator and enables deref coercion."
+  - term: deref coercion
+    def: "The compiler automatically converting &T to &U through Deref implementations to match a parameter type."
+  - term: Drop
+    def: "The trait whose drop method runs when a value goes out of scope."
+  - term: std::mem::drop
+    def: "A function that takes ownership of a value and so drops it immediately."
+  - term: double free
+    def: "Freeing the same memory twice, a serious bug that Rust prevents."

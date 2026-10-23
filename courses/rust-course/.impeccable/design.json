@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-23T03:14:58Z",
+  "title": "Design System: Rust, from first program to unsafe",
+  "extensions": {
+    "colorMeta": {
+      "ledger-navy": {
+        "role": "primary",
+        "displayName": "Ledger Navy",
+        "canonical": "#09234f"
+      },
+      "registry-blue": {
+        "role": "primary",
+        "displayName": "Registry Blue",
+        "canonical": "#384ce3"
+      },
+      "network-teal": {
+        "role": "secondary",
+        "displayName": "Network Teal",
+        "canonical": "#1888a2"
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#ffffff"
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#0b0b0c"
+      },
+      "carbon": {
+        "role": "neutral",
+        "displayName": "Carbon",
+        "canonical": "#121012"
+      },
+      "mint-paper": {
+        "role": "neutral",
+        "displayName": "Mint Paper",
+        "canonical": "#eff5f0"
+      },
+      "sky-paper": {
+        "role": "neutral",
+        "displayName": "Sky Paper",
+        "canonical": "#c4f0ff"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Course and lesson titles, tile numbers, key-idea callouts."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Lesson sections and block titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Lesson prose at a 42rem measure."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase actions, tags, status and metadata."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Code blocks and the console editor."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "Every state transition."
+      },
+      {
+        "name": "row-in",
+        "value": "rowIn .35s ease-out",
+        "purpose": "Console result rows tick in one by one."
+      },
+      {
+        "name": "control",
+        "value": ".15s",
+        "purpose": "Button and option hover."
+      },
+      {
+        "name": "stamp",
+        "value": "stampFade",
+        "purpose": "The pass stamp set inside the console."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "console-sheet",
+        "value": "1180px"
+      },
+      {
+        "name": "rail-drawer",
+        "value": "900px"
+      },
+      {
+        "name": "tables",
+        "value": "760px"
+      },
+      {
+        "name": "phone",
+        "value": "560px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main action on paper.",
+      "html": "<button class=\"ds-btn\">Run</button>",
+      "css": ".ds-btn{display:inline-flex;align-items:center;min-height:40px;padding:10px 16px;background:#09234f;color:#fff;border:1px solid #09234f;border-radius:4px;font:500 12px/1.15 'IBM Plex Mono',monospace;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;transition:background-color .15s}.ds-btn:hover{background:#384ce3;border-color:#384ce3}"
+    },
+    {
+      "name": "Tag",
+      "kind": "chip",
+      "refersTo": "tag",
+      "description": "Mono status tag.",
+      "html": "<span class=\"ds-tag\">Challenge</span>",
+      "css": ".ds-tag{display:inline-flex;padding:4px 8px;border:1px solid #ced3dc;border-radius:4px;font:500 11px/1.15 'IBM Plex Mono',monospace;letter-spacing:.04em;text-transform:uppercase;color:#595959}"
+    },
+    {
+      "name": "Verification Console",
+      "kind": "custom",
+      "refersTo": "console",
+      "description": "Lit blue panel that compiles, runs and checks the learner's code.",
+      "html": "<div class=\"ds-con\"><div class=\"ds-con-h\">Console</div><pre class=\"ds-con-ed\"><span>let count = 1;</span>\n<span class=\"ds-err\">count = 2;</span></pre><div class=\"ds-con-sum\">The compiler stopped at <u>line 3</u>: cannot assign twice to immutable variable.</div></div>",
+      "css": ".ds-con{background:#384ce3;color:#fff;border:1px solid #c4f0ff;border-radius:4px;padding:14px;font:400 15px/1.5 'DM Sans',sans-serif}.ds-con-h{font:500 12px/1 'IBM Plex Mono',monospace;letter-spacing:.04em;text-transform:uppercase;margin-bottom:10px}.ds-con-ed{background:#121012;color:#ecebe6;font:400 13.5px/1.6 'IBM Plex Mono',monospace;padding:12px 14px;margin:0 0 10px;border-left:0}.ds-err{text-decoration:underline wavy #ff8a80}.ds-con-sum{background:#09234f;padding:10px 12px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Verification Console",
+    "overview": "The course is an institutional document opened next to a live console. The page explains; the console verifies. Colour is spent on state and on the console, not on decoration. Derived from Lukasz's DESIGN-1 guide (Baselayer, electric ledger in midnight).",
+    "keyCharacteristics": [
+      "Flat surfaces, 1px rules, 0px cards, 4px controls, no shadows.",
+      "Mono uppercase labels for actions and status.",
+      "One lit surface per screen.",
+      "Plus-sign registration marks."
+    ],
+    "rules": [
+      {
+        "name": "The Lit Console Rule",
+        "body": "Registry Blue fills exactly one large surface: the console.",
+        "section": "colors"
+      },
+      {
+        "name": "The State Owns Colour Rule",
+        "body": "Green, red and amber always mean pass, fail and caution.",
+        "section": "colors"
+      },
+      {
+        "name": "The System Speaks Mono Rule",
+        "body": "Status and actions are uppercase Plex Mono; read content never is, except code.",
+        "section": "typography"
+      },
+      {
+        "name": "The Hairline Rule",
+        "body": "Separate with a 1px rule or a tonal change, never a shadow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep cards at 0px and controls at 4px.",
+      "Do explain every compiler or test result in one plain line before the raw output.",
+      "Do put new practice in the console."
+    ],
+    "donts": [
+      "Don't add shadows or glows.",
+      "Don't use coloured side stripes to mark state.",
+      "Don't fill a second large surface with Registry Blue.",
+      "Don't animate content into view on scroll."
+    ]
+  }
+}

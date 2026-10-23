@@ -1,0 +1,131 @@
+{
+  "title": "Unrecoverable errors with panic!",
+  "summary": "What happens when a program panics, unwinding versus aborting, reading a backtrace, and the kinds of bugs that cause panics.",
+  "minutes": 16,
+  "source": {
+    "chapter": "ch09",
+    "sections": [
+      "TRPL 9 Error Handling",
+      "TRPL 9.1 Unrecoverable Errors with panic!",
+      "TRPL 9.1 Unwinding the Stack or Aborting in Response to a Panic",
+      "TRPL 9.1 Using a panic! Backtrace",
+      "PR ch7 Panic",
+      "PR ch7 Unwinding",
+      "PR ch7 Aborting"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Errors are a fact of life in software. Rust splits them into two groups and handles them differently:\n\n- **Recoverable** errors are things a correct program should expect: a file is missing, a user types `abc` where a number belongs, a network times out. The right response is to report the problem or try something else. Rust represents them with the type `Result<T, E>` (next lesson).\n- **Unrecoverable** errors are **bugs**: an index past the end of an array, a broken assumption in your own code. Continuing would mean running with corrupted state. Rust stops with **`panic!`**.\n\nMost languages use exceptions for both. Rust has no exceptions; the distinction lives in the types.\n"
+    },
+    {
+      "type": "text",
+      "title": "What a panic does",
+      "md": "A panic prints a message saying where it happened, then **unwinds** the current thread: it walks back up the stack, running each function's cleanup (dropping its values, so files are closed and memory is freed), and then the thread ends. If it was the main thread, the program exits with a non-zero status. You can call `panic!` yourself, but most panics come from code that detected a bug, such as indexing.\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch09-play-panic",
+      "title": "Two ways to panic",
+      "lang": "rust",
+      "md": "Run it to see an explicit `panic!`. Then comment out that line (put `//` in front) and run again: now the program panics inside the standard library, because index 99 is past the end of the vector. Compare the two messages: both name the file, line and column where the problem was detected.\n",
+      "code": "fn main() {\n    let v = vec![1, 2, 3];\n    println!(\"starting\");\n    panic!(\"crash and burn\");\n    let i: usize = \"99\".parse().unwrap();\n    println!(\"{}\", v[i]);\n}\n",
+      "expect_panic": true,
+      "hints": [
+        "The second message reads `index out of bounds: the len is 3 but the index is 99`.",
+        "The compiler warns that the code after `panic!` is unreachable. That is a hint that `panic!` never returns."
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Backtraces",
+      "md": "The panic message shows where the panic was **detected**, which is often inside the standard library rather than in your code. To see how execution got there, run with the environment variable `RUST_BACKTRACE=1`. A **backtrace** lists every function that was active, innermost first. Read from the top until you reach a file you wrote: that is where to start looking.\n"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ RUST_BACKTRACE=1 cargo run\nthread 'main' panicked at src/main.rs:4:6:\nindex out of bounds: the len is 3 but the index is 99\nstack backtrace:\n   0: rust_begin_unwind\n   1: core::panicking::panic_fmt\n   2: core::panicking::panic_bounds_check\n   3: <usize as core::slice::index::SliceIndex<[T]>>::index\n   4: core::slice::index::<impl core::ops::index::Index<I> for [T]>::index\n   5: <alloc::vec::Vec<T,A> as core::ops::index::Index<I>>::index\n   6: panic::main\n             at ./src/main.rs:4:6\n   7: core::ops::function::FnOnce::call_once\nnote: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.\n",
+      "explain": "Line 6 is the first line in your code: `main` at `src/main.rs:4`. Debug builds (the default with `cargo run`) include the symbols that make backtraces readable. The console in this course runs with backtraces off to keep output short."
+    },
+    {
+      "type": "callout",
+      "kind": "note",
+      "title": "Unwinding or aborting",
+      "md": "Unwinding takes code and work. If you want the smallest binary and no cleanup, add `panic = 'abort'` under `[profile.release]` in `Cargo.toml`: a panic then ends the process immediately and the operating system reclaims the memory. Embedded systems and some servers choose this. *Programming Rust* adds that a panic during unwinding (a second panic in cleanup code) always aborts."
+    },
+    {
+      "type": "text",
+      "title": "Panics are per thread, and safe",
+      "md": "A panic is not a crash in the C sense: there is no undefined behavior, no memory corruption. It is an orderly shutdown of one thread. In multi-threaded programs, other threads keep running and can notice that a thread panicked (chapter 16). Library code should almost never panic on bad input; it should return a `Result` and let the caller decide. The last lesson of this chapter has guidelines.\n"
+    },
+    {
+      "type": "quiz",
+      "id": "ch09-quiz-panic",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which situation calls for `panic!` rather than `Result`?",
+          "options": [
+            "A file the user named does not exist",
+            "The user typed letters where a number was expected",
+            "Your code reached a state your logic says is impossible",
+            "The network timed out"
+          ],
+          "answer": 2,
+          "explanation": "Panics are for bugs. The others are expected failures the program should handle."
+        },
+        {
+          "type": "single",
+          "q": "What does unwinding do?",
+          "options": [
+            "Restarts the program",
+            "Walks back up the stack dropping each function's values, then ends the thread",
+            "Ignores the error",
+            "Prints the source code"
+          ],
+          "answer": 1,
+          "explanation": "Cleanup runs, then the thread stops."
+        },
+        {
+          "type": "fill",
+          "q": "To see which functions led to a panic, run with the environment variable RUST_______=1.",
+          "answer": [
+            "BACKTRACE"
+          ],
+          "explanation": "`RUST_BACKTRACE=1 cargo run`."
+        },
+        {
+          "type": "truefalse",
+          "q": "A panic in Rust can corrupt memory like a segmentation fault in C.",
+          "answer": false,
+          "explanation": "A panic is a controlled shutdown; safe Rust has no undefined behavior."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Rust separates recoverable errors (`Result`) from unrecoverable bugs (`panic!`); there are no exceptions.",
+        "A panic prints a message, unwinds the thread (running cleanup), and ends it.",
+        "`RUST_BACKTRACE=1` shows the chain of calls; look for the first frame in your own code.",
+        "`panic = 'abort'` in a profile skips unwinding for a smaller, simpler binary."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "panic!",
+      "def": "A macro that stops the current thread because of an unrecoverable error (a bug), after unwinding its stack."
+    },
+    {
+      "term": "unwinding",
+      "def": "Walking back up the call stack after a panic, dropping each function's values."
+    },
+    {
+      "term": "backtrace",
+      "def": "The list of functions that were active when a panic happened, innermost first."
+    }
+  ]
+}

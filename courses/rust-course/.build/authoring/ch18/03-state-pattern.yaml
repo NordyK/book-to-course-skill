@@ -1,0 +1,649 @@
+title: "The state pattern, two ways"
+summary: "The blog-post workflow implemented with the object-oriented state pattern using Box<dyn State> and self: Box<Self>, its trade-offs, and the Rust-flavored alternative that encodes states as types so invalid transitions do not compile."
+minutes: 35
+source:
+  chapter: ch18
+  sections: ["TRPL 18.3 Implementing an Object-Oriented Design Pattern", "TRPL 18.3 Attempting Traditional Object-Oriented Style", "TRPL 18.3 Defining Post and Creating a New Instance in the Draft State", "TRPL 18.3 Storing the Text of the Post Content", "TRPL 18.3 Ensuring the Content of a Draft Post Is Empty", "TRPL 18.3 Requesting a Review Changes the Post's State", "TRPL 18.3 Adding approve to Change content's Behavior", "TRPL 18.3 Evaluating the State Pattern", "TRPL 18.3 Encoding States and Behavior as Types", "TRPL 18.3 Implementing Transitions as Transformations into Different Types", "CR Day 3 Type-state"]
+blocks:
+  - type: text
+    md: |
+      The **state pattern** is an object-oriented design pattern: a value has an internal state, represented by one of several **state objects**, and its behavior changes with the state. Each state object decides which state comes next.
+
+      *The Rust Programming Language*'s example is a blog post workflow:
+
+      1. A post starts as an empty **draft**.
+      2. When the draft is done, a **review** is requested.
+      3. When the post is **approved**, it is published.
+      4. Only published posts return their content; drafts and posts under review return an empty string.
+
+  - type: text
+    title: The object-oriented version
+    md: |
+      `Post` holds a `Box<dyn State>` inside an `Option`. Each state type implements `State`, whose transition methods take **`self: Box<Self>`**: they consume the current state and return the next one. The `Option` lets `Post` take the old state out (leaving `None` for a moment) before putting the new one in.
+
+  - type: code
+    lang: rust
+    code: |
+      pub struct Post {
+          state: Option<Box<dyn State>>,
+          content: String,
+      }
+
+      impl Post {
+          pub fn new() -> Post {
+              Post { state: Some(Box::new(Draft {})), content: String::new() }
+          }
+
+          pub fn add_text(&mut self, text: &str) {
+              self.content.push_str(text);
+          }
+
+          pub fn content(&self) -> &str {
+              self.state.as_ref().unwrap().content(self)
+          }
+
+          pub fn request_review(&mut self) {
+              if let Some(s) = self.state.take() {
+                  self.state = Some(s.request_review())
+              }
+          }
+
+          pub fn approve(&mut self) {
+              if let Some(s) = self.state.take() {
+                  self.state = Some(s.approve())
+              }
+          }
+      }
+
+      trait State {
+          fn request_review(self: Box<Self>) -> Box<dyn State>;
+          fn approve(self: Box<Self>) -> Box<dyn State>;
+          fn content<'a>(&self, _post: &'a Post) -> &'a str {
+              ""
+          }
+      }
+
+      struct Draft {}
+
+      impl State for Draft {
+          fn request_review(self: Box<Self>) -> Box<dyn State> {
+              Box::new(PendingReview {})
+          }
+          fn approve(self: Box<Self>) -> Box<dyn State> {
+              self
+          }
+      }
+
+      struct PendingReview {}
+
+      impl State for PendingReview {
+          fn request_review(self: Box<Self>) -> Box<dyn State> {
+              self
+          }
+          fn approve(self: Box<Self>) -> Box<dyn State> {
+              Box::new(Published {})
+          }
+      }
+
+      struct Published {}
+
+      impl State for Published {
+          fn request_review(self: Box<Self>) -> Box<dyn State> {
+              self
+          }
+          fn approve(self: Box<Self>) -> Box<dyn State> {
+              self
+          }
+          fn content<'a>(&self, post: &'a Post) -> &'a str {
+              &post.content
+          }
+      }
+
+      fn main() {
+          let mut post = Post::new();
+
+          post.add_text("I ate a salad for lunch today");
+          println!("draft: {:?}", post.content());
+
+          post.request_review();
+          println!("in review: {:?}", post.content());
+
+          post.approve();
+          println!("published: {:?}", post.content());
+      }
+    output: |
+      draft: ""
+      in review: ""
+      published: "I ate a salad for lunch today"
+    explain: "`content` has a default in the trait that returns `\"\"`; only `Published` overrides it. Its lifetime annotation says the returned text borrows from the `post`, not from the state."
+
+  - type: callout
+    kind: key
+    title: "Why self: Box<Self>?"
+    md: "The method is only valid on a `Box` holding the type, and it **takes ownership** of the box. The old state is consumed and cannot be used again, which is exactly what a transition means. It also explains the `Option`: Rust does not allow a struct field to be empty, so `take()` swaps in `None` while the transition runs."
+
+  - type: text
+    title: Evaluating the pattern
+    md: |
+      **Strengths:** `Post` knows nothing about the individual states. Adding a state means adding a type; the transition rules live inside the states.
+
+      **Weaknesses:** the states are coupled to each other (`PendingReview` must know `Published`); several methods are duplicated (`request_review` returning `self` everywhere); and **invalid transitions are silently ignored at run time**. Calling `approve` on a draft does nothing, and you only find out by testing.
+
+      Rust can do better by putting the states into the **type system**.
+
+  - type: text
+    title: States as types
+    md: |
+      Instead of one `Post` type with a hidden state, use a **different type per state**. Each transition consumes one type and returns another:
+
+  - type: code
+    lang: rust
+    code: |
+      pub struct Post {
+          content: String,
+      }
+
+      pub struct DraftPost {
+          content: String,
+      }
+
+      pub struct PendingReviewPost {
+          content: String,
+      }
+
+      impl Post {
+          pub fn new() -> DraftPost {
+              DraftPost { content: String::new() }
+          }
+
+          pub fn content(&self) -> &str {
+              &self.content
+          }
+      }
+
+      impl DraftPost {
+          pub fn add_text(&mut self, text: &str) {
+              self.content.push_str(text);
+          }
+
+          pub fn request_review(self) -> PendingReviewPost {
+              PendingReviewPost { content: self.content }
+          }
+      }
+
+      impl PendingReviewPost {
+          pub fn approve(self) -> Post {
+              Post { content: self.content }
+          }
+      }
+
+      fn main() {
+          let mut post = Post::new();
+          post.add_text("I ate a salad for lunch today");
+
+          let post = post.request_review();
+          let post = post.approve();
+
+          println!("{}", post.content());
+      }
+    output: "I ate a salad for lunch today"
+    explain: "`DraftPost` has no `content` method at all, so reading a draft's content is a **compile error**, not an empty string. `approve` exists only on `PendingReviewPost`. Each transition takes `self` by value, so the old state is gone; shadowing (`let post = ...`) keeps the variable name."
+
+  - type: table
+    title: Two designs compared
+    headers: ["", "State objects (`Box<dyn State>`)", "Type-state (a type per state)"]
+    rows:
+      - ["invalid transition", "ignored at run time", "compile error"]
+      - ["caller sees", "one `Post` type", "a new type after each step"]
+      - ["adding a state", "add a type; `Post` unchanged", "add a type; callers' code changes"]
+      - ["run-time cost", "a heap allocation and dynamic dispatch", "none"]
+      - ["good for", "states chosen by data at run time (from a database, a file)", "workflows fixed by the program's logic"]
+
+  - type: callout
+    kind: tip
+    title: "Rust's lesson, not a rule"
+    md: "Object-oriented patterns work in Rust, but they are not always the best fit. Moving checks from run time into types is one of Rust's strengths: \"make invalid states unrepresentable\". Comprehensive Rust calls this the **type-state** pattern; libraries use it for builders, file handles that must be opened before reading, and network protocols."
+
+  - type: playground
+    id: ch18-play-typestate
+    title: "A type-state door"
+    lang: rust
+    md: |
+      Model a door with three types: `Closed`, `Open` and `Locked`. `Closed` can `open()` or `lock(code)`; `Open` can `close()`; `Locked` can `unlock(code)`, which returns `Result<Closed, Locked>` (the wrong code keeps it locked). Uncomment the last line in `main` afterwards and read the compile error: an open door has no `lock` method.
+    task: "Print `opened`, `closed`, `locked`, `wrong code`, `unlocked`."
+    code: |
+      struct Closed;
+      struct Open;
+      struct Locked {
+          code: u32,
+      }
+
+      // impl Closed { fn open(self) -> Open; fn lock(self, code: u32) -> Locked }
+      // impl Open { fn close(self) -> Closed }
+      // impl Locked { fn unlock(self, code: u32) -> Result<Closed, Locked> }
+
+      fn main() {
+          let door = Closed;
+          let door = door.open();
+          println!("opened");
+          let door = door.close();
+          println!("closed");
+          let door = door.lock(1234);
+          println!("locked");
+          let door = match door.unlock(1111) {
+              Ok(d) => d,
+              Err(still_locked) => {
+                  println!("wrong code");
+                  still_locked.unlock(1234).ok().unwrap()
+              }
+          };
+          println!("unlocked");
+          let _ = door;
+          // Open.lock(1); // does not compile
+      }
+    starter_ok: compile_error
+    expected_output: |
+      opened
+      closed
+      locked
+      wrong code
+      unlocked
+    solution_code: |
+      struct Closed;
+      struct Open;
+      struct Locked {
+          code: u32,
+      }
+
+      impl Closed {
+          fn open(self) -> Open {
+              Open
+          }
+          fn lock(self, code: u32) -> Locked {
+              Locked { code }
+          }
+      }
+
+      impl Open {
+          fn close(self) -> Closed {
+              Closed
+          }
+      }
+
+      impl Locked {
+          fn unlock(self, code: u32) -> Result<Closed, Locked> {
+              if code == self.code { Ok(Closed) } else { Err(self) }
+          }
+      }
+
+      fn main() {
+          let door = Closed;
+          let door = door.open();
+          println!("opened");
+          let door = door.close();
+          println!("closed");
+          let door = door.lock(1234);
+          println!("locked");
+          let door = match door.unlock(1111) {
+              Ok(d) => d,
+              Err(still_locked) => {
+                  println!("wrong code");
+                  still_locked.unlock(1234).ok().unwrap()
+              }
+          };
+          println!("unlocked");
+          let _ = door;
+          // Open.lock(1); // does not compile
+      }
+    hints:
+      - "Each method takes `self` by value and returns the next state type."
+      - "`fn unlock(self, code: u32) -> Result<Closed, Locked> { if code == self.code { Ok(Closed) } else { Err(self) } }`"
+
+  - type: exercise
+    id: ch18-ex-state
+    exercise_dir: ch18-state
+    title: "The blog workflow, extended"
+    difficulty: hard
+    goal: "Extend the state-object design with new rules, and implement the same workflow as type-state."
+    behavior: |
+      Part 1, state objects (`pub struct Post`, built on a private `trait State` with `Box<dyn State>`):
+      - `Post::new()`, `add_text(&mut self, &str)` (only works in `Draft`: in other states it does nothing), `content(&self) -> &str` (`""` unless published), `request_review`, `approve`, `reject`, and `status(&self) -> &'static str` (`"draft"`, `"pending"`, `"published"`).
+      - **Two approvals** are needed: the first `approve` keeps the post pending (but counts), the second publishes it.
+      - `reject` sends a pending post back to draft and resets the approval count.
+
+      Part 2, type-state: `pub struct Draft`, `pub struct Pending`, `pub struct Published`, each holding `content: String`:
+      - `Draft::new() -> Draft`, `Draft::add_text(&mut self, &str)`, `Draft::request_review(self) -> Pending`;
+      - `Pending::approve(self) -> Published`, `Pending::reject(self) -> Draft`;
+      - `Published::content(&self) -> &str`.
+    examples:
+      - input: "new, add_text(\"hi\"), request_review, approve, content()"
+        output: "\"\" (one approval is not enough)"
+      - input: "... approve again, content()"
+        output: "\"hi\""
+    hints:
+      - "Give `Pending` (the state struct) an `approvals: u32` field: `approve` returns `Box::new(Pending { approvals: 1 })` or `Box::new(Published {})`."
+      - "Add `fn add_text<'a>(&self, post_content: &mut String, text: &str)`? Simpler: give `State` a method `fn can_edit(&self) -> bool { false }` that `Draft` overrides, and check it in `Post::add_text`."
+      - "Add `fn status(&self) -> &'static str;` to the trait."
+      - "Name clash: inside the module, the state-object structs and the type-state structs need different names, for example `DraftState` and `PendingState` for part 1."
+    rust:
+      starter: |
+        // Part 1: state objects
+        pub struct Post {
+            state: Option<Box<dyn State>>,
+            content: String,
+        }
+
+        trait State {
+            fn request_review(self: Box<Self>) -> Box<dyn State>;
+            fn approve(self: Box<Self>) -> Box<dyn State>;
+            fn reject(self: Box<Self>) -> Box<dyn State>;
+            fn status(&self) -> &'static str;
+            fn can_edit(&self) -> bool {
+                false
+            }
+            fn content<'a>(&self, _post: &'a Post) -> &'a str {
+                ""
+            }
+        }
+
+        // TODO: DraftState, PendingState { approvals: u32 }, PublishedState
+
+        impl Post {
+            pub fn new() -> Post {
+                todo!()
+            }
+            pub fn add_text(&mut self, text: &str) {
+                todo!()
+            }
+            pub fn content(&self) -> &str {
+                todo!()
+            }
+            pub fn status(&self) -> &'static str {
+                todo!()
+            }
+            pub fn request_review(&mut self) {
+                todo!()
+            }
+            pub fn approve(&mut self) {
+                todo!()
+            }
+            pub fn reject(&mut self) {
+                todo!()
+            }
+        }
+
+        // Part 2: type-state
+        pub struct Draft {
+            content: String,
+        }
+        pub struct Pending {
+            content: String,
+        }
+        pub struct Published {
+            content: String,
+        }
+
+        // TODO: impl Draft { new, add_text, request_review }
+        // TODO: impl Pending { approve, reject }
+        // TODO: impl Published { content }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn needs_two_approvals() {
+            let mut p = Post::new();
+            p.add_text("hello");
+            assert_eq!(p.status(), "draft");
+            p.request_review();
+            assert_eq!(p.status(), "pending");
+            p.approve();
+            assert_eq!(p.status(), "pending", "one approval is not enough");
+            assert_eq!(p.content(), "");
+            p.approve();
+            assert_eq!(p.status(), "published");
+            assert_eq!(p.content(), "hello");
+        }
+
+        #[test]
+        fn reject_resets() {
+            let mut p = Post::new();
+            p.add_text("a");
+            p.request_review();
+            p.approve();
+            p.reject();
+            assert_eq!(p.status(), "draft");
+            p.add_text("b");
+            p.request_review();
+            p.approve();
+            assert_eq!(p.status(), "pending", "approvals were reset by reject");
+            p.approve();
+            assert_eq!(p.content(), "ab");
+        }
+
+        #[test]
+        fn editing_only_in_draft() {
+            let mut p = Post::new();
+            p.add_text("x");
+            p.request_review();
+            p.add_text("ignored");
+            p.approve();
+            p.approve();
+            p.add_text("also ignored");
+            assert_eq!(p.content(), "x");
+        }
+
+        #[test]
+        fn invalid_transitions_are_ignored() {
+            let mut p = Post::new();
+            p.approve();
+            p.reject();
+            assert_eq!(p.status(), "draft");
+        }
+
+        #[test]
+        fn type_state_workflow() {
+            let mut d = Draft::new();
+            d.add_text("typed");
+            let pending = d.request_review();
+            let mut back = pending.reject();
+            back.add_text(" post");
+            let published = back.request_review().approve();
+            assert_eq!(published.content(), "typed post");
+        }
+      solution: |
+        // Part 1: state objects
+        pub struct Post {
+            state: Option<Box<dyn State>>,
+            content: String,
+        }
+
+        trait State {
+            fn request_review(self: Box<Self>) -> Box<dyn State>;
+            fn approve(self: Box<Self>) -> Box<dyn State>;
+            fn reject(self: Box<Self>) -> Box<dyn State>;
+            fn status(&self) -> &'static str;
+            fn can_edit(&self) -> bool {
+                false
+            }
+            fn content<'a>(&self, _post: &'a Post) -> &'a str {
+                ""
+            }
+        }
+
+        struct DraftState;
+
+        impl State for DraftState {
+            fn request_review(self: Box<Self>) -> Box<dyn State> {
+                Box::new(PendingState { approvals: 0 })
+            }
+            fn approve(self: Box<Self>) -> Box<dyn State> {
+                self
+            }
+            fn reject(self: Box<Self>) -> Box<dyn State> {
+                self
+            }
+            fn status(&self) -> &'static str {
+                "draft"
+            }
+            fn can_edit(&self) -> bool {
+                true
+            }
+        }
+
+        struct PendingState {
+            approvals: u32,
+        }
+
+        impl State for PendingState {
+            fn request_review(self: Box<Self>) -> Box<dyn State> {
+                self
+            }
+            fn approve(self: Box<Self>) -> Box<dyn State> {
+                if self.approvals + 1 >= 2 {
+                    Box::new(PublishedState)
+                } else {
+                    Box::new(PendingState { approvals: self.approvals + 1 })
+                }
+            }
+            fn reject(self: Box<Self>) -> Box<dyn State> {
+                Box::new(DraftState)
+            }
+            fn status(&self) -> &'static str {
+                "pending"
+            }
+        }
+
+        struct PublishedState;
+
+        impl State for PublishedState {
+            fn request_review(self: Box<Self>) -> Box<dyn State> {
+                self
+            }
+            fn approve(self: Box<Self>) -> Box<dyn State> {
+                self
+            }
+            fn reject(self: Box<Self>) -> Box<dyn State> {
+                self
+            }
+            fn status(&self) -> &'static str {
+                "published"
+            }
+            fn content<'a>(&self, post: &'a Post) -> &'a str {
+                &post.content
+            }
+        }
+
+        impl Post {
+            pub fn new() -> Post {
+                Post { state: Some(Box::new(DraftState)), content: String::new() }
+            }
+            pub fn add_text(&mut self, text: &str) {
+                if self.state.as_ref().unwrap().can_edit() {
+                    self.content.push_str(text);
+                }
+            }
+            pub fn content(&self) -> &str {
+                self.state.as_ref().unwrap().content(self)
+            }
+            pub fn status(&self) -> &'static str {
+                self.state.as_ref().unwrap().status()
+            }
+            pub fn request_review(&mut self) {
+                if let Some(s) = self.state.take() {
+                    self.state = Some(s.request_review());
+                }
+            }
+            pub fn approve(&mut self) {
+                if let Some(s) = self.state.take() {
+                    self.state = Some(s.approve());
+                }
+            }
+            pub fn reject(&mut self) {
+                if let Some(s) = self.state.take() {
+                    self.state = Some(s.reject());
+                }
+            }
+        }
+
+        // Part 2: type-state
+        pub struct Draft {
+            content: String,
+        }
+        pub struct Pending {
+            content: String,
+        }
+        pub struct Published {
+            content: String,
+        }
+
+        impl Draft {
+            pub fn new() -> Draft {
+                Draft { content: String::new() }
+            }
+            pub fn add_text(&mut self, text: &str) {
+                self.content.push_str(text);
+            }
+            pub fn request_review(self) -> Pending {
+                Pending { content: self.content }
+            }
+        }
+
+        impl Pending {
+            pub fn approve(self) -> Published {
+                Published { content: self.content }
+            }
+            pub fn reject(self) -> Draft {
+                Draft { content: self.content }
+            }
+        }
+
+        impl Published {
+            pub fn content(&self) -> &str {
+                &self.content
+            }
+        }
+    solution_explain: "The state-object version absorbed two new rules without changing `Post`'s public API, but its invalid transitions are still silent. In the type-state version, editing a pending post or reading a draft's content cannot even be written. A two-approval rule in type-state would need a `PendingOnce` type, or a run-time counter: types are best for rules known at compile time."
+
+  - type: quiz
+    id: ch18-quiz-state
+    title: Check yourself
+    questions:
+      - type: single
+        q: "Why does the State trait use `self: Box<Self>` for transitions?"
+        options: ["Boxes are faster", "So the method takes ownership of the boxed state and the old state cannot be reused", "Because traits require it", "To allow cloning"]
+        answer: 1
+        explanation: "A transition consumes the old state."
+      - type: single
+        q: "Why is `state` an `Option<Box<dyn State>>` rather than `Box<dyn State>`?"
+        options: ["A post may have no state forever", "take() needs something to leave behind while the old state is moved out", "Option is faster", "For Debug"]
+        answer: 1
+        explanation: "Fields cannot be temporarily empty otherwise."
+      - type: single
+        q: "In the state-object version, what happens when you call approve on a draft?"
+        options: ["Compile error", "Nothing; the call is silently ignored", "A panic", "It publishes"]
+        answer: 1
+        explanation: "That is the pattern's main weakness."
+      - type: single
+        q: "In the type-state version, what happens if you call content() on a DraftPost?"
+        options: ["Returns an empty string", "Compile error: DraftPost has no content method", "Panics", "Returns the text"]
+        answer: 1
+        explanation: "Invalid states are unrepresentable."
+      - type: single
+        q: "When is the state-object design the better choice?"
+        options: ["Never", "When the state comes from data at run time, such as a database record", "When speed matters most", "When there are only two states"]
+        answer: 1
+        explanation: "Types cannot depend on run-time values."
+
+  - type: summary
+    points:
+      - "The state pattern stores a `Box<dyn State>`; transitions take `self: Box<Self>` and return the next state."
+      - "It keeps `Post` simple but ignores invalid transitions at run time."
+      - "Type-state uses a type per state and `self`-consuming transitions, so invalid transitions do not compile."
+      - "Choose by where the state comes from: run-time data favors objects, program logic favors types."
+terms:
+  - term: state pattern
+    def: "A design pattern where a value's behavior depends on an internal state object that decides the next state."
+  - term: "self: Box<Self>"
+    def: "A method receiver that requires and consumes a boxed value."
+  - term: type-state
+    def: "Encoding the states of a value as distinct types so that only valid operations and transitions compile."

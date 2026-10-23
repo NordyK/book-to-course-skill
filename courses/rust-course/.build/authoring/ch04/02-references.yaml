@@ -1,0 +1,496 @@
+title: "References and borrowing"
+summary: "Use a value without taking ownership: shared references (&T), mutable references (&mut T), the two borrowing rules, and why dangling references cannot exist in Rust."
+minutes: 35
+source:
+  chapter: ch04
+  sections: ["TRPL 4.2 References and Borrowing", "TRPL 4.2 Mutable References", "TRPL 4.2 Dangling References", "TRPL 4.2 The Rules of References", "PR ch5 References to Values", "PR ch5 Working with References", "PR ch5 Sharing Versus Mutation", "RiA 4.3 Resolving ownership issues", "CR Day 3 Borrowing"]
+blocks:
+  - type: text
+    md: |
+      At the end of the last lesson, finding the length of a String meant moving it into a function and getting it back. A **reference** removes that dance. A reference is like a pointer: an address you can follow to reach data owned by someone else. Unlike a raw pointer, a reference is guaranteed by the compiler to point to a valid value for as long as the reference exists.
+
+      Creating a reference is called **borrowing**. As in real life, when you borrow something you do not own it, and you have to give it back.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let s1 = String::from("hello");
+          let len = calculate_length(&s1);
+          println!("The length of '{s1}' is {len}.");
+      }
+
+      fn calculate_length(s: &String) -> usize {
+          s.len()
+      }
+    output: "The length of 'hello' is 5."
+    explain: "`&s1` creates a reference to `s1` without moving it, and the parameter type `&String` says \"a reference to a String\". When `s` goes out of scope at the end of `calculate_length`, nothing is dropped, because `s` never owned the String. `s1` is still valid afterwards."
+
+  - type: svg
+    caption: "`s` is a reference: a pointer to `s1` on the stack, which in turn owns the heap text. Dropping `s` frees nothing."
+    svg: |
+      <svg viewBox='0 0 600 150' xmlns='http://www.w3.org/2000/svg' font-family='ui-monospace, monospace' font-size='13'>
+        <g fill='none' stroke='currentColor' stroke-width='1'>
+          <rect x='20' y='40' width='100' height='34'/>
+          <rect x='190' y='40' width='150' height='90'/>
+          <path d='M190 70 H340 M190 100 H340 M265 40 V130'/>
+          <rect x='430' y='40' width='150' height='34'/>
+          <path d='M100 57 H184' stroke-width='1.5'/><path d='M178 53 L184 57 L178 61'/>
+          <path d='M320 55 C 380 55, 380 57, 424 57' stroke-width='1.5'/><path d='M418 53 L424 57 L418 61'/>
+        </g>
+        <g fill='currentColor'>
+          <text x='20' y='30' font-family='sans-serif' font-weight='600'>s</text>
+          <text x='30' y='62'>ptr</text>
+          <text x='190' y='30' font-family='sans-serif' font-weight='600'>s1</text>
+          <text x='198' y='60'>ptr</text><text x='198' y='90'>len</text><text x='275' y='90'>5</text>
+          <text x='198' y='120'>capacity</text><text x='300' y='120'>5</text>
+          <text x='430' y='30' font-family='sans-serif' font-weight='600'>heap</text>
+          <text x='440' y='62'>h e l l o</text>
+        </g>
+      </svg>
+
+  - type: text
+    title: References are immutable by default
+    md: |
+      Like variables, references cannot change what they point to unless you say so. Try to modify borrowed data through a plain `&` and the compiler stops you:
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    code: |
+      fn main() {
+          let s = String::from("hello");
+          change(&s);
+      }
+
+      fn change(some_string: &String) {
+          some_string.push_str(", world");
+      }
+    output: |
+      error[E0596]: cannot borrow `*some_string` as mutable, as it is behind a `&` reference
+       --> src/main.rs:7:5
+        |
+      7 |     some_string.push_str(", world");
+        |     ^^^^^^^^^^^ `some_string` is a `&` reference, so it cannot be borrowed as mutable
+        |
+      help: consider changing this to be a mutable reference
+        |
+      6 | fn change(some_string: &mut String) {
+        |                         +++
+    output_label: Compiler output
+
+  - type: text
+    title: Mutable references
+    md: |
+      To allow changes, three things must say `mut`: the variable (`let mut s`), the borrow (`&mut s`), and the parameter type (`&mut String`). Seeing `&mut` at the call site is useful: anyone reading `change(&mut s)` knows `s` may be different afterwards.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let mut s = String::from("hello");
+          change(&mut s);
+          println!("{s}");
+      }
+
+      fn change(some_string: &mut String) {
+          some_string.push_str(", world");
+      }
+    output: "hello, world"
+
+  - type: text
+    title: The borrowing rules
+    md: |
+      At any given time, you can have **either**:
+
+      - **any number of shared references** (`&T`), **or**
+      - **exactly one mutable reference** (`&mut T`),
+
+      but not both. And every reference must always be **valid**.
+
+      *Programming Rust* sums this up as "sharing versus mutation": you can share a value with many readers, or let one writer change it, but never both at once. The rule prevents a **data race**, where two pieces of code access the same data, at least one of them writes, and nothing orders the accesses. Data races cause unpredictable bugs that are very hard to reproduce. Rust rejects them at compile time.
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    code: |
+      fn main() {
+          let mut s = String::from("hello");
+          let r1 = &mut s;
+          let r2 = &mut s;
+          println!("{r1}, {r2}");
+      }
+    output: |
+      error[E0499]: cannot borrow `s` as mutable more than once at a time
+       --> src/main.rs:4:14
+        |
+      3 |     let r1 = &mut s;
+        |              ------ first mutable borrow occurs here
+      4 |     let r2 = &mut s;
+        |              ^^^^^^ second mutable borrow occurs here
+      5 |     println!("{r1}, {r2}");
+        |                -- first borrow later used here
+    output_label: Compiler output
+
+  - type: text
+    title: A borrow lasts until its last use
+    md: |
+      A reference's scope runs from where it is created to the **last place it is used**, not to the end of the block. The compiler figures this out (the feature is called *non-lexical lifetimes*). So this is fine, because the shared references are finished before the mutable one starts:
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let mut s = String::from("hello");
+
+          let r1 = &s;
+          let r2 = &s;
+          println!("{r1} and {r2}");
+          // r1 and r2 are not used after this point
+
+          let r3 = &mut s;
+          r3.push('!');
+          println!("{r3}");
+      }
+    output: |
+      hello and hello
+      hello!
+
+  - type: playground
+    id: ch04-play-borrow-order
+    title: "Reorder to satisfy the borrow checker"
+    lang: rust
+    md: |
+      This program reads the first character through a shared reference, but changes the String while that reference is still needed. Run it and read the error. Fix it by **moving one line**, not by deleting anything or adding `clone()`. It should print `first: h` and then `hello!`.
+    code: |
+      fn main() {
+          let mut s = String::from("hello");
+          let first = &s[0..1];
+          s.push('!');
+          println!("first: {first}");
+          println!("{s}");
+      }
+    starter_ok: compile_error
+    expected_output: |
+      first: h
+      hello!
+    solution_code: |
+      fn main() {
+          let mut s = String::from("hello");
+          let first = &s[0..1];
+          println!("first: {first}");
+          s.push('!');
+          println!("{s}");
+      }
+    hints:
+      - "`&s[0..1]` is a reference into `s` (a slice, next lesson). `push` needs `&mut s`. Where is `first` last used?"
+      - "Move the `println!(\"first: {first}\");` line above `s.push('!');`."
+
+  - type: text
+    title: Dangling references are impossible
+    md: |
+      In C you can return a pointer to a local variable. The variable is freed when the function returns, and the pointer now **dangles**: it points to memory that may be reused for something else. Rust's compiler refuses to let a reference outlive the data it refers to:
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    code: |
+      fn dangle() -> &String {
+          let s = String::from("hello");
+          &s
+      }
+
+      fn main() {
+          let reference_to_nothing = dangle();
+      }
+    output: |
+      error[E0106]: missing lifetime specifier
+       --> src/main.rs:1:16
+        |
+      1 | fn dangle() -> &String {
+        |                ^ expected named lifetime parameter
+        |
+        = help: this function's return type contains a borrowed value, but there is no value for it to be borrowed from
+      help: consider using the `'static` lifetime, but this is uncommon unless you're returning a borrowed value from a `const` or a `static`
+        |
+      1 | fn dangle() -> &'static String {
+        |                 +++++++
+      help: instead, you are more likely to want to return an owned value
+        |
+      1 - fn dangle() -> &String {
+      1 + fn dangle() -> String {
+    output_label: Compiler output
+    explain: "The first help line is the key: the function returns a borrow, but there is nothing it could be borrowing from, because `s` dies when `dangle` returns. Ignore the `'static` suggestion; the last one is the real fix: return the `String` itself, moving ownership out. Lifetimes, the mechanism behind this check, get a full lesson in chapter 10."
+
+  - type: callout
+    kind: tip
+    title: "Which parameter type should a function take?"
+    md: |
+      - Only needs to **read** the value: take `&T`. This is the most common choice.
+      - Needs to **change** the caller's value: take `&mut T`.
+      - Needs to **keep** the value, store it, or hand it on: take `T` (ownership).
+
+      Choosing the weakest one that works keeps your functions easy to call.
+
+  - type: playground
+    id: ch04-play-borrow-fix
+    title: "Borrow instead of move"
+    lang: rust
+    md: |
+      The satellite check from lesson 1 again, the proper way. Change `check_status` to **borrow** the name, and `log_contact` to borrow it **mutably** and append `" (contacted)"`. The program should then print the lines shown in the task.
+    task: "Print `sat-a: ok`, then `sat-a: ok` again, then `sat-a (contacted)`."
+    code: |
+      fn check_status(sat: String) -> &'static str {
+          if sat.is_empty() { "unknown" } else { "ok" }
+      }
+
+      fn log_contact(sat: String) {
+          sat.push_str(" (contacted)");
+      }
+
+      fn main() {
+          let sat_a = String::from("sat-a");
+          println!("{sat_a}: {}", check_status(sat_a));
+          println!("{sat_a}: {}", check_status(sat_a));
+          log_contact(sat_a);
+          println!("{sat_a}");
+      }
+    starter_ok: compile_error
+    expected_output: |
+      sat-a: ok
+      sat-a: ok
+      sat-a (contacted)
+    solution_code: |
+      fn check_status(sat: &String) -> &'static str {
+          if sat.is_empty() { "unknown" } else { "ok" }
+      }
+
+      fn log_contact(sat: &mut String) {
+          sat.push_str(" (contacted)");
+      }
+
+      fn main() {
+          let mut sat_a = String::from("sat-a");
+          println!("{sat_a}: {}", check_status(&sat_a));
+          println!("{sat_a}: {}", check_status(&sat_a));
+          log_contact(&mut sat_a);
+          println!("{sat_a}");
+      }
+    hints:
+      - "Parameter types: `sat: &String` and `sat: &mut String`."
+      - "Call sites: `check_status(&sat_a)` and `log_contact(&mut sat_a)`. The variable needs `let mut`."
+
+  - type: text
+    title: Dereferencing with *
+    md: |
+      A reference is an address. Most of the time Rust follows it for you: method calls like `s.len()` and `println!` work through references automatically. When you need the value itself, for example to do arithmetic or to assign through a `&mut`, use the **dereference operator** `*`:
+
+  - type: code
+    lang: rust
+    code: |
+      fn add_bonus(score: &mut u32, bonus: u32) {
+          *score += bonus; // change the value the reference points to
+      }
+
+      fn main() {
+          let mut score = 40;
+          add_bonus(&mut score, 2);
+          let r = &score;
+          let doubled = *r * 2;
+          println!("{score} {doubled}");
+      }
+    output: "42 84"
+
+  - type: exercise
+    id: ch04-ex-borrowing
+    exercise_dir: ch04-borrowing
+    title: "Read with &, change with &mut"
+    difficulty: medium
+    goal: "Choose the right kind of reference for each function, and use * where you need the value."
+    behavior: |
+      - `pub fn count_vowels(s: &String) -> usize`: how many of the characters are a, e, i, o or u (lowercase or uppercase).
+      - `pub fn make_title(s: &mut String)`: change the String in place so that its first character is uppercase. An empty String stays empty.
+      - `pub fn add_points(total: &mut u32, points: &[u32; 3])`: add all three points to `total`.
+      - `pub fn longer<'a>(a: &'a String, b: &'a String) -> &'a String`: a reference to the longer of the two; if they have equal length, return `a`. (The `'a` is a lifetime annotation, explained in chapter 10; it is already written for you.)
+    examples:
+      - input: "count_vowels(&String::from(\"Rust in Action\"))"
+        output: "5"
+      - input: "make_title on \"ferris\""
+        output: "\"Ferris\""
+      - input: "add_points(&mut 10, &[1, 2, 3])"
+        output: "total becomes 16"
+    hints:
+      - "`for c in s.chars()` gives each `char`. `\"aeiouAEIOU\".contains(c)` checks if it is a vowel."
+      - "`make_title`: if `s` is not empty, take the first char with `s.remove(0)` and put back its uppercase with `s.insert_str(0, &first.to_uppercase().to_string())`."
+      - "`add_points`: `for p in points { *total += p; }`. Iterating a `&[u32; 3]` gives `&u32`, which `+=` accepts."
+      - "`longer`: `if b.len() > a.len() { b } else { a }`."
+    rust:
+      starter: |
+        /// Counts a, e, i, o, u in either case.
+        pub fn count_vowels(s: &String) -> usize {
+            todo!()
+        }
+
+        /// Uppercases the first character, in place.
+        pub fn make_title(s: &mut String) {
+            todo!()
+        }
+
+        /// Adds the three points to the total.
+        pub fn add_points(total: &mut u32, points: &[u32; 3]) {
+            todo!()
+        }
+
+        /// The longer String; `a` when they are the same length.
+        pub fn longer<'a>(a: &'a String, b: &'a String) -> &'a String {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn vowels() {
+            assert_eq!(count_vowels(&String::from("Rust in Action")), 5, "Rust in Action: u, i, A, i, o");
+            assert_eq!(count_vowels(&String::from("rhythm")), 0, "rhythm");
+            assert_eq!(count_vowels(&String::from("AEIOU aeiou")), 10, "all vowels");
+        }
+
+        #[test]
+        fn vowels_do_not_take_ownership() {
+            let s = String::from("borrowed");
+            let _ = count_vowels(&s);
+            assert_eq!(s, "borrowed", "the caller still owns s");
+        }
+
+        #[test]
+        fn title() {
+            let mut s = String::from("ferris");
+            make_title(&mut s);
+            assert_eq!(s, "Ferris", "make_title(\"ferris\")");
+            let mut already = String::from("Crab");
+            make_title(&mut already);
+            assert_eq!(already, "Crab", "already uppercase");
+        }
+
+        #[test]
+        fn title_of_empty() {
+            let mut s = String::new();
+            make_title(&mut s);
+            assert_eq!(s, "", "empty stays empty");
+        }
+
+        #[test]
+        fn points() {
+            let mut total = 10;
+            add_points(&mut total, &[1, 2, 3]);
+            assert_eq!(total, 16, "10 + 1 + 2 + 3");
+            add_points(&mut total, &[0, 0, 4]);
+            assert_eq!(total, 20, "a second call keeps adding");
+        }
+
+        #[test]
+        fn longest() {
+            let a = String::from("orbit");
+            let b = String::from("constellation");
+            assert_eq!(longer(&a, &b), "constellation");
+            let c = String::from("12345");
+            assert!(std::ptr::eq(longer(&a, &c), &a), "a tie returns the first argument");
+        }
+      solution: |
+        /// Counts a, e, i, o, u in either case.
+        pub fn count_vowels(s: &String) -> usize {
+            let mut count = 0;
+            for c in s.chars() {
+                if "aeiouAEIOU".contains(c) {
+                    count += 1;
+                }
+            }
+            count
+        }
+
+        /// Uppercases the first character, in place.
+        pub fn make_title(s: &mut String) {
+            if s.is_empty() {
+                return;
+            }
+            let first = s.remove(0);
+            s.insert_str(0, &first.to_uppercase().to_string());
+        }
+
+        /// Adds the three points to the total.
+        pub fn add_points(total: &mut u32, points: &[u32; 3]) {
+            for p in points {
+                *total += p;
+            }
+        }
+
+        /// The longer String; `a` when they are the same length.
+        pub fn longer<'a>(a: &'a String, b: &'a String) -> &'a String {
+            if b.len() > a.len() { b } else { a }
+        }
+    solution_explain: "Each signature tells the caller what happens to their data: `&String` promises only to read, `&mut String` warns that it will change. `to_uppercase` on a `char` returns several characters in general (the German ß becomes SS), which is why it is turned into a String before inserting."
+
+  - type: quiz
+    id: ch04-quiz-references
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What does `&s1` do in `calculate_length(&s1)`?"
+        options: ["Copies the String", "Moves the String into the function", "Creates a reference that borrows `s1` without taking ownership", "Takes the address and frees `s1`"]
+        answer: 2
+        explanation: "A reference borrows: the function can read `s1`, and `s1` stays valid afterwards."
+      - type: multi
+        q: "Which combinations can exist at the same moment for one variable `s`?"
+        options: ["Three `&s`", "One `&mut s`", "Two `&mut s`", "One `&s` and one `&mut s`"]
+        answer: [0, 1]
+        explanation: "Many readers or one writer, never both, and never two writers."
+      - type: single
+        q: "Does this compile?"
+        code: |
+          let mut s = String::from("hi");
+          let r = &s;
+          println!("{r}");
+          s.push('!');
+        lang: rust
+        options: ["Yes: `r` is no longer used when `s` is changed", "No: `r` is still in scope", "No: `s` cannot be `mut` if borrowed", "Only with `clone()`"]
+        answer: 0
+        explanation: "A borrow ends at its last use, so `push` is fine after the `println!`."
+      - type: single
+        q: "Why can't a function return a reference to a String it created inside itself?"
+        options: ["Strings cannot be returned", "The String is dropped when the function ends, so the reference would dangle", "References can only be parameters", "It needs `&mut`"]
+        answer: 1
+        explanation: "Return the `String` itself instead, moving ownership to the caller."
+      - type: fill
+        q: "Inside `fn inc(n: &mut i32)`, the line that adds 1 to the caller's number is `___n += 1;`"
+        answer: ["*"]
+        explanation: "`*n` dereferences the reference to reach the number."
+      - type: single
+        q: "A function only needs to look at a `Vec<String>`. Which parameter type is best?"
+        options: ["`Vec<String>`", "`&Vec<String>`", "`&mut Vec<String>`", "`Vec<&String>`"]
+        answer: 1
+        explanation: "Reading needs only a shared reference. (Chapter 8 shows that `&[String]` is even more flexible.)"
+
+  - type: summary
+    points:
+      - "A reference `&x` borrows a value without owning it; nothing is dropped when the reference goes away."
+      - "`&mut x` allows changing the borrowed value; the variable must be `let mut`."
+      - "At any moment: many shared references **or** one mutable reference."
+      - "A borrow lasts until its last use, not to the end of the block."
+      - "References can never dangle: the compiler rejects any reference that would outlive its data."
+      - "`*r` dereferences; method calls and `println!` dereference automatically."
+      - "Take `&T` to read, `&mut T` to change, `T` to keep."
+terms:
+  - term: reference
+    def: "A pointer that is guaranteed to point to a valid value of a given type, written &T or &mut T."
+  - term: borrowing
+    def: "Creating a reference to a value owned by someone else."
+  - term: mutable reference
+    def: "A reference (&mut T) that allows changing the value; only one can exist at a time, and no shared references alongside it."
+  - term: data race
+    def: "Two accesses to the same data at the same time, at least one a write, with nothing ordering them. Rust rejects these at compile time."
+  - term: dangling reference
+    def: "A reference to memory that has been freed. Impossible in safe Rust."
+  - term: dereference
+    def: "Following a reference to the value it points to, with the * operator."
+  - term: borrow checker
+    def: "The part of the compiler that checks every reference against the ownership and borrowing rules."

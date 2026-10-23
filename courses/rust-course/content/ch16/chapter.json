@@ -1,0 +1,10 @@
+{
+  "title": "Fearless Concurrency",
+  "summary": "Running code at the same time safely: spawning and joining threads, scoped threads, passing messages through channels, sharing state with Mutex and Arc, atomics, and the Send and Sync traits that let the compiler rule out data races.",
+  "goals": [
+    "Spawn threads, wait for them with join, move data into them, and borrow with scoped threads",
+    "Communicate between threads with mpsc channels and multiple producers",
+    "Share state with Arc<Mutex<T>>, RwLock and atomics, and recognize deadlocks",
+    "Explain Send and Sync and why Rc<T> and RefCell<T> stay on one thread"
+  ]
+}

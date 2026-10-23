@@ -1,0 +1,7 @@
+title: "Common Collections and Text"
+summary: "The three collections every program uses: Vec for lists, String for UTF-8 text, and HashMap for lookups by key, plus a map of the other standard collections."
+goals:
+  - Create, read, update and iterate over vectors, and know when indexing panics
+  - Explain why Rust strings cannot be indexed by position, and work with bytes, chars and slices
+  - Build and update hash maps, including the entry API, and understand ownership of keys and values
+  - Pick the right standard collection (Vec, VecDeque, HashMap, BTreeMap, HashSet, BTreeSet) for a job

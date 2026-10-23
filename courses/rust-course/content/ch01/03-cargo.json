@@ -1,0 +1,311 @@
+{
+  "title": "Hello, Cargo! Rust's build tool",
+  "summary": "You will create, check, build and run a project with Cargo, and know what every file it creates is for.",
+  "source": {
+    "chapter": "ch01",
+    "sections": [
+      "TRPL 1.3 Hello, Cargo!",
+      "CR Using Cargo",
+      "PR ch1 Rust makes collaboration easier"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "After this lesson you will manage a Rust project the way almost every Rust programmer does: with **Cargo**. Calling `rustc` by hand is fine for one file, but real programs have many files and use code written by other people. Cargo handles all of that with a handful of commands that are the same on Windows, macOS and Linux.\n"
+    },
+    {
+      "type": "callout",
+      "kind": "analogy",
+      "title": "A kitchen manager",
+      "md": "If `rustc` is the cook, Cargo is the kitchen manager. It knows where the recipes are kept, orders ingredients from suppliers (other people's code, called **dependencies**), tells the cook what to make, and keeps the finished dishes on the right shelf. You talk to the manager; the manager talks to the cook.\n"
+    },
+    {
+      "type": "text",
+      "title": "Creating a project",
+      "md": "`cargo new hello_cargo` creates a folder named `hello_cargo` with a ready-made project inside. It also starts a **Git** repository (Git tracks changes to your files) unless you are already inside one.\n\nInside you will find two things: a `Cargo.toml` file and a `src` folder holding `main.rs`. Cargo has even written Hello, world! into `main.rs` for you.\n"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "file": "terminal",
+      "code": "cargo new hello_cargo\ncd hello_cargo\n",
+      "output": "Creating binary (application) `hello_cargo` package\n"
+    },
+    {
+      "type": "svg",
+      "caption": "What `cargo new` creates. Source code lives in `src/`; the top folder is for configuration, the README and the license.",
+      "svg": "<svg viewBox='0 0 520 210' xmlns='http://www.w3.org/2000/svg' font-family='ui-monospace, monospace' font-size='14'>\n  <g fill='none' stroke='currentColor' stroke-width='1'>\n    <rect x='20' y='20' width='170' height='34'/>\n    <path d='M40 54 V170 M40 92 H70 M40 132 H70 M100 150 V184 M100 170 H130'/>\n    <rect x='70' y='76' width='150' height='32'/>\n    <rect x='70' y='116' width='110' height='32'/>\n    <rect x='130' y='156' width='110' height='30'/>\n  </g>\n  <g fill='currentColor'>\n    <text x='32' y='42'>hello_cargo/</text>\n    <text x='82' y='97'>Cargo.toml</text>\n    <text x='82' y='137'>src/</text>\n    <text x='142' y='176'>main.rs</text>\n    <text x='250' y='97' font-family='sans-serif' font-size='13'>settings: name, version, edition,</text>\n    <text x='250' y='113' font-family='sans-serif' font-size='13'>dependencies</text>\n    <text x='250' y='176' font-family='sans-serif' font-size='13'>your code starts here (fn main)</text>\n  </g>\n</svg>\n"
+    },
+    {
+      "type": "code",
+      "lang": "toml",
+      "file": "Cargo.toml",
+      "code": "[package]\nname = \"hello_cargo\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n",
+      "explain": "This file uses **TOML**, a simple settings format. `[package]` starts a section about your project: its `name`, its `version`, and the Rust **edition** it is written for. An edition is a snapshot of language conventions (2015, 2018, 2021, 2024); old code keeps compiling while new projects get the newest idioms. `[dependencies]` is where you will list other people's packages. In Rust a package of code is called a **crate**.\n"
+    },
+    {
+      "type": "text",
+      "title": "Build, run and check",
+      "md": "`cargo build` compiles the project and puts the executable in `target/debug/`. The first build also creates `Cargo.lock`, which records the exact versions of every dependency so the build can be repeated exactly. You never edit `Cargo.lock` by hand.\n\n`cargo run` builds (only if something changed) and runs in one step, so it is what you will type most. `cargo check` only checks that the code compiles, without producing an executable. It is much faster than a build, so many Rustaceans run it constantly while writing code.\n"
+    },
+    {
+      "type": "stepper",
+      "title": "What each command prints",
+      "lang": "bash",
+      "steps": [
+        {
+          "title": "cargo build",
+          "md": "Compiles the project. The word **dev** means a development build: compiled quickly, not optimized.",
+          "code": "$ cargo build\n   Compiling hello_cargo v0.1.0 (/projects/hello_cargo)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.85s\n",
+          "highlight": [
+            2,
+            3
+          ]
+        },
+        {
+          "title": "cargo run, nothing changed",
+          "md": "No `Compiling` line: Cargo noticed the source did not change and just ran the existing executable.",
+          "code": "$ cargo run\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.02s\n     Running `target/debug/hello_cargo`\nHello, world!\n",
+          "highlight": [
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "title": "cargo run, after an edit",
+          "md": "You changed `main.rs`, so Cargo rebuilds first, then runs.",
+          "code": "$ cargo run\n   Compiling hello_cargo v0.1.0 (/projects/hello_cargo)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.33s\n     Running `target/debug/hello_cargo`\nHello, world!\n",
+          "highlight": [
+            2
+          ]
+        },
+        {
+          "title": "cargo check",
+          "md": "Only checks for errors. No executable is written, which is why it is fast.",
+          "code": "$ cargo check\n    Checking hello_cargo v0.1.0 (/projects/hello_cargo)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.32s\n",
+          "highlight": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Building for release",
+      "md": "When your program is ready for real users, run `cargo build --release`. It turns on **optimizations**, so the program runs faster, but the build takes longer. The result goes to `target/release/` instead of `target/debug/`. That is why there are two **profiles**: one for quick rebuilds while you work, one for the fastest possible final program. If you ever measure how fast your code is, always measure the release build.\n"
+    },
+    {
+      "type": "table",
+      "title": "Cargo cheat sheet",
+      "headers": [
+        "Command",
+        "What it does",
+        "Output goes to"
+      ],
+      "rows": [
+        [
+          "`cargo new NAME`",
+          "Create a new project folder",
+          "`NAME/`"
+        ],
+        [
+          "`cargo build`",
+          "Compile (development profile)",
+          "`target/debug/`"
+        ],
+        [
+          "`cargo run`",
+          "Compile if needed, then run",
+          "`target/debug/`"
+        ],
+        [
+          "`cargo check`",
+          "Check that it compiles, produce nothing",
+          "(nothing)"
+        ],
+        [
+          "`cargo build --release`",
+          "Compile with optimizations",
+          "`target/release/`"
+        ],
+        [
+          "`cargo test`",
+          "Build and run the project's tests (chapter 11)",
+          "`target/debug/`"
+        ],
+        [
+          "`cargo fmt`",
+          "Format all code in the standard style",
+          "(edits files)"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "md": "Day to day you need three commands: `cargo new` to start, `cargo check` while you write, `cargo run` to try it."
+    },
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Working on someone else's project",
+      "md": "Because Cargo's layout is the same everywhere, getting any Rust project running looks like this: `git clone <address>`, `cd` into the folder, `cargo build`. If you started a project without Cargo, move the code into `src/` and run `cargo init` to create the `Cargo.toml`.\n"
+    },
+    {
+      "type": "flashcards",
+      "id": "ch01-cards-cargo",
+      "title": "Cargo vocabulary",
+      "cards": [
+        {
+          "front": "`Cargo.toml`",
+          "back": "The project's settings file: name, version, edition, dependencies."
+        },
+        {
+          "front": "`Cargo.lock`",
+          "back": "Records the exact versions of all dependencies. Managed by Cargo, never edited by hand."
+        },
+        {
+          "front": "crate",
+          "back": "A package of Rust code: your project, or a library you depend on."
+        },
+        {
+          "front": "`cargo check`",
+          "back": "Checks that the code compiles without producing an executable. Fast."
+        },
+        {
+          "front": "`target/debug/` vs `target/release/`",
+          "back": "Where development builds and optimized `--release` builds are written."
+        },
+        {
+          "front": "edition",
+          "back": "A snapshot of Rust's language conventions (2015, 2018, 2021, 2024) chosen in `Cargo.toml`."
+        }
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch01-ex-first-cargo-project",
+      "title": "Your first Cargo project",
+      "difficulty": "easy",
+      "minutes": 10,
+      "goal": "Create a Cargo project on your own computer, change what it prints, and build it in both profiles.",
+      "behavior": "1. Run `cargo new hello_cargo` and `cd hello_cargo`.\n2. Open `src/main.rs` and change the message to `Hello, Cargo!`.\n3. Run `cargo check`, then `cargo run`.\n4. Run `cargo build --release` and run the optimized program directly from `target/release/`.\n",
+      "examples": [
+        {
+          "input": "cargo run",
+          "output": "Hello, Cargo!"
+        },
+        {
+          "input": "./target/release/hello_cargo",
+          "output": "Hello, Cargo!",
+          "note": "On Windows: `.\\target\\release\\hello_cargo.exe`"
+        }
+      ],
+      "checklist": [
+        "`cargo new hello_cargo` created `Cargo.toml` and `src/main.rs`.",
+        "`cargo check` finished without errors.",
+        "`cargo run` printed `Hello, Cargo!`.",
+        "The second `cargo run` (with no changes) did not print a `Compiling` line.",
+        "`cargo build --release` created an executable in `target/release/` that prints the same text."
+      ],
+      "hints": [
+        "If `cargo` is not found, open a new terminal after installing Rust.",
+        "Change only the text inside `println!(\"...\")`."
+      ],
+      "solution_lang": "rust",
+      "solution": "// src/main.rs\nfn main() {\n    println!(\"Hello, Cargo!\");\n}\n",
+      "solution_explain": "Cargo only rebuilds when a source file changes, which is why the second `cargo run` skips the `Compiling` line. The release build lives in a different folder, so both executables exist side by side.\n"
+    },
+    {
+      "type": "quiz",
+      "id": "ch01-quiz-cargo",
+      "title": "Quick check",
+      "questions": [
+        {
+          "type": "single",
+          "q": "You are halfway through writing a function and want to know whether it compiles, as quickly as possible. Which command?",
+          "options": [
+            "`cargo build --release`",
+            "`cargo run`",
+            "`cargo check`",
+            "`cargo new`"
+          ],
+          "answer": 2,
+          "hints": [
+            "You do not need an executable yet."
+          ],
+          "explanation": "`cargo check` only checks the code, skipping the slow step of producing an executable. `cargo build --release` is the slowest option of all because it also optimizes.\n"
+        },
+        {
+          "type": "fill",
+          "q": "In which folder does `cargo build --release` put the executable? (format: `folder/subfolder`)",
+          "answer": [
+            "target/release",
+            "target/release/",
+            "./target/release"
+          ],
+          "hints": [
+            "Development builds go to `target/debug`."
+          ],
+          "explanation": "Release builds go to `target/release/`, development builds to `target/debug/`, so both can exist at the same time."
+        },
+        {
+          "type": "single",
+          "q": "Which file should you **never** edit by hand?",
+          "options": [
+            "`Cargo.toml`",
+            "`src/main.rs`",
+            "`Cargo.lock`",
+            "`README.md`"
+          ],
+          "answer": 2,
+          "hints": [
+            "One file is written by Cargo to record exact dependency versions."
+          ],
+          "explanation": "`Cargo.lock` is managed by Cargo. You *do* edit `Cargo.toml`, for example to add dependencies; Cargo then updates `Cargo.lock` itself.\n"
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Cargo is Rust's build tool and package manager; its commands are the same on every operating system.",
+        "`cargo new` creates `Cargo.toml` (settings) and `src/main.rs` (code); `Cargo.lock` appears on the first build.",
+        "`cargo check` is the fast compile check, `cargo run` builds and runs, `cargo build --release` makes the optimized program.",
+        "Development builds go to `target/debug/`, release builds to `target/release/`."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "Cargo",
+      "def": "Rust's build system and package manager. It builds code, downloads dependencies and runs tests."
+    },
+    {
+      "term": "crate",
+      "def": "A package of Rust code. Your project is a crate; libraries you use are crates too."
+    },
+    {
+      "term": "dependency",
+      "def": "A crate that your project uses, listed under `[dependencies]` in `Cargo.toml`."
+    },
+    {
+      "term": "Cargo.toml",
+      "def": "The project settings file written in TOML: package name, version, edition and dependencies."
+    },
+    {
+      "term": "Cargo.lock",
+      "def": "A file that records the exact versions of all dependencies so builds can be repeated. Managed by Cargo."
+    },
+    {
+      "term": "edition",
+      "def": "A set of language conventions (2015, 2018, 2021, 2024) a crate opts into in `Cargo.toml`."
+    },
+    {
+      "term": "release profile",
+      "def": "The build settings used by `cargo build --release`: slower to compile, faster to run."
+    }
+  ]
+}

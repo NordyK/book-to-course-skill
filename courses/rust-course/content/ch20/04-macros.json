@@ -1,0 +1,457 @@
+{
+  "title": "Macros",
+  "summary": "Macros versus functions, declarative macros with macro_rules!: matchers, fragment specifiers, repetition, recursion, hygiene, scoping and #[macro_export]; and the three kinds of procedural macros: custom derive, attribute-like and function-like.",
+  "minutes": 45,
+  "source": {
+    "chapter": "ch20",
+    "sections": [
+      "TRPL 20.5 Macros",
+      "TRPL 20.5 The Difference Between Macros and Functions",
+      "TRPL 20.5 Declarative Macros for General Metaprogramming",
+      "TRPL 20.5 Procedural Macros for Generating Code from Attributes",
+      "TRPL 20.5 Custom derive Macros",
+      "TRPL 20.5 Attribute-Like Macros",
+      "TRPL 20.5 Function-Like Macros",
+      "PR ch21 Macros",
+      "PR ch21 Macro Basics",
+      "PR ch21 Basics of Macro Expansion",
+      "PR ch21 Unintended Consequences",
+      "PR ch21 Repetition",
+      "PR ch21 Built-In Macros",
+      "PR ch21 Debugging Macros",
+      "PR ch21 Building the json! Macro",
+      "PR ch21 Fragment Types",
+      "PR ch21 Recursion in Macros",
+      "PR ch21 Scoping and Hygiene",
+      "PR ch21 Importing and Exporting Macros",
+      "PR ch21 Beyond macro_rules!"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "A **macro** is code that writes code. You have used many: `println!`, `vec!`, `assert_eq!`, `#[derive(Debug)]`. Rust has two families:\n\n- **declarative macros**, written with `macro_rules!`, which match on the shape of their input and substitute a template;\n- **procedural macros**, which are Rust functions that receive the input as a stream of tokens and return new tokens.\n\nMacros run at **compile time**, before type checking. The compiler **expands** each call into ordinary code, then compiles that.\n"
+    },
+    {
+      "type": "table",
+      "title": "Macros or functions?",
+      "headers": [
+        "",
+        "Function",
+        "Macro"
+      ],
+      "rows": [
+        [
+          "number of arguments",
+          "fixed",
+          "variable: `println!(\"a\")`, `println!(\"{} {}\", a, b)`"
+        ],
+        [
+          "can generate items",
+          "no",
+          "yes: structs, impls, functions, tests"
+        ],
+        [
+          "runs",
+          "at run time",
+          "at compile time, by expansion"
+        ],
+        [
+          "readability",
+          "plain Rust",
+          "harder: code that writes code"
+        ],
+        [
+          "scoping",
+          "can be used anywhere once in scope",
+          "must be **defined before** use in the file (or imported)"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "title": "macro_rules! basics",
+      "md": "A declarative macro is a list of **rules**, each `(matcher) => { transcriber };`. The first rule whose matcher fits the input wins. In the matcher, `$name:kind` captures a piece of syntax called a **fragment**. A simplified `vec!` from *The Rust Programming Language*:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "macro_rules! my_vec {\n    () => {\n        Vec::new()\n    };\n    ( $( $x:expr ),* $(,)? ) => {\n        {\n            let mut temp_vec = Vec::new();\n            $(\n                temp_vec.push($x);\n            )*\n            temp_vec\n        }\n    };\n}\n\nfn main() {\n    let empty: Vec<i32> = my_vec![];\n    let v = my_vec![1, 2, 3,];\n    println!(\"{empty:?} {v:?}\");\n}\n",
+      "output": "[] [1, 2, 3]"
+    },
+    {
+      "type": "stepper",
+      "title": "How my_vec![1, 2, 3] expands",
+      "steps": [
+        {
+          "title": "Find a matching rule",
+          "md": "The first rule needs empty input, so it fails. The second rule matches."
+        },
+        {
+          "title": "Match the repetition",
+          "md": "`$( $x:expr ),*` means: zero or more expressions separated by commas. `$x` captures `1`, then `2`, then `3`. `$(,)?` allows one optional trailing comma."
+        },
+        {
+          "title": "Expand the template",
+          "md": "In the transcriber, `$( temp_vec.push($x); )*` repeats once per captured `$x`.",
+          "code": "{\n    let mut temp_vec = Vec::new();\n    temp_vec.push(1);\n    temp_vec.push(2);\n    temp_vec.push(3);\n    temp_vec\n}\n"
+        },
+        {
+          "title": "Compile the result",
+          "md": "The expanded block is ordinary Rust. Type errors are reported against it. `cargo expand` (an extra tool) shows the expansion of your whole crate."
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Fragment specifiers",
+      "headers": [
+        "Specifier",
+        "Matches",
+        "Example"
+      ],
+      "rows": [
+        [
+          "`expr`",
+          "an expression",
+          "`2 + 2`, `f(x)`, `\"udon\"`"
+        ],
+        [
+          "`ident`",
+          "an identifier",
+          "`counter`, `Point`"
+        ],
+        [
+          "`ty`",
+          "a type",
+          "`Vec<String>`, `&str`"
+        ],
+        [
+          "`pat`",
+          "a pattern",
+          "`Some(x)`, `1..=5`"
+        ],
+        [
+          "`literal`",
+          "a literal",
+          "`42`, `\"text\"`, `true`"
+        ],
+        [
+          "`block`",
+          "a block",
+          "`{ x += 1; }`"
+        ],
+        [
+          "`stmt`",
+          "a statement",
+          "`let x = 3`"
+        ],
+        [
+          "`item`",
+          "an item",
+          "`fn f() {}`, `struct S;`"
+        ],
+        [
+          "`path`",
+          "a path",
+          "`std::collections::HashMap`"
+        ],
+        [
+          "`lifetime`",
+          "a lifetime",
+          "`'a`"
+        ],
+        [
+          "`vis`",
+          "a visibility, possibly empty",
+          "`pub`, `pub(crate)`"
+        ],
+        [
+          "`tt`",
+          "any single token tree",
+          "`+`, `foo`, `(a, b)`, `[1, 2]`"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Repetition, several rules and recursion",
+      "md": "Repetitions are written `$( ... ) sep rep` where `rep` is `*` (zero or more), `+` (one or more) or `?` (zero or one). Captures used inside a repetition in the transcriber must be repeated the same number of times.\n\nA macro can call **itself**, which lets it process input piece by piece. *Programming Rust*'s `json!` macro works this way. Here is a `max!` that accepts any number of arguments, and a macro that **generates items**:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "macro_rules! max {\n    ($x:expr) => { $x };\n    ($x:expr, $($rest:expr),+) => {\n        {\n            let a = $x;\n            let b = max!($($rest),+);\n            if a > b { a } else { b }\n        }\n    };\n}\n\nmacro_rules! getters {\n    ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {\n        struct $name {\n            $($field: $ty),*\n        }\n\n        impl $name {\n            $(\n                fn $field(&self) -> &$ty {\n                    &self.$field\n                }\n            )*\n        }\n    };\n}\n\ngetters!(Book { title: String, pages: u32 });\n\nfn main() {\n    println!(\"{}\", max!(3));\n    println!(\"{}\", max!(3, 9, 4, 1));\n\n    let b = Book { title: String::from(\"The Book\"), pages: 550 };\n    println!(\"{} has {} pages\", b.title(), b.pages());\n}\n",
+      "output": "3\n9\nThe Book has 550 pages\n",
+      "explain": "The `let a = $x;` matters: if the transcriber used `$x` twice, an argument like `next()` would be evaluated twice. *Programming Rust* calls these the unintended consequences of macros."
+    },
+    {
+      "type": "text",
+      "title": "Hygiene and scope",
+      "md": "Macros are **hygienic** for local variables: a `let` inside a macro creates a variable the caller cannot see, and the macro cannot accidentally use the caller's variables unless they are passed in. In `max!`, the `a` and `b` inside do not clash with an `a` in your code. (Hygiene does not cover item names like functions and structs, which is how `getters!` defines a struct you can use.)\n\nMacros are scoped **textually**: a `macro_rules!` is usable after its definition in the same file and in child modules defined below it. To use a macro from another crate, it must be marked **`#[macro_export]`**, which places it at the crate root: `use my_crate::my_vec;`. Inside macros meant for export, refer to items with **`$crate::`** so paths work from any crate.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "macro_rules! square_twice {\n    ($e:expr) => {{\n        let x = $e * $e;\n        x * x\n    }};\n}\n\nfn main() {\n    let x = 3;\n    let r = square_twice!(x + 1);\n    println!(\"x is still {x}, result {r}\");\n}\n",
+      "output": "x is still 3, result 256",
+      "explain": "The macro's `x` and the caller's `x` are different variables. Notice also that `$e` was the **expression** `x + 1`, kept as one unit: `(x + 1) * (x + 1)`, not `x + 1 * x + 1`, unlike a C preprocessor macro."
+    },
+    {
+      "type": "text",
+      "title": "Procedural macros",
+      "md": "**Procedural macros** are functions from `TokenStream` to `TokenStream`, compiled as a separate crate with `proc-macro = true` in its `Cargo.toml`. They usually use the `syn` crate to parse Rust code into a syntax tree and `quote` to turn templates back into tokens. There are three kinds:\n"
+    },
+    {
+      "type": "table",
+      "title": "Three kinds of procedural macro",
+      "headers": [
+        "Kind",
+        "Use",
+        "Example"
+      ],
+      "rows": [
+        [
+          "custom derive",
+          "`#[derive(MyTrait)]` on a struct or enum; adds code after it",
+          "`#[derive(Serialize)]`, `#[derive(HelloMacro)]`"
+        ],
+        [
+          "attribute-like",
+          "a custom attribute on any item; can replace the item",
+          "`#[route(GET, \"/\")]`, `#[tokio::main]`"
+        ],
+        [
+          "function-like",
+          "called like a function, takes any tokens",
+          "`sql!(SELECT * FROM posts)`"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "md": "*The Rust Programming Language* builds a `HelloMacro` derive. The trait lives in one crate, the derive in a `hello_macro_derive` crate. This needs crates from crates.io, so it is shown here as code to read, not run:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "hello_macro_derive/src/lib.rs",
+      "code": "use proc_macro::TokenStream;\nuse quote::quote;\n\n#[proc_macro_derive(HelloMacro)]\npub fn hello_macro_derive(input: TokenStream) -> TokenStream {\n    // parse the tokens into a syntax tree\n    let ast = syn::parse(input).unwrap();\n\n    // build the trait implementation\n    impl_hello_macro(&ast)\n}\n\nfn impl_hello_macro(ast: &syn::DeriveInput) -> TokenStream {\n    let name = &ast.ident;\n    let generated = quote! {\n        impl HelloMacro for #name {\n            fn hello_macro() {\n                println!(\"Hello, Macro! My name is {}!\", stringify!(#name));\n            }\n        }\n    };\n    generated.into()\n}\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "// a user of the derive writes only this:\nuse hello_macro::HelloMacro;\nuse hello_macro_derive::HelloMacro;\n\n#[derive(HelloMacro)]\nstruct Pancakes;\n\nfn main() {\n    Pancakes::hello_macro(); // prints: Hello, Macro! My name is Pancakes!\n}\n",
+      "explain": "`#name` in `quote!` inserts the struct's identifier, much like `$name` in `macro_rules!`. `stringify!` turns tokens into a string literal at compile time."
+    },
+    {
+      "type": "text",
+      "md": "Attribute-like and function-like macros have these signatures:\n\n```rust\n#[proc_macro_attribute]\npub fn route(attr: TokenStream, item: TokenStream) -> TokenStream { ... }\n\n#[proc_macro]\npub fn sql(input: TokenStream) -> TokenStream { ... }\n```\n\n`attr` holds the attribute's arguments (`GET, \"/\"`), `item` the function it is attached to. A function-like macro can parse anything, even SQL, and report errors at compile time.\n"
+    },
+    {
+      "type": "table",
+      "title": "Handy built-in macros",
+      "headers": [
+        "Macro",
+        "Gives"
+      ],
+      "rows": [
+        [
+          "`file!()`, `line!()`, `column!()`",
+          "the source location as a literal"
+        ],
+        [
+          "`stringify!(tokens)`",
+          "the tokens as a string literal"
+        ],
+        [
+          "`concat!(\"a\", 1, true)`",
+          "one string literal: `\"a1true\"`"
+        ],
+        [
+          "`include_str!(\"file.txt\")`, `include_bytes!`",
+          "a file's contents, embedded at compile time"
+        ],
+        [
+          "`env!(\"VAR\")`, `option_env!`",
+          "a compile-time environment variable"
+        ],
+        [
+          "`matches!(value, pattern)`",
+          "a `bool`: does the value match the pattern?"
+        ],
+        [
+          "`todo!()`, `unimplemented!()`, `unreachable!()`",
+          "panics with a purpose"
+        ],
+        [
+          "`dbg!(expr)`",
+          "prints file, line, expression and value to stderr, and returns the value"
+        ]
+      ]
+    },
+    {
+      "type": "playground",
+      "id": "ch20-play-macro",
+      "title": "Write a hashmap! macro",
+      "lang": "rust",
+      "md": "Write `hashmap!` so that `hashmap!{ \"a\" => 1, \"b\" => 2 }` builds a `HashMap`, an empty `hashmap!{}` works, and a trailing comma is allowed. Use `$(...),*` with a `=>` between the key and value fragments.\n",
+      "task": "Print the sorted pairs `[(\"a\", 1), (\"b\", 2), (\"c\", 3)]` and `0`.",
+      "code": "use std::collections::HashMap;\n\nmacro_rules! hashmap {\n    // TODO\n    ($($t:tt)*) => { HashMap::new() };\n}\n\nfn main() {\n    let m: HashMap<&str, i32> = hashmap! { \"a\" => 1, \"b\" => 2, \"c\" => 3, };\n    let empty: HashMap<&str, i32> = hashmap! {};\n    let mut pairs: Vec<_> = m.into_iter().collect();\n    pairs.sort();\n    println!(\"{pairs:?}\");\n    println!(\"{}\", empty.len());\n}\n",
+      "expected_output": "[(\"a\", 1), (\"b\", 2), (\"c\", 3)]\n0\n",
+      "hints": [
+        "`($($k:expr => $v:expr),* $(,)?) => {{ ... }}`. The double braces make the expansion a block expression.",
+        "Inside: `let mut map = HashMap::new(); $( map.insert($k, $v); )* map`."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch20-ex-macros",
+      "exercise_dir": "ch20-macros",
+      "title": "A small macro toolkit",
+      "difficulty": "hard",
+      "goal": "Write declarative macros with repetition, several rules, recursion and item generation.",
+      "behavior": "- `hashmap!` as in the playground (empty, several pairs, trailing comma).\n- `min!`: one or more expressions, returns the smallest; evaluate each argument **once**.\n- `count!`: the number of comma-separated token trees, as a `usize` constant expression: `count!()` is `0`, `count!(a, b, c)` is `3`.\n- `newtype!(Name, Inner)`: defines `#[derive(Debug, Clone, Copy, PartialEq)] pub struct Name(pub Inner);` plus `impl From<Inner> for Name` and `impl std::fmt::Display for Name` that prints the inner value.\n- `assert_all!(cond1, cond2, ...)`: panics with the message `assertion failed: <stringified condition>` for the first false condition.\n",
+      "examples": [
+        {
+          "input": "min!(4, 2, 8)",
+          "output": "2"
+        },
+        {
+          "input": "count!(x, y, z)",
+          "output": "3"
+        },
+        {
+          "input": "newtype!(Meters, f64); Meters::from(2.5).to_string()",
+          "output": "\"2.5\""
+        }
+      ],
+      "hints": [
+        "`count!`: `() => { 0usize }; ($head:tt $(, $tail:tt)*) => { 1usize + count!($($tail),*) };`",
+        "`min!` follows the lesson's `max!`.",
+        "`assert_all!`: `($($c:expr),+ $(,)?) => { $( if !$c { panic!(\"assertion failed: {}\", stringify!($c)); } )+ };`",
+        "`newtype!`: `($name:ident, $inner:ty) => { ... }` producing the struct and both impls."
+      ],
+      "solution_explain": "`min!` binds each argument to a local before comparing, so `next()` runs once. `count!` peels one token tree per step; because it expands to `1 + 1 + 1 + 0`, the result is a constant. The exported macros use `$crate::` and `::std::` paths so they work from any crate that imports them."
+    },
+    {
+      "type": "quiz",
+      "id": "ch20-quiz-macros",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "When are macros expanded?",
+          "options": [
+            "At run time",
+            "At compile time, before type checking",
+            "At link time",
+            "When first called"
+          ],
+          "answer": 1,
+          "explanation": "The expanded code is then compiled normally."
+        },
+        {
+          "type": "single",
+          "q": "What does `$( $x:expr ),*` match?",
+          "options": [
+            "Exactly one expression",
+            "Zero or more expressions separated by commas",
+            "One or more identifiers",
+            "Any tokens"
+          ],
+          "answer": 1,
+          "explanation": "`*` is zero or more, `+` one or more, `?` zero or one."
+        },
+        {
+          "type": "single",
+          "q": "Which fragment specifier matches any single token tree?",
+          "options": [
+            "`expr`",
+            "`ident`",
+            "`tt`",
+            "`item`"
+          ],
+          "answer": 2,
+          "explanation": "tt is the most flexible."
+        },
+        {
+          "type": "single",
+          "q": "Why should a macro bind `$x` to a local before using it twice?",
+          "options": [
+            "Style",
+            "So expressions with side effects are evaluated once",
+            "It is required by the compiler",
+            "For hygiene"
+          ],
+          "answer": 1,
+          "explanation": "Otherwise next() runs twice."
+        },
+        {
+          "type": "multi",
+          "q": "Which are kinds of procedural macros?",
+          "options": [
+            "custom derive",
+            "attribute-like",
+            "function-like",
+            "macro_rules!"
+          ],
+          "answer": [
+            0,
+            1,
+            2
+          ],
+          "explanation": "macro_rules! is declarative."
+        },
+        {
+          "type": "single",
+          "q": "What does `#[macro_export]` do?",
+          "options": [
+            "Makes the macro faster",
+            "Makes it available to other crates at the crate root",
+            "Turns it into a procedural macro",
+            "Nothing"
+          ],
+          "answer": 1,
+          "explanation": "Use `$crate::` inside exported macros."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Macros generate code at compile time and can take a variable number of arguments.",
+        "`macro_rules!` matches input against rules with fragments like `$x:expr` and repetitions like `$(...),*`.",
+        "Macros can recurse and can generate items; bind arguments once to avoid repeated evaluation.",
+        "Local variables are hygienic; macros are textually scoped and exported with `#[macro_export]` and `$crate`.",
+        "Procedural macros (derive, attribute, function-like) transform TokenStreams, usually with syn and quote."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "macro",
+      "def": "Code that generates code at compile time."
+    },
+    {
+      "term": "declarative macro",
+      "def": "A macro defined with macro_rules! that matches input patterns and substitutes templates."
+    },
+    {
+      "term": "procedural macro",
+      "def": "A function from TokenStream to TokenStream, in a proc-macro crate."
+    },
+    {
+      "term": "fragment specifier",
+      "def": "The kind in $name:kind, such as expr, ident, ty or tt."
+    },
+    {
+      "term": "hygiene",
+      "def": "The property that a macro's local variables do not clash with the caller's."
+    },
+    {
+      "term": "TokenStream",
+      "def": "The sequence of tokens a procedural macro receives and returns."
+    }
+  ]
+}

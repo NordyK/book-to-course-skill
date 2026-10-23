@@ -1,0 +1,394 @@
+{
+  "title": "Pattern syntax",
+  "summary": "Literals, named variables and shadowing, | and ranges, destructuring structs, enums, nested values, tuples, arrays and slices, ignoring with _, _x and .., match guards, @ bindings, and how patterns work with references: & patterns, ref, and default binding modes.",
+  "minutes": 45,
+  "source": {
+    "chapter": "ch19",
+    "sections": [
+      "TRPL 19.3 Pattern Syntax",
+      "TRPL 19.3 Matching Literals",
+      "TRPL 19.3 Matching Named Variables",
+      "TRPL 19.3 Matching Multiple Patterns",
+      "TRPL 19.3 Matching Ranges of Values with ..=",
+      "TRPL 19.3 Destructuring to Break Apart Values",
+      "TRPL 19.3 Ignoring Values in a Pattern",
+      "TRPL 19.3 Adding Conditionals with Match Guards",
+      "TRPL 19.3 Using @ Bindings",
+      "PR ch10 Literals, Variables, and Wildcards in Patterns",
+      "PR ch10 Tuple and Struct Patterns",
+      "PR ch10 Array and Slice Patterns",
+      "PR ch10 Reference Patterns",
+      "PR ch10 Match Guards",
+      "PR ch10 Matching Multiple Possibilities",
+      "PR ch10 Binding with @ Patterns",
+      "PR ch10 Populating a Binary Tree"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "This lesson is a catalogue. Each section shows one piece of pattern syntax with a runnable example. Keep it open as a reference: the table at the end summarizes all of it.\n"
+    },
+    {
+      "type": "text",
+      "title": "Literals, | and ranges",
+      "md": "A literal matches exactly that value. `|` means **or**. `..=` matches an **inclusive range**; ranges work on integers and `char`, and the compiler checks that the range is not empty. A half-open range `a..b` is allowed in patterns too, as is an open-ended `90..`.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn grade(score: u32) -> char {\n    match score {\n        90.. => 'A',\n        80..=89 => 'B',\n        70..=79 => 'C',\n        60..=69 => 'D',\n        _ => 'F',\n    }\n}\n\nfn kind(c: char) -> &'static str {\n    match c {\n        'a' | 'e' | 'i' | 'o' | 'u' => \"vowel\",\n        'a'..='z' => \"consonant\",\n        '0'..='9' => \"digit\",\n        _ => \"other\",\n    }\n}\n\nfn main() {\n    println!(\"{} {} {}\", grade(95), grade(81), grade(12));\n    println!(\"{} {} {} {}\", kind('e'), kind('x'), kind('7'), kind('!'));\n}\n",
+      "output": "A B F\nvowel consonant digit other\n",
+      "explain": "Arms are tried top to bottom, so `'e'` matches the vowel arm before the consonant range."
+    },
+    {
+      "type": "text",
+      "title": "Named variables and shadowing",
+      "md": "A plain name in a pattern is a **new variable** that matches anything. It does not compare against an existing variable with the same name: it shadows it inside the arm. This surprises many beginners:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let x = Some(5);\n    let y = 10;\n\n    match x {\n        Some(50) => println!(\"Got 50\"),\n        Some(y) => println!(\"Matched, y = {y}\"),\n        _ => println!(\"Default case, x = {x:?}\"),\n    }\n\n    println!(\"at the end: x = {x:?}, y = {y}\");\n}\n",
+      "output": "Matched, y = 5\nat the end: x = Some(5), y = 10\n",
+      "explain": "The `y` in `Some(y)` is a fresh binding of the inner value. To compare against the outer `y`, use a match guard: `Some(n) if n == y`."
+    },
+    {
+      "type": "text",
+      "title": "Destructuring structs",
+      "md": "A struct pattern lists fields: `Point { x: a, y: b }` binds `a` and `b`. When the variable names equal the field names, use the shorthand `Point { x, y }`. Fields can hold literals or nested patterns, which lets one `match` test some fields and bind others. `..` skips the remaining fields.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "struct Point {\n    x: i32,\n    y: i32,\n}\n\nstruct Rect {\n    top_left: Point,\n    width: u32,\n    height: u32,\n}\n\nfn main() {\n    let p = Point { x: 0, y: 7 };\n    let Point { x: a, y: b } = p;\n    println!(\"a = {a}, b = {b}\");\n\n    match p {\n        Point { x, y: 0 } => println!(\"On the x axis at {x}\"),\n        Point { x: 0, y } => println!(\"On the y axis at {y}\"),\n        Point { x, y } => println!(\"On neither axis: ({x}, {y})\"),\n    }\n\n    let r = Rect { top_left: Point { x: 2, y: 3 }, width: 10, height: 4 };\n    let Rect { top_left: Point { x, .. }, width, .. } = r;\n    println!(\"left edge {x}, width {width}\");\n}\n",
+      "output": "a = 0, b = 7\nOn the y axis at 7\nleft edge 2, width 10\n"
+    },
+    {
+      "type": "text",
+      "title": "Destructuring enums and nested values",
+      "md": "Enum patterns follow the shape of the variant: nothing for unit variants, parentheses for tuple variants, braces for struct variants. Patterns nest as deep as the data does:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "enum Color {\n    Rgb(i32, i32, i32),\n    Hsv(i32, i32, i32),\n}\n\nenum Message {\n    Quit,\n    Move { x: i32, y: i32 },\n    Write(String),\n    ChangeColor(Color),\n}\n\nfn handle(msg: Message) {\n    match msg {\n        Message::Quit => println!(\"The Quit variant has no data.\"),\n        Message::Move { x, y } => println!(\"Move to x {x}, y {y}\"),\n        Message::Write(text) => println!(\"Text message: {text}\"),\n        Message::ChangeColor(Color::Rgb(r, g, b)) => {\n            println!(\"Change color to red {r}, green {g}, blue {b}\")\n        }\n        Message::ChangeColor(Color::Hsv(h, s, v)) => {\n            println!(\"Change color to hue {h}, saturation {s}, value {v}\")\n        }\n    }\n}\n\nfn main() {\n    handle(Message::Move { x: 3, y: -1 });\n    handle(Message::Write(String::from(\"hello\")));\n    handle(Message::ChangeColor(Color::Hsv(0, 160, 255)));\n    handle(Message::Quit);\n\n    let ((feet, inches), Point3 { x, .. }) = ((3, 10), Point3 { x: 3, y: -10, z: 0 });\n    println!(\"{feet}'{inches}\\\" and x = {x}\");\n}\n\nstruct Point3 {\n    x: i32,\n    y: i32,\n    z: i32,\n}\n",
+      "output": "Move to x 3, y -1\nText message: hello\nChange color to hue 0, saturation 160, value 255\nThe Quit variant has no data.\n3'10\" and x = 3\n"
+    },
+    {
+      "type": "text",
+      "title": "Arrays and slices",
+      "md": "*Programming Rust* covers array and slice patterns. An **array** pattern has a fixed length: `[r, g, b]`. A **slice** pattern can match slices of different lengths, so it is refutable: `[]` matches only an empty slice, `[x]` exactly one element, and `..` matches any number in the middle. `rest @ ..` binds the skipped part as a sub-slice.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn describe(items: &[i32]) -> String {\n    match items {\n        [] => String::from(\"empty\"),\n        [one] => format!(\"one item: {one}\"),\n        [first, second] => format!(\"a pair: {first} and {second}\"),\n        [first, .., last] => format!(\"{} items from {first} to {last}\", items.len()),\n    }\n}\n\nfn sum(items: &[i32]) -> i32 {\n    match items {\n        [] => 0,\n        [head, tail @ ..] => head + sum(tail),\n    }\n}\n\nfn main() {\n    let [r, g, b] = [255, 128, 0];\n    println!(\"rgb {r} {g} {b}\");\n    for s in [&[][..], &[7], &[1, 2], &[1, 2, 3, 4]] {\n        println!(\"{}\", describe(s));\n    }\n    println!(\"sum {}\", sum(&[1, 2, 3, 4]));\n}\n",
+      "output": "rgb 255 128 0\nempty\none item: 7\na pair: 1 and 2\n4 items from 1 to 4\nsum 10\n"
+    },
+    {
+      "type": "text",
+      "title": "Ignoring values",
+      "md": "- `_` matches anything and **does not bind**. Use it for a whole value, a field, or a parameter you do not need.\n- `_name` is a **variable** whose name starts with an underscore. It binds (and so it **moves** the value), but the compiler does not warn if it is unused.\n- `..` ignores **all remaining** parts of a tuple, tuple struct or struct. It may appear once per tuple pattern: `(first, .., last)` is fine, `(.., x, ..)` is ambiguous.\n\nThe difference between `_` and `_s` matters when ownership is involved:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let s = Some(String::from(\"Hello!\"));\n\n    if let Some(_) = s {\n        println!(\"found a string\");\n    }\n    println!(\"{s:?}\"); // fine: `_` did not move the String\n\n    let mut setting_value = Some(5);\n    let new_setting_value = Some(10);\n    match (setting_value, new_setting_value) {\n        (Some(_), Some(_)) => println!(\"Can't overwrite an existing customized value\"),\n        _ => setting_value = new_setting_value,\n    }\n    println!(\"setting is {setting_value:?}\");\n\n    let numbers = (2, 4, 8, 16, 32);\n    let (first, .., last) = numbers;\n    println!(\"Some numbers: {first}, {last}\");\n}\n",
+      "output": "found a string\nSome(\"Hello!\")\nCan't overwrite an existing customized value\nsetting is Some(5)\nSome numbers: 2, 32\n",
+      "explain": "With `if let Some(_s) = s`, the `String` would be moved into `_s` and the `println!` after it would fail to compile."
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let numbers = (2, 4, 8, 16, 32);\n\n    match numbers {\n        (.., second, ..) => println!(\"Some numbers: {second}\"),\n    }\n}\n",
+      "output": "error: `..` can only be used once per tuple pattern\n --> src/main.rs:5:22\n  |\n5 |         (.., second, ..) => println!(\"Some numbers: {second}\"),\n  |          --          ^^ can only be used once per tuple pattern\n  |          |\n  |          previously used here\n",
+      "output_label": "Compiler output"
+    },
+    {
+      "type": "text",
+      "title": "Match guards",
+      "md": "A **match guard** is an `if` condition after the pattern: `Some(x) if x % 2 == 0 => ...`. The arm matches only if the pattern matches **and** the condition is true. Guards can use variables from outside, which fixes the shadowing problem above. The compiler does not look inside guards when checking exhaustiveness, so you usually still need a final catch-all.\n\nA guard applies to the **whole** `|` list: `4 | 5 | 6 if y` means `(4 | 5 | 6) if y`, not `4 | 5 | (6 if y)`.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let num = Some(4);\n    match num {\n        Some(x) if x % 2 == 0 => println!(\"The number {x} is even\"),\n        Some(x) => println!(\"The number {x} is odd\"),\n        None => (),\n    }\n\n    let x = Some(5);\n    let y = 10;\n    match x {\n        Some(50) => println!(\"Got 50\"),\n        Some(n) if n == y => println!(\"Matched, n = {n}\"),\n        _ => println!(\"Default case, x = {x:?}\"),\n    }\n\n    let x = 4;\n    let y = false;\n    match x {\n        4 | 5 | 6 if y => println!(\"yes\"),\n        _ => println!(\"no\"),\n    }\n}\n",
+      "output": "The number 4 is even\nDefault case, x = Some(5)\nno\n"
+    },
+    {
+      "type": "text",
+      "title": "@ bindings",
+      "md": "`name @ pattern` tests a value against a pattern **and** binds the whole value to `name`. Without it, a range pattern tests but gives you no variable:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "enum Message {\n    Hello { id: i32 },\n}\n\nfn main() {\n    for msg in [Message::Hello { id: 5 }, Message::Hello { id: 11 }, Message::Hello { id: 42 }] {\n        match msg {\n            Message::Hello { id: id @ 3..=7 } => println!(\"Found an id in range: {id}\"),\n            Message::Hello { id: 10..=12 } => println!(\"Found an id in another range\"),\n            Message::Hello { id } => println!(\"Found some other id: {id}\"),\n        }\n    }\n}\n",
+      "output": "Found an id in range: 5\nFound an id in another range\nFound some other id: 42\n"
+    },
+    {
+      "type": "text",
+      "title": "Patterns and references",
+      "md": "Matching on a reference raises the question: should the bound variables be copies, moves, or references? *Programming Rust* explains the tools:\n\n- A **`&` pattern** matches a reference and gives you what it points to: `&(x, y)` against a `&(i32, i32)` binds `i32`s. It only works when the parts can be copied (or are themselves moved out of an owned value).\n- **`ref` and `ref mut`** bind by reference instead of by move: `Some(ref name)` borrows the `String` inside an owned `Option<String>` without moving it.\n- **Default binding modes**: when you match a reference against a non-reference pattern, Rust automatically binds the variables as references. `match &opt { Some(name) => ... }` gives `name: &String`. This is why most modern code rarely writes `ref`.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let opt = Some(String::from(\"Ferris\"));\n\n    // default binding mode: matching on &opt binds name as &String\n    match &opt {\n        Some(name) => println!(\"hello, {name} ({} bytes)\", name.len()),\n        None => println!(\"nobody\"),\n    }\n\n    // the same with an explicit `ref` on an owned value\n    match opt {\n        Some(ref name) => println!(\"still borrowed: {name}\"),\n        None => (),\n    }\n    println!(\"opt is still usable: {opt:?}\");\n\n    // `ref mut` and `&mut` default binding to change in place\n    let mut pair = (1, String::from(\"a\"));\n    let (n, s) = &mut pair;\n    *n += 1;\n    s.push('!');\n    println!(\"{pair:?}\");\n\n    // a & pattern copies the values out of a reference\n    let points = [(1, 2), (3, 4)];\n    for &(x, y) in points.iter() {\n        print!(\"{} \", x + y);\n    }\n    println!();\n}\n",
+      "output": "hello, Ferris (6 bytes)\nstill borrowed: Ferris\nopt is still usable: Some(\"Ferris\")\n(2, \"a!\")\n3 7\n"
+    },
+    {
+      "type": "table",
+      "title": "Pattern syntax at a glance",
+      "headers": [
+        "Pattern",
+        "Example",
+        "Notes"
+      ],
+      "rows": [
+        [
+          "literal",
+          "`100`, `'a'`, `\"name\"`",
+          "matches exactly that value"
+        ],
+        [
+          "range",
+          "`0..=9`, `'a'..='z'`, `90..`",
+          "integers and chars"
+        ],
+        [
+          "or",
+          "`1 | 2 | 3`",
+          "any alternative; all must bind the same names"
+        ],
+        [
+          "variable",
+          "`name`, `mut count`",
+          "matches anything and binds it"
+        ],
+        [
+          "wildcard",
+          "`_`",
+          "matches anything, binds nothing"
+        ],
+        [
+          "tuple / tuple struct",
+          "`(a, _, c)`, `Some(x)`",
+          "positional"
+        ],
+        [
+          "struct",
+          "`Point { x, y: 0, .. }`",
+          "by field name; `..` skips the rest"
+        ],
+        [
+          "array / slice",
+          "`[a, b, c]`, `[first, .., last]`, `[x, rest @ ..]`",
+          "slices can match different lengths"
+        ],
+        [
+          "reference",
+          "`&(x, y)`, `&mut v`",
+          "matches a reference, gives the target"
+        ],
+        [
+          "ref binding",
+          "`ref name`, `ref mut name`",
+          "binds by reference instead of moving"
+        ],
+        [
+          "binding with @",
+          "`n @ 1..=9`, `all @ Some(_)`",
+          "tests and binds the whole value"
+        ],
+        [
+          "guard",
+          "`Some(x) if x > 0`",
+          "not part of the pattern; an extra condition on the arm"
+        ]
+      ]
+    },
+    {
+      "type": "playground",
+      "id": "ch19-play-commands",
+      "title": "A tiny command parser",
+      "lang": "rust",
+      "md": "Split each input line into words and match on the **slice** of words. Use slice patterns, literals, `@` with a range and a guard. Commands: `go <dir>` with `dir` one of north/south/east/west; `take <item>`; `drop all`; `wait <n>` where `n` parses and is between 1 and 9; anything else is unknown.\n",
+      "task": "Print `going north`, `taking lamp`, `dropping everything`, `waiting 3 turns`, `unknown: wait 30`, `unknown: dance`.",
+      "code": "fn run(line: &str) -> String {\n    let words: Vec<&str> = line.split_whitespace().collect();\n    match words.as_slice() {\n        // add the arms here\n        _ => format!(\"unknown: {line}\"),\n    }\n}\n\nfn main() {\n    for line in [\"go north\", \"take lamp\", \"drop all\", \"wait 3\", \"wait 30\", \"dance\"] {\n        println!(\"{}\", run(line));\n    }\n}\n",
+      "expected_output": "going north\ntaking lamp\ndropping everything\nwaiting 3 turns\nunknown: wait 30\nunknown: dance\n",
+      "hints": [
+        "String literals can appear in slice patterns of `&str`: `[\"take\", item] => ...`.",
+        "`dir @ (\"north\" | \"south\" | \"east\" | \"west\")` binds the matched word.",
+        "`matches!(value, pattern)` returns a bool: `matches!(n.parse::<u32>(), Ok(1..=9))`."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch19-ex-patterns",
+      "exercise_dir": "ch19-patterns",
+      "title": "Pattern drills",
+      "difficulty": "medium",
+      "goal": "Use ranges, |, struct and slice patterns, guards and @ bindings to replace chains of if statements.",
+      "behavior": "Write each function with a single `match` (helpers allowed):\n- `pub fn http_class(code: u16) -> &'static str`: 100–199 `\"informational\"`, 200–299 `\"success\"`, 300–399 `\"redirect\"`, 400–499 `\"client error\"`, 500–599 `\"server error\"`, anything else `\"invalid\"`.\n- `pub fn quadrant(p: Point) -> String` for `pub struct Point { pub x: i32, pub y: i32 }`: `\"origin\"`, `\"x axis\"`, `\"y axis\"`, or `\"Q1\"`..`\"Q4\"` (Q1 is x > 0, y > 0; counter-clockwise).\n- `pub fn summarize(v: &[i32]) -> String`: `\"empty\"`; one item `\"just N\"`; if the first and last are equal (2+ items) `\"bookends N\"`; otherwise `\"N..M (K items)\"` with first, last and length.\n- `pub fn ticket(age: u32, student: bool) -> u32` (price in euros): 0–5 → 0; 6–17 → 5; students 18–25 → 6; 65 and over → 7; everyone else 10.\n- `pub fn describe(t: Token) -> String` for `pub enum Token { Num(i64), Op(char), Ident(String) }`: small numbers 0–9 → `\"digit N\"`; other numbers `\"number N\"`; `+ - * /` → `\"operator X\"`; any other op char → `\"unknown op X\"`; an identifier starting with `_` → `\"private NAME\"`; else `\"name NAME\"`.\n",
+      "examples": [
+        {
+          "input": "http_class(404)",
+          "output": "\"client error\""
+        },
+        {
+          "input": "summarize(&[3, 9, 3])",
+          "output": "\"bookends 3\""
+        },
+        {
+          "input": "ticket(20, true)",
+          "output": "6"
+        }
+      ],
+      "hints": [
+        "`match (p.x, p.y) { (0, 0) => ..., (_, 0) => ..., (0, _) => ..., (x, y) if x > 0 && y > 0 => ..., ... }`",
+        "`[first, .., last] if first == last => ...` must come before the general `[first, .., last]` arm.",
+        "Match a tuple: `match (age, student) { (0..=5, _) => 0, (6..=17, _) => 5, (18..=25, true) => 6, (65.., _) => 7, _ => 10 }`.",
+        "For identifiers: `Token::Ident(name) if name.starts_with('_') => ...`."
+      ],
+      "solution_explain": "Each function is one `match` that reads like the specification. Order matters: the guarded `bookends` arm and the `digit` arm must come before the more general arms that would also match."
+    },
+    {
+      "type": "exercise",
+      "id": "ch19-ex-simplify",
+      "exercise_dir": "ch19-simplify",
+      "title": "Simplifying expressions",
+      "difficulty": "hard",
+      "goal": "Match deeply nested enums through Box, combining nested patterns, guards and | to rewrite a tree.",
+      "behavior": "Given\n```rust\n#[derive(Debug, Clone, PartialEq)]\npub enum Expr {\n    Num(i64),\n    Var(String),\n    Add(Box<Expr>, Box<Expr>),\n    Mul(Box<Expr>, Box<Expr>),\n    Neg(Box<Expr>),\n}\n```\nwrite `pub fn simplify(e: Expr) -> Expr` that simplifies the children first (bottom-up), then applies these rules until none applies at the top:\n- `Num(a) + Num(b)` → `Num(a + b)`; `Num(a) * Num(b)` → `Num(a * b)`\n- `x + 0` and `0 + x` → `x`\n- `x * 1` and `1 * x` → `x`\n- `x * 0` and `0 * x` → `Num(0)`\n- `-(Num(n))` → `Num(-n)`; `-(-x)` → `x`\nAlso `pub fn eval(e: &Expr, x: i64) -> i64` where every `Var` has the value `x`.\n",
+      "examples": [
+        {
+          "input": "simplify((x * 1) + (2 * 3))",
+          "output": "Add(Var(\"x\"), Num(6))"
+        },
+        {
+          "input": "simplify(-(-(y + 0)))",
+          "output": "Var(\"y\")"
+        },
+        {
+          "input": "eval(&(x * x + 1), 4)",
+          "output": "17"
+        }
+      ],
+      "hints": [
+        "Box patterns are not available in stable Rust. Simplify the children, then match on a **tuple of references**: `match (&a, &b) { (Expr::Num(x), Expr::Num(y)) => ..., (Expr::Num(0), _) => ..., ... }`.",
+        "For the `x + 0` cases: `(_, Expr::Num(0)) => a` returns the left child unchanged.",
+        "`Expr::Neg(inner)`: simplify `*inner`, then match the result: `Expr::Num(n) => Expr::Num(-n)`, `Expr::Neg(x) => *x`, `other => Expr::Neg(Box::new(other))`."
+      ],
+      "solution_explain": "Simplifying the children first means every rule only has to look one level deep. Matching on `(&a, &b)` tests the shapes without moving `a` and `b`, so an arm can still return one of them whole. `(_, Expr::Num(0)) | (Expr::Num(0), _)` uses `|` across tuple patterns. `leaf => leaf` passes `Num` and `Var` through unchanged."
+    },
+    {
+      "type": "quiz",
+      "id": "ch19-quiz-syntax",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "In `match x { Some(y) => ... }` with an outer variable `y = 10`, what does the inner `y` do?",
+          "options": [
+            "Compares with 10",
+            "Binds a new variable that shadows the outer y",
+            "Compile error",
+            "Copies the outer y"
+          ],
+          "answer": 1,
+          "explanation": "Use a guard to compare."
+        },
+        {
+          "type": "single",
+          "q": "What does `4 | 5 | 6 if y` mean?",
+          "options": [
+            "`4 | 5 | (6 if y)`",
+            "`(4 | 5 | 6) if y`",
+            "Syntax error",
+            "`4 if y | 5 if y | 6 if y` only for 6"
+          ],
+          "answer": 1,
+          "explanation": "The guard applies to the whole alternative list."
+        },
+        {
+          "type": "single",
+          "q": "What is the difference between `_` and `_x`?",
+          "options": [
+            "None",
+            "`_x` binds (and can move) the value; `_` does not bind",
+            "`_` moves, `_x` does not",
+            "`_x` is a syntax error"
+          ],
+          "answer": 1,
+          "explanation": "That matters for owned values like String."
+        },
+        {
+          "type": "single",
+          "q": "Which pattern binds the tail of a slice?",
+          "options": [
+            "`[x, ..]`",
+            "`[x, tail @ ..]`",
+            "`[x, *tail]`",
+            "`[x, tail...]`"
+          ],
+          "answer": 1,
+          "explanation": "@ binds what .. matched."
+        },
+        {
+          "type": "fill",
+          "q": "Fill in the binding operator: `Message::Hello { id: id __ 3..=7 }`",
+          "answer": [
+            "@"
+          ],
+          "explanation": "id @ 3..=7 tests the range and binds the value."
+        },
+        {
+          "type": "single",
+          "q": "`match &opt { Some(name) => ... }` where `opt: Option<String>`. What is the type of name?",
+          "options": [
+            "String",
+            "&String",
+            "Option<String>",
+            "&str"
+          ],
+          "answer": 1,
+          "explanation": "Default binding modes bind by reference."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Literals, `|` and ranges (`..=`, `a..`) test values; plain names bind and shadow.",
+        "Struct, enum, tuple, array and slice patterns mirror the data and nest freely.",
+        "`_` ignores without binding, `_x` binds silently, `..` skips the rest (once per tuple).",
+        "Guards add conditions to an arm; `@` tests and binds together.",
+        "Matching a reference binds by reference automatically; `&` patterns and `ref` give explicit control."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "match guard",
+      "def": "An if condition after a pattern in a match arm that must also be true for the arm to run."
+    },
+    {
+      "term": "@ binding",
+      "def": "Syntax name @ pattern that tests a value against a pattern and binds it to a name."
+    },
+    {
+      "term": "slice pattern",
+      "def": "A pattern like [first, .., last] that matches slices of varying length."
+    },
+    {
+      "term": "default binding mode",
+      "def": "The rule that matching a reference against a non-reference pattern binds variables by reference."
+    },
+    {
+      "term": "ref",
+      "def": "A pattern keyword that binds by reference instead of moving the value."
+    }
+  ]
+}

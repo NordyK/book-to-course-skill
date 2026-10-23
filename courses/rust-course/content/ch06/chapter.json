@@ -1,0 +1,10 @@
+{
+  "title": "Enums and Pattern Matching",
+  "summary": "Types that are one of several variants, each with its own data; Option instead of null; and match, if let and let...else to take values apart safely.",
+  "goals": [
+    "Define enums whose variants carry different data, and give them methods",
+    "Use Option<T> to represent a value that may be missing, and explain why Rust has no null",
+    "Write exhaustive match expressions with bindings, guards, catch-alls and _",
+    "Choose between match, if let and let...else"
+  ]
+}

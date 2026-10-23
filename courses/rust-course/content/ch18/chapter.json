@@ -1,0 +1,10 @@
+{
+  "title": "Trait Objects and Object-Oriented Rust",
+  "summary": "How Rust relates to object-oriented programming: encapsulation with privacy, polymorphism with generics and trait objects, dyn Trait and dynamic dispatch with vtables, dyn compatibility, and the state pattern written two ways: with trait objects and with types.",
+  "goals": [
+    "Compare Rust's tools with objects, encapsulation, inheritance and polymorphism",
+    "Store values of different types behind dyn Trait, and explain dynamic dispatch and fat pointers",
+    "Decide between generics (static dispatch) and trait objects (dynamic dispatch)",
+    "Implement the state pattern with trait objects and as state encoded in types"
+  ]
+}

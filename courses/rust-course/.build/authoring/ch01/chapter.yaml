@@ -1,0 +1,7 @@
+title: Getting Started with Rust
+summary: Why Rust exists, how to install it, your first program, and the Cargo tool you will use for everything else.
+goals:
+  - Explain in plain words what problem Rust solves and what it costs you
+  - Install Rust and check that the compiler works
+  - Write, compile and run a Hello, world! program
+  - Create, build, check and run a project with Cargo

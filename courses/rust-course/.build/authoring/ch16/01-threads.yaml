@@ -1,0 +1,356 @@
+title: "Using threads to run code simultaneously"
+summary: "Processes and threads, the problems concurrency brings, thread::spawn and JoinHandle, join, move closures, returning values from threads, scoped threads that can borrow, and a closer look at what a thread costs."
+minutes: 35
+source:
+  chapter: ch16
+  sections: ["TRPL 16 Fearless Concurrency", "TRPL 16.1 Using Threads to Run Code Simultaneously", "TRPL 16.1 Creating a New Thread with spawn", "TRPL 16.1 Waiting for All Threads to Finish", "TRPL 16.1 Using move Closures with Threads", "RiA 10.1 Anonymous functions", "RiA 10.2 Spawning threads", "RiA 10.2 Effect of spawning a few threads", "RiA 10.2 Effect of spawning many threads", "RiA 10.2 Thread yielding", "PR ch19 Fork-Join Parallelism", "PR ch19 spawn and join", "PR ch19 Error Handling Across Threads", "PR ch19 Sharing Immutable Data Across Threads", "CR Concurrency Morning Threads", "CR Concurrency Morning Scoped Threads"]
+blocks:
+  - type: text
+    md: |
+      An operating system runs each program in a **process**. Inside a process, independent parts can run at the same time as **threads**. Splitting work across threads can make a program faster on multi-core machines, or keep it responsive while it waits. It also brings classic problems:
+
+      - **Race conditions**: threads access data in an inconsistent order.
+      - **Deadlocks**: two threads each wait for the other, forever.
+      - **Heisenbugs**: bugs that happen only sometimes and vanish when you look.
+
+      Rust's ownership and type system turn many of these into **compile-time errors**. The Rust community calls this **fearless concurrency**: you can refactor concurrent code and the compiler tells you when you break something.
+
+  - type: text
+    title: Spawning a thread
+    md: |
+      `std::thread::spawn` takes a closure and runs it on a new thread. Rust uses **1:1** threads: one operating-system thread per language thread.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::thread;
+      use std::time::Duration;
+
+      fn main() {
+          thread::spawn(|| {
+              for i in 1..10 {
+                  println!("hi number {i} from the spawned thread!");
+                  thread::sleep(Duration::from_millis(1));
+              }
+          });
+
+          for i in 1..5 {
+              println!("hi number {i} from the main thread!");
+              thread::sleep(Duration::from_millis(1));
+          }
+      }
+    explain: "Run it a few times: the two threads take turns in a different order each time, decided by the operating system's scheduler. And the spawned thread **does not finish**: when `main` returns, the whole process ends, and every other thread is stopped."
+
+  - type: code
+    lang: text
+    code: |
+      hi number 1 from the main thread!
+      hi number 1 from the spawned thread!
+      hi number 2 from the main thread!
+      hi number 2 from the spawned thread!
+      hi number 3 from the main thread!
+      hi number 3 from the spawned thread!
+      hi number 4 from the main thread!
+      hi number 4 from the spawned thread!
+      hi number 5 from the spawned thread!
+    explain: "One possible run. Yours will differ."
+
+  - type: text
+    title: Waiting with join
+    md: |
+      `spawn` returns a **`JoinHandle<T>`**. Calling **`.join()`** on it blocks the current thread until that thread finishes. Where you call it matters:
+
+  - type: code
+    lang: rust
+    code: |
+      use std::thread;
+
+      fn main() {
+          let handle = thread::spawn(|| {
+              let mut total = 0u64;
+              for i in 1..=1_000_000u64 {
+                  total += i;
+              }
+              total // the thread's return value
+          });
+
+          println!("main keeps working while the sum runs...");
+
+          let total = handle.join().unwrap();
+          println!("sum = {total}");
+      }
+    output: |
+      main keeps working while the sum runs...
+      sum = 500000500000
+    explain: "`join` returns `Result<T, _>`: `Ok` with the closure's return value, or `Err` if the thread panicked. A panic in a spawned thread does not crash the others; `join` is where you find out about it (*Programming Rust*)."
+
+  - type: text
+    title: move closures and threads
+    md: |
+      A thread's closure often needs data from the spawning thread. It must **own** that data, because Rust cannot know how long the thread will run:
+
+  - type: code
+    lang: rust
+    code: |
+      use std::thread;
+
+      fn main() {
+          let v = vec![1, 2, 3];
+
+          let handle = thread::spawn(|| {
+              println!("Here's a vector: {v:?}");
+          });
+
+          handle.join().unwrap();
+      }
+    output: |
+      error[E0373]: closure may outlive the current function, but it borrows `v`, which is owned by the current function
+       --> src/main.rs:6:32
+        |
+      6 |     let handle = thread::spawn(|| {
+        |                                ^^ may outlive borrowed value `v`
+      7 |         println!("Here's a vector: {v:?}");
+        |                                     - `v` is borrowed here
+        |
+      note: function requires argument type to outlive `'static`
+       --> src/main.rs:6:18
+        |
+      6 |       let handle = thread::spawn(|| {
+        |  __________________^
+      7 | |         println!("Here's a vector: {v:?}");
+      8 | |     });
+        | |______^
+      help: to force the closure to take ownership of `v` (and any other referenced variables), use the `move` keyword
+        |
+      6 |     let handle = thread::spawn(move || {
+        |                                ++++
+    output_label: Compiler output
+    explain: "If this compiled, `main` could `drop(v)` while the thread still uses it. With `move`, the vector moves into the thread, and `main` can no longer touch it: the compiler then rejects `drop(v)` instead."
+
+  - type: text
+    title: Scoped threads can borrow
+    md: |
+      `move` is not always what you want: sometimes several threads should **read** the same local data, and you will wait for all of them anyway. **`thread::scope`** guarantees that every thread spawned inside it is joined before the scope returns, so those threads may borrow local variables:
+
+  - type: code
+    lang: rust
+    code: |
+      use std::thread;
+
+      fn main() {
+          let numbers: Vec<u64> = (1..=100).collect();
+          let (left, right) = numbers.split_at(numbers.len() / 2);
+
+          let (a, b) = thread::scope(|s| {
+              let h1 = s.spawn(|| left.iter().sum::<u64>());
+              let h2 = s.spawn(|| right.iter().sum::<u64>());
+              (h1.join().unwrap(), h2.join().unwrap())
+          });
+
+          println!("{a} + {b} = {}", a + b);
+          println!("numbers is still usable: {} items", numbers.len());
+      }
+    output: |
+      1275 + 3775 = 5050
+      numbers is still usable: 100 items
+    explain: "This is **fork-join parallelism** (*Programming Rust*): split the work, run the parts in parallel, join the results. No `move`, no cloning, no `Arc`; the borrow checker knows the threads end inside the scope."
+
+  - type: callout
+    kind: note
+    title: What a thread costs (Rust in Action)
+    md: "Spawning an OS thread takes microseconds and reserves its own stack (2 MiB by default for Rust threads). *Rust in Action* measures that a few threads are almost free, but thousands start to slow the whole program, and spinning in a loop wastes CPU that `thread::sleep` or `thread::yield_now` would give back. For many small tasks, use a thread pool (chapter 25) or async (chapter 17)."
+
+  - type: playground
+    id: ch16-play-threads
+    title: "Parallel word count"
+    lang: rust
+    md: |
+      Count the words of each document on its own thread and add up the results. Spawn one thread per document with `move` (each thread gets its own `String`), keep the handles in a vector, then join them all.
+    task: "Print `total words: 13`."
+    code: |
+      use std::thread;
+
+      fn main() {
+          let docs = vec![
+              String::from("the quick brown fox"),
+              String::from("jumps over"),
+              String::from("the lazy dog and keeps running far"),
+          ];
+
+          let mut handles = Vec::new();
+          for doc in docs {
+              // TODO: spawn a thread that returns doc.split_whitespace().count()
+          }
+
+          let mut total = 0;
+          for h in handles {
+              // TODO: total += the thread's result
+          }
+          println!("total words: {total}");
+      }
+    starter_ok: compile_error
+    expected_output: "total words: 13"
+    solution_code: |
+      use std::thread;
+
+      fn main() {
+          let docs = vec![
+              String::from("the quick brown fox"),
+              String::from("jumps over"),
+              String::from("the lazy dog and keeps running far"),
+          ];
+
+          let mut handles = Vec::new();
+          for doc in docs {
+              handles.push(thread::spawn(move || doc.split_whitespace().count()));
+          }
+
+          let mut total = 0;
+          for h in handles {
+              total += h.join().unwrap();
+          }
+          println!("total words: {total}");
+      }
+    hints:
+      - "`handles.push(thread::spawn(move || doc.split_whitespace().count()));`"
+      - "`total += h.join().unwrap();`"
+      - "The starter does not compile until `handles` has an element type: pushing a JoinHandle gives it one."
+
+  - type: exercise
+    id: ch16-ex-threads
+    exercise_dir: ch16-threads
+    title: "Fork-join helpers"
+    difficulty: hard
+    goal: "Split work across threads, both with move and with scoped threads, and handle a panicking thread."
+    behavior: |
+      - `pub fn parallel_sum(data: &[u64], parts: usize) -> u64`: split `data` into `parts` chunks (use `chunks` with a size of `ceil(len / parts)`, at least 1) and sum each chunk on its own **scoped** thread. Empty data gives 0.
+      - `pub fn map_in_threads(inputs: Vec<String>, f: fn(&str) -> String) -> Vec<String>`: one spawned thread per input (with `move`), results in the input order.
+      - `pub fn run_safely(job: fn() -> i32) -> Result<i32, String>`: run `job` on a thread; if it panicked, return `Err("job panicked")`.
+    examples:
+      - input: "parallel_sum(&[1, 2, 3, 4, 5], 2)"
+        output: "15"
+      - input: "map_in_threads(vec![\"a\".into(), \"bc\".into()], |s| s.to_uppercase())"
+        output: "[\"A\", \"BC\"]"
+    hints:
+      - "Chunk size: `data.len().div_ceil(parts.max(1)).max(1)`."
+      - "`thread::scope(|s| { let handles: Vec<_> = data.chunks(size).map(|c| s.spawn(move || c.iter().sum::<u64>())).collect(); handles.into_iter().map(|h| h.join().unwrap()).sum() })`"
+      - "`fn` pointers are `Copy` and `Send`, so `f` can be moved into many threads."
+      - "`thread::spawn(job).join().map_err(|_| String::from(\"job panicked\"))`"
+    rust:
+      starter: |
+        use std::thread;
+
+        pub fn parallel_sum(data: &[u64], parts: usize) -> u64 {
+            todo!()
+        }
+
+        pub fn map_in_threads(inputs: Vec<String>, f: fn(&str) -> String) -> Vec<String> {
+            todo!()
+        }
+
+        pub fn run_safely(job: fn() -> i32) -> Result<i32, String> {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn sums() {
+            let data: Vec<u64> = (1..=1000).collect();
+            assert_eq!(parallel_sum(&data, 4), 500500);
+            assert_eq!(parallel_sum(&data, 7), 500500, "uneven chunks");
+            assert_eq!(parallel_sum(&[1, 2, 3, 4, 5], 10), 15, "more parts than items");
+            assert_eq!(parallel_sum(&[], 3), 0);
+            assert_eq!(parallel_sum(&[5], 0), 5, "zero parts treated as one");
+        }
+
+        #[test]
+        fn maps_in_order() {
+            let out = map_in_threads(vec!["a".into(), "bc".into(), "def".into()], |s| s.to_uppercase());
+            assert_eq!(out, vec!["A", "BC", "DEF"]);
+            let lens = map_in_threads(vec!["xyz".into()], |s| s.len().to_string());
+            assert_eq!(lens, vec!["3"]);
+        }
+
+        #[test]
+        fn catches_panics() {
+            assert_eq!(run_safely(|| 42), Ok(42));
+            assert_eq!(run_safely(|| panic!("boom")), Err(String::from("job panicked")));
+        }
+      solution: |
+        use std::thread;
+
+        pub fn parallel_sum(data: &[u64], parts: usize) -> u64 {
+            let size = data.len().div_ceil(parts.max(1)).max(1);
+            thread::scope(|s| {
+                let handles: Vec<_> = data
+                    .chunks(size)
+                    .map(|c| s.spawn(move || c.iter().sum::<u64>()))
+                    .collect();
+                handles.into_iter().map(|h| h.join().unwrap()).sum()
+            })
+        }
+
+        pub fn map_in_threads(inputs: Vec<String>, f: fn(&str) -> String) -> Vec<String> {
+            let handles: Vec<_> = inputs
+                .into_iter()
+                .map(|s| thread::spawn(move || f(&s)))
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        }
+
+        pub fn run_safely(job: fn() -> i32) -> Result<i32, String> {
+            thread::spawn(job).join().map_err(|_| String::from("job panicked"))
+        }
+    solution_explain: "Collecting the handles into a vector **before** joining is essential: joining inside the same `map` would wait for each thread before starting the next, making the code sequential. In `parallel_sum`, `move` copies the chunk reference `c` into the closure; the scope lets that borrow of `data` be used across threads."
+
+  - type: quiz
+    id: ch16-quiz-threads
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What happens to spawned threads when main returns?"
+        options: ["They keep running", "They are stopped, whether finished or not", "main waits for them automatically", "They become the main thread"]
+        answer: 1
+        explanation: "Use join to wait."
+      - type: single
+        q: "What does `handle.join()` return if the thread panicked?"
+        options: ["It panics too, always", "An `Err` value", "`Ok(())`", "Nothing; it hangs"]
+        answer: 1
+        explanation: "Panics are reported through join's Result."
+      - type: single
+        q: "Why must closures passed to thread::spawn usually be `move`?"
+        options: ["Threads cannot read memory", "The thread may outlive the variables it borrows", "move makes it faster", "For Send"]
+        answer: 1
+        explanation: "spawn requires 'static data."
+      - type: single
+        q: "What does `thread::scope` guarantee?"
+        options: ["Threads run in order", "Every thread spawned in it is joined before the scope ends, so they may borrow locals", "Threads never panic", "Only one thread runs at a time"]
+        answer: 1
+        explanation: "That makes borrowing safe."
+      - type: single
+        q: "Spawning and joining inside the same loop iteration makes the work..."
+        options: ["parallel", "sequential", "a compile error", "faster"]
+        answer: 1
+        explanation: "Spawn them all first, then join."
+
+  - type: summary
+    points:
+      - "`thread::spawn(closure)` starts a thread; its `JoinHandle` lets you `join` and get the return value."
+      - "When `main` ends, all threads end; join the ones you need."
+      - "Use `move` to give a thread ownership of its data."
+      - "`thread::scope` lets threads borrow local data, because they are joined before the scope ends."
+      - "Spawn everything first, then join, or the work runs one after another."
+terms:
+  - term: thread
+    def: "An independently scheduled sequence of execution inside a process."
+  - term: JoinHandle
+    def: "The value returned by thread::spawn; join waits for the thread and returns its result."
+  - term: race condition
+    def: "A bug where the result depends on the timing of threads accessing shared data."
+  - term: deadlock
+    def: "Threads waiting for each other forever."
+  - term: scoped thread
+    def: "A thread spawned with thread::scope, guaranteed to finish before the scope ends, so it can borrow locals."
+  - term: fork-join
+    def: "Splitting work into parts, running them in parallel, and joining the results."

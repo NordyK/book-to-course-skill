@@ -1,0 +1,283 @@
+title: "To panic or not to panic"
+summary: "Guidelines for choosing between panic! and Result, when unwrap is fine, and how to use types to make invalid values impossible, with the Guess example."
+minutes: 20
+source:
+  chapter: ch09
+  sections: ["TRPL 9.3 To panic! or Not to panic!", "TRPL 9.3 Examples, Prototype Code, and Tests", "TRPL 9.3 Cases in Which You Have More Information Than the Compiler", "TRPL 9.3 Guidelines for Error Handling", "TRPL 9.3 Custom Types for Validation", "PR ch7 Why Results?"]
+blocks:
+  - type: text
+    md: |
+      When code fails, should it panic or return a `Result`? Returning a `Result` is the default choice, because it lets the **caller** decide: retry, use a default, report it, or panic after all. Panicking takes that decision away. There are still good reasons to panic, and this lesson lists them.
+
+  - type: table
+    title: "Guidelines (The Rust Programming Language)"
+    headers: ["Situation", "Choose", "Why"]
+    rows:
+      - ["Examples, prototypes, tests", "`unwrap` / `expect`", "Error handling would obscure the point; a panic in a test is how it fails"]
+      - ["You know more than the compiler: the value cannot be invalid", "`expect(\"reason\")`", "`\"127.0.0.1\".parse::<IpAddr>()` can only fail if your literal is wrong, a bug"]
+      - ["Bad state: a broken assumption, invariant or contract", "`panic!`", "Continuing would be insecure or harmful; it is a bug for the caller to fix"]
+      - ["Failure is expected: parsing input, I/O, network", "`Result`", "It will happen in normal use, so the caller must be able to handle it"]
+      - ["Calling external code that returns an invalid state you cannot fix", "often `panic!`", "Nothing sensible can continue"]
+
+  - type: callout
+    kind: key
+    title: Contracts
+    md: "A function's **contract** is what it requires from callers. Breaking a contract is a caller's bug, and panicking with a clear message is right: `Vec::remove(i)` panics when `i` is out of range rather than returning a `Result` that every caller would have to check. Document such panics in a `# Panics` section of the doc comment."
+
+  - type: text
+    title: Let the type system check for you
+    md: |
+      Checking for errors everywhere is tedious. Rust's types can do much of it. A function taking `u32` never needs to check for negative numbers. A function taking `&str` instead of `Option<&str>` never needs to check for a missing value. Push this further with your own types: validate a value **once**, when it is created, and from then on every function that receives the type can rely on it.
+
+      In chapter 2's guessing game, the guess must be between 1 and 100. Instead of checking that in every function, make a `Guess` type that cannot hold anything else:
+
+  - type: code
+    lang: rust
+    code: |
+      pub struct Guess {
+          value: i32, // private: the only way in is Guess::new
+      }
+
+      impl Guess {
+          pub fn new(value: i32) -> Guess {
+              if value < 1 || value > 100 {
+                  panic!("Guess value must be between 1 and 100, got {value}.");
+              }
+              Guess { value }
+          }
+
+          pub fn value(&self) -> i32 {
+              self.value
+          }
+      }
+
+      fn main() {
+          let g = Guess::new(42);
+          println!("guess: {}", g.value());
+      }
+    output: "guess: 42"
+    explain: "Because `value` is private, code outside the module cannot write `Guess { value: 500 }`. Every `Guess` in the program has been through `new`, so functions that take a `Guess` need no checks. `new` panics because, in this design, passing an out-of-range number is the caller's bug. When the number comes straight from a user, offer a fallible constructor instead, as the exercise does."
+
+  - type: playground
+    id: ch09-play-try-new
+    title: "A fallible constructor"
+    lang: rust
+    md: |
+      Add `Percent::try_new(value: u8) -> Result<Percent, String>`, returning an error message for values above 100 instead of panicking, and use it in `main`.
+    task: "Print `ok: 42%` and `error: 120 is more than 100`."
+    code: |
+      struct Percent(u8);
+
+      impl Percent {
+          // fn try_new(value: u8) -> Result<Percent, String>
+      }
+
+      fn main() {
+          for v in [42, 120] {
+              match Percent::try_new(v) {
+                  Ok(p) => println!("ok: {}%", p.0),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+      }
+    starter_ok: compile_error
+    expected_output: |
+      ok: 42%
+      error: 120 is more than 100
+    solution_code: |
+      struct Percent(u8);
+
+      impl Percent {
+          fn try_new(value: u8) -> Result<Percent, String> {
+              if value > 100 {
+                  return Err(format!("{value} is more than 100"));
+              }
+              Ok(Percent(value))
+          }
+      }
+
+      fn main() {
+          for v in [42, 120] {
+              match Percent::try_new(v) {
+                  Ok(p) => println!("ok: {}%", p.0),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+      }
+    hints:
+      - "`if value > 100 { return Err(format!(\"{value} is more than 100\")); }` then `Ok(Percent(value))`."
+
+  - type: exercise
+    id: ch09-ex-validate
+    exercise_dir: ch09-validated
+    title: "Validated types"
+    difficulty: medium
+    goal: "Create types whose constructors check the rules once, so the rest of the code can trust them."
+    behavior: |
+      - `pub struct Username(String)` with `pub fn parse(s: &str) -> Result<Username, String>`: 3 to 16 chars after trimming, only ASCII letters, digits and `_`, and not starting with a digit. Errors: `"too short"`, `"too long"`, `"invalid character: <c>"`, `"starts with a digit"` (check in that order). `pub fn as_str(&self) -> &str`.
+      - `pub struct Guess(i32)` with `pub fn new(v: i32) -> Guess` that panics with a message containing `"between 1 and 100"` when out of range, and `pub fn value(&self) -> i32`.
+    examples:
+      - input: "Username::parse(\"  ferris_99 \").map(|u| u.as_str().to_string())"
+        output: "Ok(\"ferris_99\")"
+      - input: "Username::parse(\"9lives\")"
+        output: "Err(\"starts with a digit\")"
+    hints:
+      - "Count with `s.chars().count()` after `let s = s.trim();`."
+      - "`for c in s.chars() { if !(c.is_ascii_alphanumeric() || c == '_') { return Err(format!(\"invalid character: {c}\")); } }`"
+      - "`s.chars().next().unwrap().is_ascii_digit()` is safe once you know the length is at least 3."
+    rust:
+      starter: |
+        /// A checked username.
+        #[derive(Debug, PartialEq)]
+        pub struct Username(String);
+
+        impl Username {
+            pub fn parse(s: &str) -> Result<Username, String> {
+                todo!()
+            }
+
+            pub fn as_str(&self) -> &str {
+                todo!()
+            }
+        }
+
+        /// A guess between 1 and 100.
+        #[derive(Debug)]
+        pub struct Guess(i32);
+
+        impl Guess {
+            /// # Panics
+            /// If `v` is not between 1 and 100.
+            pub fn new(v: i32) -> Guess {
+                todo!()
+            }
+
+            pub fn value(&self) -> i32 {
+                todo!()
+            }
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn good_names() {
+            assert_eq!(Username::parse("  ferris_99 ").unwrap().as_str(), "ferris_99");
+            assert_eq!(Username::parse("abc").unwrap().as_str(), "abc", "exactly 3");
+            assert!(Username::parse("a234567890123456").is_ok(), "exactly 16");
+        }
+
+        #[test]
+        fn bad_names() {
+            assert_eq!(Username::parse("ab"), Err(String::from("too short")));
+            assert_eq!(Username::parse("a2345678901234567"), Err(String::from("too long")));
+            assert_eq!(Username::parse("bad-name"), Err(String::from("invalid character: -")));
+            assert_eq!(Username::parse("9lives"), Err(String::from("starts with a digit")));
+            assert_eq!(Username::parse("  x  "), Err(String::from("too short")), "trimmed first");
+        }
+
+        #[test]
+        fn guesses_in_range() {
+            assert_eq!(Guess::new(1).value(), 1);
+            assert_eq!(Guess::new(100).value(), 100);
+        }
+
+        #[test]
+        #[should_panic(expected = "between 1 and 100")]
+        fn guess_too_big() {
+            Guess::new(101);
+        }
+
+        #[test]
+        #[should_panic(expected = "between 1 and 100")]
+        fn guess_too_small() {
+            Guess::new(0);
+        }
+      solution: |
+        /// A checked username.
+        #[derive(Debug, PartialEq)]
+        pub struct Username(String);
+
+        impl Username {
+            pub fn parse(s: &str) -> Result<Username, String> {
+                let s = s.trim();
+                let len = s.chars().count();
+                if len < 3 {
+                    return Err(String::from("too short"));
+                }
+                if len > 16 {
+                    return Err(String::from("too long"));
+                }
+                for c in s.chars() {
+                    if !(c.is_ascii_alphanumeric() || c == '_') {
+                        return Err(format!("invalid character: {c}"));
+                    }
+                }
+                if s.chars().next().unwrap().is_ascii_digit() {
+                    return Err(String::from("starts with a digit"));
+                }
+                Ok(Username(s.to_string()))
+            }
+
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+
+        /// A guess between 1 and 100.
+        #[derive(Debug)]
+        pub struct Guess(i32);
+
+        impl Guess {
+            /// # Panics
+            /// If `v` is not between 1 and 100.
+            pub fn new(v: i32) -> Guess {
+                if !(1..=100).contains(&v) {
+                    panic!("Guess value must be between 1 and 100, got {v}.");
+                }
+                Guess(v)
+            }
+
+            pub fn value(&self) -> i32 {
+                self.0
+            }
+        }
+    solution_explain: "`Username` returns a `Result` because user input is expected to be wrong sometimes; `Guess::new` panics because, by its documented contract, an out-of-range value is the caller's bug. `#[should_panic(expected = ...)]` in the tests checks the panic message; chapter 11 covers it."
+
+  - type: quiz
+    id: ch09-quiz-when
+    title: Check yourself
+    questions:
+      - type: single
+        q: "A function parses a date typed by a user. What should it return on bad input?"
+        options: ["Panic", "`Result` with an error", "A default date silently", "`unwrap()`"]
+        answer: 1
+        explanation: "Bad input is expected; let the caller decide."
+      - type: single
+        q: "When is `.expect(\"...\")` appropriate in production code?"
+        options: ["Never", "When failure would mean a bug, such as parsing a hard-coded valid literal", "For all user input", "For network calls"]
+        answer: 1
+        explanation: "You know more than the compiler; document why in the message."
+      - type: single
+        q: "Why is `Guess`'s `value` field private?"
+        options: ["To save memory", "So the only way to create a Guess is `new`, which validates it", "Private fields are faster", "Because it is an i32"]
+        answer: 1
+        explanation: "Then every `Guess` is known to be valid."
+      - type: truefalse
+        q: "In tests, using `unwrap()` is fine because a panic makes the test fail with a clear location."
+        answer: true
+        explanation: "That is exactly how test failures are reported."
+
+  - type: summary
+    points:
+      - "Default to `Result`: it lets the caller choose what to do."
+      - "Panic for bugs: broken contracts, impossible states, failures that make continuing unsafe."
+      - "`unwrap`/`expect` are fine in examples, prototypes, tests, and when you can prove failure is impossible."
+      - "Validate once in a constructor and keep fields private, so the type itself guarantees the rule."
+      - "Document panics in a `# Panics` section."
+terms:
+  - term: contract
+    def: "The conditions a function requires of its callers; violating it is the caller's bug."
+  - term: invariant
+    def: "A condition that is always true for every value of a type, such as a Guess being between 1 and 100."
+  - term: validation type
+    def: "A type whose constructor checks a rule, so every value of the type is known to satisfy it."

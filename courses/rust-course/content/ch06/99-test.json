@@ -1,0 +1,135 @@
+{
+  "title": "Chapter test: Enums and Pattern Matching",
+  "kind": "test",
+  "summary": "Ten questions on enums, Option, match, if let and let...else. You need 70% to pass; you can retry and your best score is kept.",
+  "blocks": [
+    {
+      "type": "quiz",
+      "id": "ch06-test",
+      "pass_score": 0.7,
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which type models \"a payment is either cash, a card with its last four digits, or a voucher with a code\"?",
+          "options": [
+            "`struct Payment { cash: bool, card: u16, voucher: String }`",
+            "`enum Payment { Cash, Card(u16), Voucher(String) }`",
+            "`enum Payment { Cash: bool, Card: u16 }`",
+            "`(bool, u16, String)`"
+          ],
+          "answer": 1,
+          "explanation": "One of several alternatives, each with its own data: an enum."
+        },
+        {
+          "type": "single",
+          "q": "What does this print?",
+          "code": "let x: Option<u8> = None;\nprintln!(\"{}\", x.map(|v| v * 2).unwrap_or(7));\n",
+          "lang": "rust",
+          "options": [
+            "0",
+            "7",
+            "14",
+            "It panics"
+          ],
+          "answer": 1,
+          "explanation": "`map` on `None` stays `None`, and `unwrap_or` gives the default."
+        },
+        {
+          "type": "truefalse",
+          "q": "In Rust, any reference or variable can be null.",
+          "answer": false,
+          "explanation": "Rust has no null; a possibly missing value has type `Option<T>`."
+        },
+        {
+          "type": "single",
+          "q": "What is wrong with this match?",
+          "code": "match n {\n    _ => println!(\"other\"),\n    0 => println!(\"zero\"),\n}\n",
+          "lang": "rust",
+          "options": [
+            "Nothing",
+            "The `0` arm can never run, because `_` catches everything first",
+            "`_` is not allowed on numbers",
+            "It is not exhaustive"
+          ],
+          "answer": 1,
+          "explanation": "Arms are tried in order; the compiler warns that the second arm is unreachable."
+        },
+        {
+          "type": "single",
+          "q": "What does this return for `Some(-3)`?",
+          "code": "match opt {\n    Some(x) if x > 0 => \"positive\",\n    Some(0) => \"zero\",\n    Some(_) => \"negative\",\n    None => \"none\",\n}\n",
+          "lang": "rust",
+          "options": [
+            "\"positive\"",
+            "\"zero\"",
+            "\"negative\"",
+            "\"none\""
+          ],
+          "answer": 2,
+          "explanation": "The guard fails for -3, it is not 0, so `Some(_)` matches."
+        },
+        {
+          "type": "multi",
+          "q": "Which can follow `=>` in a match arm?",
+          "options": [
+            "A single expression, like `5`",
+            "A block `{ ... }`",
+            "A call like `println!(...)`",
+            "A second `match`"
+          ],
+          "answer": [
+            0,
+            1,
+            2,
+            3
+          ],
+          "explanation": "Any expression works, including blocks and nested matches."
+        },
+        {
+          "type": "single",
+          "q": "What does `if let Some(n) = s.find('x') { ... } else { ... }` do when `s` has no `x`?",
+          "options": [
+            "Panics",
+            "Runs the `else` block",
+            "Runs the first block with n = 0",
+            "Does not compile"
+          ],
+          "answer": 1,
+          "explanation": "`find` returns `None`, which does not match `Some(n)`."
+        },
+        {
+          "type": "single",
+          "q": "Which is a valid `let ... else`?",
+          "options": [
+            "`let Some(x) = opt else { return; };`",
+            "`let Some(x) = opt else { 0 };`",
+            "`let x = opt else None;`",
+            "`let Some(x) = opt else { println!(\"none\"); };`"
+          ],
+          "answer": 0,
+          "explanation": "The else block must diverge (leave). Printing alone does not leave."
+        },
+        {
+          "type": "fill",
+          "q": "The error code for a match that misses a case is E000___ (one digit).",
+          "answer": [
+            "4"
+          ],
+          "explanation": "E0004: non-exhaustive patterns."
+        },
+        {
+          "type": "single",
+          "q": "A `match` on an `i32` has the arms `0 =>`, `1..=9 =>`, `n if n < 0 =>` and `_ =>`. Where must `_ =>` go?",
+          "options": [
+            "First",
+            "Anywhere: order does not matter",
+            "Last",
+            "It is not needed because the other arms cover everything"
+          ],
+          "answer": 2,
+          "explanation": "The catch-all matches everything, so any arm after it would be unreachable. The other three cover only some integers, so `_` is required."
+        }
+      ]
+    }
+  ]
+}

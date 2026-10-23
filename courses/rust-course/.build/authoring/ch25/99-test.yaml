@@ -1,0 +1,58 @@
+title: "Chapter test: the Web Server project"
+kind: test
+summary: Ten questions on HTTP, the thread pool and graceful shutdown. You need 70% to pass; you can retry and your best score is kept.
+blocks:
+  - type: quiz
+    id: ch25-test
+    pass_score: 0.7
+    questions:
+      - type: single
+        q: "What does `TcpListener::incoming()` yield?"
+        options: ["Request strings", "A Result<TcpStream> for each connection attempt", "Threads", "HTTP responses"]
+        answer: 1
+        explanation: "Each stream is one connection."
+      - type: single
+        q: "Which line starts a valid HTTP response?"
+        options: ["GET / HTTP/1.1", "HTTP/1.1 404 NOT FOUND", "404 HTTP/1.1", "Content-Length: 0"]
+        answer: 1
+        explanation: "Version, status code, reason phrase."
+      - type: single
+        q: "A body is `héllo`. What is its Content-Length?"
+        options: ["5", "6", "7", "10"]
+        answer: 1
+        explanation: "é is two bytes in UTF-8."
+      - type: single
+        q: "Why does a single-threaded server answer `/` slowly while `/sleep` is running?"
+        options: ["TCP is slow", "It handles one connection at a time, so / waits for /sleep to finish", "The browser waits", "Sleeping blocks all processes"]
+        answer: 1
+        explanation: "The second connection waits in the accept queue."
+      - type: single
+        q: "What bound does a thread pool add compared to a thread per connection?"
+        options: ["A limit on the number of threads", "A limit on request size", "Encryption", "Async I/O"]
+        answer: 0
+        explanation: "At most N jobs run at once."
+      - type: single
+        q: "How do several workers share one mpsc::Receiver?"
+        options: ["Clone it", "Arc<Mutex<Receiver<Job>>>", "Rc<RefCell<Receiver<Job>>>", "Box<Receiver<Job>>"]
+        answer: 1
+        explanation: "Arc for shared ownership across threads, Mutex for exclusive access."
+      - type: single
+        q: "Which worker loop holds the lock while the job runs?"
+        options: ["let job = rx.lock().unwrap().recv().unwrap(); job();", "while let Ok(job) = rx.lock().unwrap().recv() { job(); }", "Both", "Neither"]
+        answer: 1
+        explanation: "while let keeps temporaries until the end of the block."
+      - type: single
+        q: "What makes a worker leave its loop during shutdown?"
+        options: ["A special Stop job only", "recv returns Err after every sender has been dropped", "The thread is killed", "join interrupts it"]
+        answer: 1
+        explanation: "The book closes the channel by dropping the sender."
+      - type: single
+        q: "Why does ThreadPool::drop use `self.workers.drain(..)`?"
+        options: ["To sort workers", "To get each worker by value so join can consume its handle", "To clone handles", "To skip finished workers"]
+        answer: 1
+        explanation: "join takes self."
+      - type: single
+        q: "Which crate would you use for an async production web server?"
+        options: ["rand", "axum (on tokio and hyper)", "byteorder", "bindgen"]
+        answer: 1
+        explanation: "It handles many connections without a thread each."

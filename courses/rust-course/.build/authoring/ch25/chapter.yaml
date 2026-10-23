@@ -1,0 +1,8 @@
+title: "Final Project: a Multithreaded Web Server"
+summary: "The Rust book's closing project, built in three steps: a single-threaded web server that speaks HTTP over TCP with only the standard library, a thread pool that serves many requests at once, and a graceful shutdown that lets every worker finish its job. It brings together ownership, traits, closures, smart pointers, channels and Drop from the whole course."
+goals:
+  - Read HTTP requests from a TcpStream and write valid HTTP responses with status lines, headers and bodies
+  - Route requests and see why one slow request blocks a single-threaded server
+  - Design and build a ThreadPool with workers, a channel of boxed FnOnce jobs and Arc<Mutex<Receiver>>
+  - Avoid holding a MutexGuard across a job and explain why while let would do that
+  - Shut the pool down gracefully with Drop, Option::take and Vec::drain, and survive panicking jobs

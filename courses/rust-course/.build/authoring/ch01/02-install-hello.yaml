@@ -1,0 +1,241 @@
+title: Install Rust and say Hello, world!
+summary: You will install the Rust tools, write the classic first program, and understand every line of it.
+source:
+  chapter: ch01
+  sections: ["TRPL 1.1 Installation", "TRPL 1.2 Hello, World!", "RiA 1.4 A taste of the language"]
+blocks:
+  - type: text
+    md: |
+      In this lesson you will **install Rust, write a five-line program and run it**. You can do every step of this course in the page's playground, but having Rust on your own computer lets you build real projects and run the exercise tests locally.
+
+  - type: callout
+    kind: analogy
+    title: Recipe and dish
+    md: |
+      Your `.rs` file is a recipe. The compiler `rustc` is the cook who turns it into a dish: a program file you can run any number of times. Unlike a script in Python or JavaScript, the recipe is not needed to *eat* the dish. You can hand the finished program to a friend who has never installed Rust.
+
+  - type: text
+    title: Step 1. Install with rustup
+    md: |
+      Rust is installed with **rustup**, a small tool that downloads the compiler and keeps it up to date.
+
+      - **Linux or macOS:** open a terminal and run the command below. It downloads the installer script and starts it.
+      - **Windows:** go to [rust-lang.org/tools/install](https://www.rust-lang.org/tools/install) and follow the steps. It will ask you to install Visual Studio's build tools, which provide the **linker** (the program that joins compiled pieces into one runnable file).
+
+      On Linux you may also need a C compiler such as GCC (on Ubuntu: the `build-essential` package); on macOS run `xcode-select --install`.
+
+  - type: code
+    lang: bash
+    file: terminal
+    code: |
+      curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh
+    output: "Rust is installed now. Great!"
+    output_label: The last line you should see
+
+  - type: text
+    title: Step 2. Check that it worked
+    md: |
+      Open a **new** terminal (so it picks up the updated settings) and ask the compiler for its version. If you see a version number, Rust is ready. If the terminal says the command is not found, the Rust folder is not on your `PATH`, the list of places the terminal searches for programs; reopening the terminal or restarting usually fixes it.
+
+      Two more commands you will use later: `rustup update` installs the newest version, and `rustup doc` opens the full documentation in your browser, even offline.
+
+  - type: code
+    lang: bash
+    file: terminal
+    code: |
+      rustc --version
+      cargo --version
+    output: |
+      rustc 1.97.0 (2d8144b78 2026-07-07)
+      cargo 1.97.0 (...)
+    output_label: Example output (your numbers may be newer)
+
+  - type: text
+    title: Step 3. Write the program
+    md: |
+      Make a folder for your projects (for example `~/projects/hello_world`), and in it create a file named `main.rs`. Rust files always end in `.rs`; when a name has several words, separate them with an underscore: `hello_world.rs`, not `helloworld.rs`. Type this in:
+
+  - type: code
+    lang: rust
+    file: main.rs
+    code: |
+      fn main() {
+          println!("Hello, world!");
+      }
+    output: "Hello, world!"
+
+  - type: stepper
+    title: Reading the program line by line
+    lang: rust
+    steps:
+      - title: "fn main()"
+        md: |
+          `fn` starts a **function**, a named block of instructions. This one is called `main`, and `main` is special: it is always the first code that runs in a Rust program. The empty parentheses `()` mean it takes no input.
+        code: |
+          fn main() {
+              println!("Hello, world!");
+          }
+        highlight: [1]
+      - title: "The curly brackets"
+        md: |
+          Everything between `{` and `}` is the function's **body**. Rust requires the brackets around every function body. Style tip: put the opening `{` on the same line as `fn main()`, with one space before it.
+        code: |
+          fn main() {
+              println!("Hello, world!");
+          }
+        highlight: [1, 3]
+      - title: "println! is a macro"
+        md: |
+          `println!` prints text and moves to a new line. The `!` tells you it is a **macro**, not a normal function. A macro is code that writes more code for you; you will build your own in chapter 20. For now: `!` means macro, and macros can do things functions cannot, like accept a varying number of arguments.
+        code: |
+          fn main() {
+              println!("Hello, world!");
+          }
+        highlight: [2]
+      - title: "The text and the semicolon"
+        md: |
+          `"Hello, world!"` is a **string**, a piece of text in double quotes, passed to `println!`. The line ends with `;`, which says "this instruction is finished". Most Rust lines end with a semicolon.
+        code: |
+          fn main() {
+              println!("Hello, world!");
+          }
+        highlight: [2]
+        output: "Hello, world!"
+
+  - type: flow
+    title: From source file to running program
+    nodes:
+      - label: main.rs
+        detail: "You write **source code**, text a person can read, in a file ending in `.rs`."
+      - label: rustc main.rs
+        detail: "The compiler checks the code. If anything is wrong it prints errors and stops; nothing is produced."
+      - label: main (or main.exe)
+        detail: "If the code is fine, `rustc` writes an **executable**: a file the operating system can run directly. On Windows it is `main.exe`."
+      - label: ./main
+        detail: "You run the executable. It no longer needs the source file or Rust itself. That is what **ahead-of-time compiled** means."
+
+  - type: code
+    lang: bash
+    file: terminal
+    title: Compile, then run (two separate steps)
+    code: |
+      rustc main.rs
+      ./main          # on Windows: .\main
+    output: "Hello, world!"
+
+  - type: callout
+    kind: tip
+    title: Let a tool do the formatting
+    md: |
+      Rust ships with **rustfmt**, which formats code in the standard style. Run `rustfmt main.rs` (or, inside a Cargo project, `cargo fmt`) and stop worrying about spaces and brackets.
+
+  - type: playground
+    id: ch01-play-hello
+    solution_code: |
+      fn main() {
+          println!("Hello, Rustacean!");
+      }
+    title: "Your turn: change the message"
+    lang: rust
+    task: "Make the program print exactly `Hello, Rustacean!` (Rust programmers call themselves Rustaceans)."
+    code: |
+      fn main() {
+          println!("Hello, world!");
+      }
+    expected_output: "Hello, Rustacean!"
+    hints:
+      - "Only the text between the double quotes needs to change."
+      - "Keep the exclamation mark at the end of the text, and keep the `;` at the end of the line."
+
+  - type: text
+    title: Text in any language
+    md: |
+      Rust strings are **UTF-8**, a way of storing text that covers every writing system. *Rust in Action* shows this by greeting the world in three languages. The program below introduces two things you will learn properly soon: `let` gives a name to a value, and `for` repeats code for each item in a list.
+
+  - type: playground
+    id: ch01-play-three-greetings
+    title: "Greetings in three languages"
+    lang: rust
+    md: "Run it, then add a fourth greeting in a language you know. Add a new `let` line, then put the new name inside the square brackets."
+    code: |
+      fn greet_world() {
+          println!("Hello, world!");
+
+          let southern_germany = "Grüß Gott!";
+          let japan = "ハロー・ワールド";
+
+          let regions = [southern_germany, japan];
+
+          for region in regions.iter() {
+              println!("{}", region);
+          }
+      }
+
+      fn main() {
+          greet_world();
+      }
+    hints:
+      - "For example: `let poland = \"Witaj, świecie!\";` and then `[southern_germany, japan, poland]`."
+
+  - type: quiz
+    id: ch01-quiz-hello
+    title: Quick check
+    questions:
+      - type: single
+        q: "Why does `println!` have an exclamation mark?"
+        options:
+          - "It makes the output louder (bold) in the terminal."
+          - "It marks a macro, code that generates more code."
+          - "It means the function can fail."
+          - "It is required at the end of every Rust name."
+        answer: 1
+        hints:
+          - "Look at the third step of the walkthrough."
+        explanation: |
+          The `!` marks a **macro**. Macros are not ordinary functions; for example `println!` accepts any number of values to print. Plain functions, like `main`, are called without `!`.
+      - type: fill
+        q: "Which function runs first in every executable Rust program? Type its name."
+        answer: ["main", "main()", "fn main", "fn main()"]
+        hints:
+          - "It is the function in the very first line of the program."
+        explanation: "`main` is the entry point: the operating system starts your program there."
+      - type: order
+        q: "Put the steps of building and running a program with `rustc` in order."
+        items:
+          - "Write the source code in `main.rs`"
+          - "Run `rustc main.rs`"
+          - "The compiler produces an executable file"
+          - "Run `./main` (or `.\\main` on Windows)"
+        hints:
+          - "You cannot run a file that has not been produced yet."
+        explanation: |
+          Source code first, then the compiler, which produces the executable, which you then run. Because compiling and running are separate steps, you can give the executable to someone who has never installed Rust.
+      - type: truefalse
+        q: "A friend needs Rust installed to run the `main` executable you compiled."
+        answer: false
+        hints:
+          - "Think about the recipe and the dish."
+        explanation: |
+          False. Rust is compiled **ahead of time**: the executable runs on its own. Python, Ruby or JavaScript files, by contrast, need their language installed to run.
+
+  - type: summary
+    points:
+      - "rustup installs Rust and keeps it updated; `rustc --version` checks that it works."
+      - "Every program starts in `fn main()`, and its body lives between curly brackets."
+      - "`println!` is a macro (note the `!`) that prints a line of text."
+      - "Compiling (`rustc main.rs`) and running (`./main`) are separate steps, and the result runs without Rust installed."
+terms:
+  - term: rustup
+    def: "The installer and version manager for Rust: `rustup update` upgrades, `rustup doc` opens offline docs."
+  - term: function
+    def: "A named block of instructions, started with `fn`. It can take inputs (parameters) and give back a value."
+  - term: macro
+    def: "Code that writes more code. Called with a `!`, like `println!`. Macros can do things ordinary functions cannot, such as take any number of arguments."
+  - term: string
+    def: "A piece of text. A string literal is text written in double quotes in your code, like `\"Hello\"`."
+  - term: executable
+    def: "A file produced by the compiler that the operating system can run directly."
+  - term: linker
+    def: "A tool that joins compiled pieces into one executable. Installed with a C compiler or Visual Studio's build tools."
+  - term: UTF-8
+    def: "The text encoding Rust strings use. It can store characters from every writing system."

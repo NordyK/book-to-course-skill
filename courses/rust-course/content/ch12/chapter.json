@@ -1,0 +1,12 @@
+{
+  "title": "Project: a Command-Line Search Tool",
+  "summary": "Building minigrep, a small grep: reading arguments and files, refactoring for separation of concerns and error handling, developing the search with test-driven development, environment variables, and writing errors to standard error.",
+  "goals": [
+    "Read command-line arguments with std::env::args and a file with fs::read_to_string",
+    "Split a program into main.rs and lib.rs, with a Config type and errors returned instead of panics",
+    {
+      "Develop a function test-first": "write a failing test, make it pass, refactor"
+    },
+    "Use environment variables for options and send error messages to stderr with eprintln!"
+  ]
+}

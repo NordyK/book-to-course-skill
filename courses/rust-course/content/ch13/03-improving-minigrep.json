@@ -1,0 +1,134 @@
+{
+  "title": "Improving minigrep, and zero-cost iterators",
+  "summary": "Removing clone from Config::build by taking an iterator, rewriting search with filter and collect, choosing between loops and iterators, and why iterator chains compile to the same machine code as hand-written loops.",
+  "minutes": 25,
+  "source": {
+    "chapter": "ch13",
+    "sections": [
+      "TRPL 13.3 Improving Our I/O Project",
+      "TRPL 13.3 Removing a clone Using an Iterator",
+      "TRPL 13.3 Using the Returned Iterator Directly",
+      "TRPL 13.3 Using Iterator Trait Methods Instead of Indexing",
+      "TRPL 13.3 Making Code Clearer with Iterator Adapters",
+      "TRPL 13.3 Choosing Between Loops or Iterators",
+      "TRPL 13.4 Comparing Performance: Loops vs. Iterators",
+      "PR ch15 Iterator Performance"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Chapter 12's `Config::build` cloned two strings because it received a **slice** of arguments it did not own. But `env::args()` already gives an iterator of owned `String`s. Pass that iterator in, and `build` can take ownership of the values instead of copying them.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/lib.rs",
+      "code": "impl Config {\n    pub fn build(mut args: impl Iterator<Item = String>) -> Result<Config, &'static str> {\n        args.next(); // skip the program name\n\n        let query = match args.next() {\n            Some(arg) => arg,\n            None => return Err(\"Didn't get a query string\"),\n        };\n\n        let file_path = match args.next() {\n            Some(arg) => arg,\n            None => return Err(\"Didn't get a file path\"),\n        };\n\n        let ignore_case = env::var(\"IGNORE_CASE\").is_ok();\n\n        Ok(Config { query, file_path, ignore_case })\n    }\n}\n",
+      "explain": "`impl Iterator<Item = String>` accepts any iterator of strings: `env::args()` in `main`, or a vector's `into_iter()` in a test. `args` is `mut` because `next` advances it. The error messages are also more specific now."
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/main.rs",
+      "code": "fn main() {\n    let config = Config::build(env::args()).unwrap_or_else(|err| {\n        eprintln!(\"Problem parsing arguments: {err}\");\n        process::exit(1);\n    });\n\n    // --snip--\n}\n"
+    },
+    {
+      "type": "text",
+      "title": "search with adapters",
+      "md": "The loop version of `search` built a vector by hand. With adapters it says what it means:\n\n```rust\npub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {\n    contents\n        .lines()\n        .filter(|line| line.contains(query))\n        .collect()\n}\n```\n\nThere is no mutable `results` vector left. Without shared mutable state, a future change could even run the filtering in parallel. Going further, `search` could return `impl Iterator<Item = &'a str>` and let the caller decide whether to collect at all.\n"
+    },
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Loops or iterators?",
+      "md": "Most Rust programmers prefer the iterator style once they are used to it: it states the goal (`filter` the lines that contain the query) instead of the mechanics (index, push, increment). Loops remain the right choice when the body has complex control flow, early returns with side effects, or several outputs at once. Both compile to fast code, as the next section shows."
+    },
+    {
+      "type": "text",
+      "title": "Zero-cost abstractions",
+      "md": "*The Rust Programming Language* benchmarks a search over the full text of *The Adventures of Sherlock Holmes*: the `for` loop version and the iterator version take essentially the **same time**. *Programming Rust* explains why: after monomorphization and inlining, the chain of `Map`, `Filter` and `Range` structs disappears and what remains is the loop you would have written. Bjarne Stroustrup's definition of **zero-overhead**: what you do not use, you do not pay for; what you do use, you could not hand-code any better.\n\nThe book's audio decoder example shows how far this goes. This chain computes a linear prediction over 12 coefficients:\n\n```rust\nlet prediction = coefficients.iter()\n    .zip(&buffer[i - 12..i])\n    .map(|(&c, &s)| c * s as i64)\n    .sum::<i64>() >> qlp_shift;\n```\n\nThe compiler knows there are exactly 12 iterations and **unrolls** the loop into 12 multiply-adds with no loop counter, no bounds checks and the coefficients kept in registers.\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch13-play-build-iter",
+      "title": "Config::build from an iterator",
+      "lang": "rust",
+      "md": "Finish `Config::build` so it reads from an iterator instead of indexing a slice, with no `clone`. `main` passes each simulated argument list with `into_iter()`, the same way `env::args()` would.\n",
+      "task": "Print `frog in poem.txt`, `error: Didn't get a file path` and `error: Didn't get a query string`.",
+      "code": "struct Config {\n    query: String,\n    file_path: String,\n}\n\nimpl Config {\n    fn build(mut args: impl Iterator<Item = String>) -> Result<Config, &'static str> {\n        args.next();\n        // read query and file_path with args.next()\n        todo!()\n    }\n}\n\nfn main() {\n    let runs = [vec![\"mg\", \"frog\", \"poem.txt\"], vec![\"mg\", \"frog\"], vec![\"mg\"]];\n    for run in runs {\n        let args: Vec<String> = run.iter().map(|s| s.to_string()).collect();\n        match Config::build(args.into_iter()) {\n            Ok(c) => println!(\"{} in {}\", c.query, c.file_path),\n            Err(e) => println!(\"error: {e}\"),\n        }\n    }\n}\n",
+      "expected_output": "frog in poem.txt\nerror: Didn't get a file path\nerror: Didn't get a query string\n",
+      "hints": [
+        "`let query = args.next().ok_or(\"Didn't get a query string\")?;` is a short form of the `match` in the lesson."
+      ]
+    },
+    {
+      "type": "quiz",
+      "id": "ch13-quiz-minigrep",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Why could the new `Config::build` drop the `clone` calls?",
+          "options": [
+            "Strings became Copy",
+            "It takes an iterator of owned Strings and moves them into Config",
+            "It uses references",
+            "clone is automatic"
+          ],
+          "answer": 1,
+          "explanation": "Owning the iterator means owning its items."
+        },
+        {
+          "type": "single",
+          "q": "Why is the `args` parameter declared `mut`?",
+          "options": [
+            "To change the strings",
+            "Calling next advances the iterator, which mutates it",
+            "Iterators are always mut",
+            "To allow clone"
+          ],
+          "answer": 1,
+          "explanation": "`next` takes `&mut self`."
+        },
+        {
+          "type": "single",
+          "q": "Compared with the loop version, the iterator version of search is...",
+          "options": [
+            "Much slower",
+            "About the same speed",
+            "Only faster in debug builds",
+            "Not allowed with lifetimes"
+          ],
+          "answer": 1,
+          "explanation": "Iterators are a zero-cost abstraction."
+        },
+        {
+          "type": "truefalse",
+          "q": "Iterator chains are compiled by inlining and optimization into code close to a hand-written loop.",
+          "answer": true,
+          "explanation": "Sometimes even unrolled, as in the audio decoder."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Taking `impl Iterator<Item = String>` lets `Config::build` own its arguments without cloning.",
+        "`lines().filter(...).collect()` replaces a mutable results vector.",
+        "Prefer iterators for clarity; keep loops for complex control flow.",
+        "Iterators are zero-cost: they compile to code as fast as hand-written loops."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "zero-cost abstraction",
+      "def": "A high-level feature that compiles to code as efficient as what you would write by hand."
+    },
+    {
+      "term": "unrolling",
+      "def": "An optimization that replaces a loop with repeated copies of its body, removing the loop counter."
+    }
+  ]
+}

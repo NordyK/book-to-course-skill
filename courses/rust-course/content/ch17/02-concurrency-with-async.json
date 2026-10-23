@@ -1,0 +1,268 @@
+{
+  "title": "Concurrency with async",
+  "summary": "Running futures concurrently with join and race, spawning tasks, async message passing, yielding control, building your own timeout, and choosing between tasks and threads. Runnable examples use a small timer and join written with the standard library.",
+  "minutes": 40,
+  "source": {
+    "chapter": "ch17",
+    "sections": [
+      "TRPL 17.2 Applying Concurrency with Async",
+      "TRPL 17.2 Creating a New Task with spawn_task",
+      "TRPL 17.2 Joining Tasks",
+      "TRPL 17.2 Sending Data Between Two Tasks Using Message Passing",
+      "TRPL 17.3 Working with Any Number of Futures",
+      "TRPL 17.3 Racing Futures",
+      "TRPL 17.3 Yielding Control to the Runtime",
+      "TRPL 17.3 Building Our Own Async Abstractions",
+      "TRPL 17.6 Putting It All Together: Futures, Tasks, and Threads",
+      "PR ch20 Spawning Async Tasks",
+      "PR ch20 But What Does Your Future Do?",
+      "PR ch20 Async Blocks",
+      "PR ch20 Spawning Async Tasks on a Thread Pool",
+      "PR ch20 But Does Your Future Implement Send?",
+      "PR ch20 Long Running Computations: yield_now and spawn_blocking",
+      "CR Concurrency Afternoon Channels and Futures",
+      "CR Concurrency Afternoon Join",
+      "CR Concurrency Afternoon Select",
+      "CR Concurrency Afternoon Pitfalls"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Sequential `.await`s are not concurrent: the second waits for the first to finish. Concurrency comes from **combining** futures so they are polled together. *The Rust Programming Language* shows the main tools with the `trpl` crate (Tokio underneath):\n\n```rust\ntrpl::block_on(async {\n    let fut1 = async {\n        for i in 1..10 {\n            println!(\"hi number {i} from the first task!\");\n            trpl::sleep(Duration::from_millis(500)).await;\n        }\n    };\n    let fut2 = async {\n        for i in 1..5 {\n            println!(\"hi number {i} from the second task!\");\n            trpl::sleep(Duration::from_millis(500)).await;\n        }\n    };\n    trpl::join(fut1, fut2).await;\n});\n```\n\n`join` polls both futures, and finishes when **both** have. Unlike threads, the output is in a fixed, fair order: `join` checks each future in turn.\n"
+    },
+    {
+      "type": "table",
+      "title": "The async toolkit",
+      "headers": [
+        "Tool",
+        "Tokio name",
+        "Does"
+      ],
+      "rows": [
+        [
+          "join",
+          "`tokio::join!(a, b)`",
+          "run futures concurrently, wait for all, return all results"
+        ],
+        [
+          "join_all",
+          "`futures::future::join_all(vec)`",
+          "the same for any number of futures of one type"
+        ],
+        [
+          "race / select",
+          "`tokio::select!`",
+          "wait for the **first** to finish; the others are dropped (cancelled)"
+        ],
+        [
+          "spawn",
+          "`tokio::spawn(fut)`",
+          "run a future as an independent **task**, possibly on another thread; returns a JoinHandle to await"
+        ],
+        [
+          "channel",
+          "`tokio::sync::mpsc`",
+          "async message passing: `recv().await` waits without blocking the thread"
+        ],
+        [
+          "sleep",
+          "`tokio::time::sleep(d)`",
+          "a future that completes after a duration"
+        ],
+        [
+          "yield_now",
+          "`tokio::task::yield_now()`",
+          "give other tasks a turn in a long computation"
+        ],
+        [
+          "spawn_blocking",
+          "`tokio::task::spawn_blocking`",
+          "run blocking or CPU-heavy code on a separate thread pool"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Join and a timer, from scratch",
+      "md": "To run real examples here without a runtime, take the `block_on` from lesson 1 and add two small pieces:\n\n- a **`sleep`** future: it starts a helper thread that waits, then marks the future done and calls the stored waker;\n- a **`join2`** combinator, built with `std::future::poll_fn`, that polls both futures on every poll and finishes when both are ready.\n\nThey are written out in full below `main`. The interesting part is `main`: two tasks that each \"wait\", running concurrently on **one** executor thread.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::future::{Future, poll_fn};\nuse std::pin::{Pin, pin};\nuse std::sync::{Arc, Mutex};\nuse std::task::{Context, Poll, Wake, Waker};\nuse std::thread::{self, Thread};\nuse std::time::{Duration, Instant};\n\nasync fn task(name: &str, ms: u64) -> u64 {\n    println!(\"{name} starts\");\n    sleep(Duration::from_millis(ms)).await;\n    println!(\"{name} done after {ms} ms\");\n    ms\n}\n\nfn main() {\n    let start = Instant::now();\n    let (a, b) = block_on(join2(task(\"slow\", 300), task(\"fast\", 100)));\n    let elapsed = start.elapsed().as_millis();\n    println!(\"results {a} and {b}; took about 300 ms, not 400: {}\", elapsed < 390);\n}\n\n// ---- a tiny runtime: block_on, sleep and join2 ----\n\nstruct ThreadWaker(Thread);\nimpl Wake for ThreadWaker {\n    fn wake(self: Arc<Self>) {\n        self.0.unpark();\n    }\n}\n\nfn block_on<F: Future>(fut: F) -> F::Output {\n    let mut fut = pin!(fut);\n    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));\n    let mut cx = Context::from_waker(&waker);\n    loop {\n        match fut.as_mut().poll(&mut cx) {\n            Poll::Ready(v) => return v,\n            Poll::Pending => thread::park(),\n        }\n    }\n}\n\nstruct Sleep {\n    state: Arc<Mutex<(bool, Option<Waker>)>>, // (done, waker to call)\n}\n\nfn sleep(d: Duration) -> Sleep {\n    let state = Arc::new(Mutex::new((false, None::<Waker>)));\n    let timer = Arc::clone(&state);\n    thread::spawn(move || {\n        thread::sleep(d);\n        let mut s = timer.lock().unwrap();\n        s.0 = true;\n        if let Some(w) = s.1.take() {\n            w.wake();\n        }\n    });\n    Sleep { state }\n}\n\nimpl Future for Sleep {\n    type Output = ();\n    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {\n        let mut s = self.state.lock().unwrap();\n        if s.0 {\n            Poll::Ready(())\n        } else {\n            s.1 = Some(cx.waker().clone());\n            Poll::Pending\n        }\n    }\n}\n\nfn join2<A: Future, B: Future>(a: A, b: B) -> impl Future<Output = (A::Output, B::Output)> {\n    let (mut a, mut b) = (Box::pin(a), Box::pin(b));\n    let (mut ra, mut rb) = (None, None);\n    poll_fn(move |cx| {\n        if ra.is_none() {\n            if let Poll::Ready(v) = a.as_mut().poll(cx) {\n                ra = Some(v);\n            }\n        }\n        if rb.is_none() {\n            if let Poll::Ready(v) = b.as_mut().poll(cx) {\n                rb = Some(v);\n            }\n        }\n        if ra.is_some() && rb.is_some() {\n            Poll::Ready((ra.take().unwrap(), rb.take().unwrap()))\n        } else {\n            Poll::Pending\n        }\n    })\n}\n",
+      "output": "slow starts\nfast starts\nfast done after 100 ms\nslow done after 300 ms\nresults 300 and 100; took about 300 ms, not 400: true\n",
+      "explain": "Both tasks start on the first poll, then both are pending. The `fast` timer wakes the executor after 100 ms; `join2` polls both, and only `fast` finishes. After 300 ms `slow` does. The waits overlapped, on one thread. (This `sleep` spends a helper thread per timer for simplicity; real runtimes use one timer wheel for all timers.)"
+    },
+    {
+      "type": "text",
+      "title": "Racing, and timeouts",
+      "md": "**Race** (`select`) waits for whichever future finishes first and drops the other. Dropping a future **cancels** it: it is simply never polled again, and its destructors run. That is how a **timeout** works, and *The Rust Programming Language* builds one from `race` and `sleep`:\n\n```rust\nasync fn timeout<F: Future>(future_to_try: F, max_time: Duration) -> Result<F::Output, Duration> {\n    match trpl::race(future_to_try, trpl::sleep(max_time)).await {\n        Either::Left(output) => Ok(output),\n        Either::Right(_) => Err(max_time),\n    }\n}\n```\n\nBecause any future can be dropped at any `.await`, code between awaits should leave data consistent: a future is **cancelled** at an await point, never in the middle of a line.\n"
+    },
+    {
+      "type": "text",
+      "title": "Tasks and message passing",
+      "md": "`spawn` (in Tokio, `tokio::spawn`) hands a future to the runtime as an independent **task**. A multi-threaded runtime may run tasks in parallel on its worker threads, so a spawned future must be `Send + 'static`, usually an `async move` block. Tasks communicate with **async channels**: `tx.send(v)` and `rx.recv().await`, which returns `None` once all senders are gone:\n\n```rust\nlet (tx, mut rx) = trpl::channel();\n\nlet tx_fut = async move {\n    for val in [\"hi\", \"from\", \"the\", \"future\"] {\n        tx.send(val.to_string()).unwrap();\n        trpl::sleep(Duration::from_millis(500)).await;\n    }\n};\nlet rx_fut = async {\n    while let Some(value) = rx.recv().await {\n        println!(\"received '{value}'\");\n    }\n};\ntrpl::join(tx_fut, rx_fut).await;\n```\n\nNote the `async move` on the sender: it moves `tx` into the future, so `tx` is dropped when that future finishes, which ends the receiver's `while let` loop. Without `move`, the program would wait forever, the same bug as with thread channels.\n"
+    },
+    {
+      "type": "callout",
+      "kind": "warning",
+      "title": "Do not block the executor",
+      "md": "An async task runs until its next `.await`. A long computation or a blocking call (`std::thread::sleep`, `std::fs::read`, a CPU-heavy loop) inside a task **stalls every other task** on that thread. Use the runtime's async I/O and `sleep`, call `yield_now().await` occasionally in long loops, and move heavy work to `spawn_blocking` or a thread."
+    },
+    {
+      "type": "table",
+      "title": "Tasks or threads?",
+      "headers": [
+        "",
+        "Threads",
+        "Async tasks"
+      ],
+      "rows": [
+        [
+          "best for",
+          "CPU-bound work, parallel computation",
+          "I/O-bound work: many connections, timers, waiting"
+        ],
+        [
+          "cost of one",
+          "an OS thread with its own stack (megabytes reserved)",
+          "a state machine of a few hundred bytes"
+        ],
+        [
+          "scheduling",
+          "preemptive, by the OS",
+          "cooperative: switches only at `.await`"
+        ],
+        [
+          "how many",
+          "hundreds to thousands",
+          "hundreds of thousands"
+        ],
+        [
+          "needs a runtime",
+          "no",
+          "yes"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "md": "The two combine well. *The Rust Programming Language* ends the chapter by sending from a **thread** into an **async channel**: blocking work runs on a thread, the async side awaits its results. Many real programs do exactly this: async for the network, threads for computation.\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch17-play-join-all",
+      "title": "join_all from join2",
+      "lang": "rust",
+      "md": "The runtime from the lesson is included at the bottom. Write `join_all`, which runs a vector of futures concurrently and returns their outputs in order. Use `join2` repeatedly, or write it with `poll_fn` over a `Vec<Pin<Box<F>>>` and a `Vec<Option<T>>`. Three 200 ms sleeps should take about 200 ms in total.\n",
+      "task": "Print `[1, 2, 3]` and `concurrent: true`.",
+      "code": "use std::future::{Future, poll_fn};\nuse std::pin::{Pin, pin};\nuse std::sync::{Arc, Mutex};\nuse std::task::{Context, Poll, Wake, Waker};\nuse std::thread::{self, Thread};\nuse std::time::{Duration, Instant};\n\nasync fn work(id: u32) -> u32 {\n    sleep(Duration::from_millis(200)).await;\n    id\n}\n\n// TODO: run all futures concurrently, outputs in order\nasync fn join_all<F: Future>(futures: Vec<F>) -> Vec<F::Output> {\n    let mut out = Vec::new();\n    for f in futures {\n        out.push(f.await); // sequential: 600 ms\n    }\n    out\n}\n\nfn main() {\n    let start = Instant::now();\n    let results = block_on(join_all(vec![work(1), work(2), work(3)]));\n    println!(\"{results:?}\");\n    println!(\"concurrent: {}\", start.elapsed().as_millis() < 450);\n}\n\n// ---- the tiny runtime from the lesson ----\n\nstruct ThreadWaker(Thread);\nimpl Wake for ThreadWaker {\n    fn wake(self: Arc<Self>) {\n        self.0.unpark();\n    }\n}\n\nfn block_on<F: Future>(fut: F) -> F::Output {\n    let mut fut = pin!(fut);\n    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));\n    let mut cx = Context::from_waker(&waker);\n    loop {\n        match fut.as_mut().poll(&mut cx) {\n            Poll::Ready(v) => return v,\n            Poll::Pending => thread::park(),\n        }\n    }\n}\n\nstruct Sleep {\n    state: Arc<Mutex<(bool, Option<Waker>)>>,\n}\n\nfn sleep(d: Duration) -> Sleep {\n    let state = Arc::new(Mutex::new((false, None::<Waker>)));\n    let timer = Arc::clone(&state);\n    thread::spawn(move || {\n        thread::sleep(d);\n        let mut s = timer.lock().unwrap();\n        s.0 = true;\n        if let Some(w) = s.1.take() {\n            w.wake();\n        }\n    });\n    Sleep { state }\n}\n\nimpl Future for Sleep {\n    type Output = ();\n    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {\n        let mut s = self.state.lock().unwrap();\n        if s.0 {\n            Poll::Ready(())\n        } else {\n            s.1 = Some(cx.waker().clone());\n            Poll::Pending\n        }\n    }\n}\n",
+      "expected_output": "[1, 2, 3]\nconcurrent: true\n",
+      "hints": [
+        "Box and pin every future: `futures.into_iter().map(Box::pin).collect::<Vec<_>>()`.",
+        "Keep one `Option` per future for its output; on each poll, poll only those still `None`.",
+        "Return `Poll::Ready` when all outputs are `Some`, taking them out in order."
+      ]
+    },
+    {
+      "type": "quiz",
+      "id": "ch17-quiz-concurrency",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Two futures are awaited one after another: `a.await; b.await;`. Are they concurrent?",
+          "options": [
+            "Yes",
+            "No: b is not polled until a finishes",
+            "Only on a multi-threaded runtime",
+            "Only with move"
+          ],
+          "answer": 1,
+          "explanation": "Use join to poll both."
+        },
+        {
+          "type": "single",
+          "q": "What happens to the losing future in a race?",
+          "options": [
+            "It keeps running in the background",
+            "It is dropped, which cancels it",
+            "It panics",
+            "It is awaited afterwards"
+          ],
+          "answer": 1,
+          "explanation": "Dropping a future stops it."
+        },
+        {
+          "type": "single",
+          "q": "Why must a future passed to `tokio::spawn` usually be `async move` and `Send`?",
+          "options": [
+            "Tokio requires a specific syntax",
+            "The task may outlive the current scope and run on another worker thread",
+            "To make it faster",
+            "Because spawn returns a Result"
+          ],
+          "answer": 1,
+          "explanation": "Same reasons as thread::spawn."
+        },
+        {
+          "type": "single",
+          "q": "What happens if a task runs a 2-second CPU loop without awaiting?",
+          "options": [
+            "The runtime pauses it automatically",
+            "Other tasks on that thread cannot run for 2 seconds",
+            "It is moved to another thread",
+            "It is cancelled"
+          ],
+          "answer": 1,
+          "explanation": "Scheduling is cooperative."
+        },
+        {
+          "type": "single",
+          "q": "Which suits async tasks better than threads?",
+          "options": [
+            "Compressing a video",
+            "Handling 50,000 mostly idle network connections",
+            "Parallel matrix multiplication",
+            "A tight numeric loop"
+          ],
+          "answer": 1,
+          "explanation": "Waiting-heavy work."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Sequential `.await`s run one after another; `join` polls futures together and waits for all.",
+        "`race`/`select` waits for the first and cancels the rest by dropping them; timeouts are built this way.",
+        "`spawn` runs a future as an independent task; async channels connect tasks.",
+        "Never block inside a task: use async I/O, `yield_now`, or `spawn_blocking`.",
+        "Threads for CPU-heavy work, tasks for many waits; programs often combine both."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "join",
+      "def": "Combining futures so they run concurrently and finish when all have."
+    },
+    {
+      "term": "race (select)",
+      "def": "Waiting for the first of several futures to finish and dropping the others."
+    },
+    {
+      "term": "task",
+      "def": "A future handed to the runtime to run independently, like a lightweight thread."
+    },
+    {
+      "term": "cancellation",
+      "def": "Stopping a future by dropping it; it is never polled again."
+    },
+    {
+      "term": "cooperative scheduling",
+      "def": "Tasks switch only when they yield, at .await points, rather than being interrupted."
+    }
+  ]
+}

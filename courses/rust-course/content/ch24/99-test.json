@@ -1,0 +1,134 @@
+{
+  "title": "Chapter test: Going Low-Level",
+  "kind": "test",
+  "summary": "Ten questions on FFI, no_std and kernels, and signals. You need 70% to pass; you can retry and your best score is kept.",
+  "blocks": [
+    {
+      "type": "quiz",
+      "id": "ch24-test",
+      "pass_score": 0.7,
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which Rust type matches C's `size_t`?",
+          "options": [
+            "u32",
+            "usize",
+            "c_long",
+            "u64"
+          ],
+          "answer": 1,
+          "explanation": "And isize matches ptrdiff_t."
+        },
+        {
+          "type": "single",
+          "q": "What does `CString::new(\"a\\0b\")` return?",
+          "options": [
+            "A CString with three bytes",
+            "Err(NulError)",
+            "A CString cut at the NUL",
+            "It panics"
+          ],
+          "answer": 1,
+          "explanation": "A C string cannot contain an interior NUL."
+        },
+        {
+          "type": "single",
+          "q": "How does a Rust function become callable from C under a predictable name?",
+          "options": [
+            "pub fn",
+            "#[unsafe(no_mangle)] pub extern \"C\" fn",
+            "#[repr(C)] fn",
+            "unsafe fn"
+          ],
+          "answer": 1,
+          "explanation": "extern \"C\" sets the calling convention; no_mangle keeps the symbol name."
+        },
+        {
+          "type": "single",
+          "q": "How should a safe wrapper free a C handle?",
+          "options": [
+            "Ask callers to call free",
+            "In its Drop implementation",
+            "With a finalizer thread",
+            "It never needs to"
+          ],
+          "answer": 1,
+          "explanation": "RAII: the wrapper owns the pointer."
+        },
+        {
+          "type": "single",
+          "q": "Which crates can a `#![no_std]` library with a global allocator use?",
+          "options": [
+            "core only",
+            "core and alloc",
+            "std",
+            "None"
+          ],
+          "answer": 1,
+          "explanation": "std needs an operating system."
+        },
+        {
+          "type": "single",
+          "q": "Why does a kernel's `_start` return `!`?",
+          "options": [
+            "It is faster",
+            "There is nothing to return to",
+            "Rust requires it for extern fns",
+            "It panics"
+          ],
+          "answer": 1,
+          "explanation": "It ends with a halt loop."
+        },
+        {
+          "type": "single",
+          "q": "In VGA text mode, how many bytes describe one screen cell?",
+          "options": [
+            "1",
+            "2",
+            "4",
+            "8"
+          ],
+          "answer": 1,
+          "explanation": "Character and attribute."
+        },
+        {
+          "type": "single",
+          "q": "Which signal does Ctrl-C send?",
+          "options": [
+            "SIGTERM",
+            "SIGINT",
+            "SIGKILL",
+            "SIGSTOP"
+          ],
+          "answer": 1,
+          "explanation": "Its default action is to terminate."
+        },
+        {
+          "type": "single",
+          "q": "Why use an AtomicBool instead of `static mut` for a shutdown flag?",
+          "options": [
+            "It is shorter",
+            "References to static mut are an error in the 2024 edition, and atomics are safe to touch from a handler",
+            "Atomics are required by signal()",
+            "static mut is slower"
+          ],
+          "answer": 1,
+          "explanation": "Lock-free and data-race free."
+        },
+        {
+          "type": "single",
+          "q": "Which signal can resume a stopped process even if it is ignored?",
+          "options": [
+            "SIGCONT",
+            "SIGUSR1",
+            "SIGHUP",
+            "SIGCHLD"
+          ],
+          "answer": 0,
+          "explanation": "Continuing happens on delivery, before the disposition matters."
+        }
+      ]
+    }
+  ]
+}

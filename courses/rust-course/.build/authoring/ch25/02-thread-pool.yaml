@@ -1,0 +1,639 @@
+title: "Serving many requests with a thread pool"
+summary: "Why one slow request blocks a single-threaded server, why a thread per connection does not scale, and how to build the book's ThreadPool step by step: the API first, workers that own JoinHandles, a channel of boxed FnOnce jobs, a receiver shared through Arc<Mutex<...>>, and the while let trap that keeps a lock held for the whole job."
+minutes: 45
+source:
+  chapter: ch25
+  sections: ["TRPL 21.2 From a Single-Threaded to a Multithreaded Server", "TRPL 21.2 Simulating a Slow Request", "TRPL 21.2 Improving Throughput with a Thread Pool", "TRPL 21.2 Spawning a Thread for Each Request", "TRPL 21.2 Creating a Finite Number of Threads", "TRPL 21.2 Building ThreadPool Using Compiler-Driven Development", "TRPL 21.2 Validating the Number of Threads in new", "TRPL 21.2 Creating Space to Store the Threads", "TRPL 21.2 Sending Code from the ThreadPool to a Thread", "TRPL 21.2 Sending Requests to Threads via Channels", "TRPL 21.2 Implementing the execute Method"]
+blocks:
+  - type: text
+    md: |
+      Our server handles one connection at a time. That is fine until one request is slow: the book adds a `/sleep` route that waits five seconds before answering, and while it sleeps, every other visitor waits too. Below, `/sleep` waits half a second, a second client asks for `/` shortly after, and we measure how long the fast request takes, first with one thread and then with a new thread per connection.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::io::{BufRead, BufReader, Read, Write};
+      use std::net::{SocketAddr, TcpListener, TcpStream};
+      use std::thread;
+      use std::time::{Duration, Instant};
+
+      fn handle_connection(mut stream: TcpStream) {
+          let request: Vec<String> = BufReader::new(&stream)
+              .lines()
+              .map(|l| l.unwrap())
+              .take_while(|l| !l.is_empty())
+              .collect();
+          let body = match &request[0][..] {
+              "GET /sleep HTTP/1.1" => {
+                  thread::sleep(Duration::from_millis(500));
+                  "slept"
+              }
+              _ => "hello",
+          };
+          write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}", body.len()).unwrap();
+      }
+
+      fn timed_get(addr: SocketAddr, path: &str) -> Duration {
+          let start = Instant::now();
+          let mut s = TcpStream::connect(addr).unwrap();
+          write!(s, "GET {path} HTTP/1.1\r\n\r\n").unwrap();
+          s.read_to_string(&mut String::new()).unwrap();
+          start.elapsed()
+      }
+
+      fn run(thread_per_connection: bool) -> Duration {
+          let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+          let addr = listener.local_addr().unwrap();
+          let server = thread::spawn(move || {
+              let mut handles = Vec::new();
+              for stream in listener.incoming().take(2) {
+                  let stream = stream.unwrap();
+                  if thread_per_connection {
+                      handles.push(thread::spawn(move || handle_connection(stream)));
+                  } else {
+                      handle_connection(stream);
+                  }
+              }
+              for h in handles {
+                  h.join().unwrap();
+              }
+          });
+          let slow = thread::spawn(move || timed_get(addr, "/sleep"));
+          thread::sleep(Duration::from_millis(50)); // let /sleep arrive first
+          let fast = timed_get(addr, "/");
+          slow.join().unwrap();
+          server.join().unwrap();
+          fast
+      }
+
+      fn main() {
+          let t = run(false);
+          println!("one thread: / took more than 300 ms: {}", t > Duration::from_millis(300));
+          let t = run(true);
+          println!("thread per connection: / took less than 200 ms: {}", t < Duration::from_millis(200));
+      }
+    output: |
+      one thread: / took more than 300 ms: true
+      thread per connection: / took less than 200 ms: true
+    explain: "With one thread, `/` waits in the operating system's accept queue until `/sleep` is done. A thread per connection fixes that, but nothing limits the number of threads: a burst of 10,000 requests would create 10,000 threads and could exhaust the machine (a cheap denial-of-service attack)."
+
+  - type: text
+    title: A pool of threads
+    md: |
+      A **thread pool** is a fixed group of threads waiting for work. The server hands each connection to the pool; a free thread takes it; when all threads are busy, new work waits in a queue. The number of threads, and so the load on the machine, has an upper bound, and up to N requests are served at the same time. (Other designs exist: the fork/join model, the single-threaded async I/O model of chapter 17, or the multithreaded async model that `tokio` uses.)
+
+      The book builds the pool with **compiler-driven development**: write the code you wish you could write, then fix the compiler errors one by one. The code we wish for looks almost like the thread-per-connection version:
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    code: |
+      let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
+      let pool = ThreadPool::new(4);
+
+      for stream in listener.incoming() {
+          let stream = stream.unwrap();
+          pool.execute(|| {
+              handle_connection(stream);
+          });
+      }
+    explain: "`ThreadPool` goes in the library crate (`src/lib.rs`) so `main.rs` can `use hello::ThreadPool;`. `execute` should take a closure exactly like `thread::spawn` does."
+
+  - type: stepper
+    title: "Building ThreadPool, one compiler error at a time"
+    steps:
+      - title: "new: validate the size"
+        md: "A pool with zero threads makes no sense, so `new` asserts and documents the panic. The book also suggests a `build` function returning `Result<ThreadPool, PoolCreationError>`, which the exercise asks you to write."
+        code: |
+          /// Create a new ThreadPool.
+          ///
+          /// # Panics
+          ///
+          /// The `new` function will panic if the size is zero.
+          pub fn new(size: usize) -> ThreadPool {
+              assert!(size > 0);
+              // ...
+          }
+      - title: "execute: copy thread::spawn's bounds"
+        md: "`thread::spawn` takes `F: FnOnce() -> T + Send + 'static`. A request is handled once (`FnOnce`), on another thread (`Send`), which may outlive the caller (`'static`). We return nothing, so `T` is `()`."
+        code: |
+          pub fn execute<F>(&self, f: F)
+          where
+              F: FnOnce() + Send + 'static,
+          {
+          }
+      - title: "Workers own the threads"
+        md: "`thread::spawn` wants code to run immediately, but pool threads must start empty and wait. So each thread is wrapped in a `Worker` with an `id` and the `JoinHandle<()>`. `new` creates `size` workers in a `Vec::with_capacity(size)`."
+        code: |
+          struct Worker {
+              id: usize,
+              thread: thread::JoinHandle<()>,
+          }
+      - title: "A channel carries jobs"
+        md: "The pool keeps the `Sender`; the workers need the `Receiver`. A **job** is a boxed closure, a trait object (chapter 18), because each closure has its own type."
+        code: |
+          type Job = Box<dyn FnOnce() + Send + 'static>;
+
+          pub struct ThreadPool {
+              workers: Vec<Worker>,
+              sender: mpsc::Sender<Job>,
+          }
+      - title: "Share one receiver"
+        md: "A channel has a single consumer, so passing `receiver` to four workers fails: it moves into the first. Share it with `Arc` (several owners) and a `Mutex` (one worker takes a job at a time)."
+        code: |
+          let (sender, receiver) = mpsc::channel();
+          let receiver = Arc::new(Mutex::new(receiver));
+          for id in 0..size {
+              workers.push(Worker::new(id, Arc::clone(&receiver)));
+          }
+      - title: "The worker loop"
+        md: "Each worker loops: lock the mutex, wait for a job, release the lock, run the job. `execute` boxes the closure and sends it."
+        code: |
+          let thread = thread::spawn(move || loop {
+              let job = receiver.lock().unwrap().recv().unwrap();
+              println!("Worker {id} got a job; executing.");
+              job();
+          });
+
+  - type: code
+    lang: rust
+    output_label: Compiler output
+    code: |
+      use std::sync::mpsc;
+      use std::thread;
+
+      type Job = Box<dyn FnOnce() + Send + 'static>;
+
+      struct Worker {
+          id: usize,
+          thread: thread::JoinHandle<()>,
+      }
+
+      impl Worker {
+          fn new(id: usize, receiver: mpsc::Receiver<Job>) -> Worker {
+              let thread = thread::spawn(move || {
+                  let _receiver = receiver;
+              });
+              Worker { id, thread }
+          }
+      }
+
+      fn main() {
+          let (sender, receiver) = mpsc::channel::<Job>();
+          let mut workers = Vec::new();
+          for id in 0..4 {
+              workers.push(Worker::new(id, receiver));
+          }
+          drop(sender);
+      }
+    output: |
+      error[E0382]: use of moved value: `receiver`
+        --> src/main.rs:24:38
+         |
+      21 |     let (sender, receiver) = mpsc::channel::<Job>();
+         |                  -------- move occurs because `receiver` has type `std::sync::mpsc::Receiver<Box<dyn FnOnce() + Send>>`, which does not implement the `Copy` trait
+      22 |     let mut workers = Vec::new();
+      23 |     for id in 0..4 {
+         |     -------------- inside of this loop
+      24 |         workers.push(Worker::new(id, receiver));
+         |                                      ^^^^^^^^ value moved here, in previous iteration of loop
+         |
+      note: consider changing this parameter type in method `new` to borrow instead if owning the value isn't necessary
+        --> src/main.rs:12:33
+         |
+      12 |     fn new(id: usize, receiver: mpsc::Receiver<Job>) -> Worker {
+         |        --- in this method       ^^^^^^^^^^^^^^^^^^^ this parameter takes ownership of the value
+    explain: "The step before `Arc<Mutex<...>>`: the first loop iteration moves the receiver into worker 0. Rust's channels are multiple-producer, single-consumer, and the type system enforces it."
+
+  - type: text
+    title: The whole pool
+    md: |
+      Here is the pool assembled, with a demo that sends six jobs of 100 ms each to three workers. Each job reports which thread ran it through a second channel. One line goes beyond the book's version at this point: a worker leaves its loop when `recv` fails, which happens once the pool is gone. Lesson 3 explains why that matters.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::collections::HashSet;
+      use std::sync::{Arc, Mutex, mpsc};
+      use std::thread;
+      use std::time::{Duration, Instant};
+
+      type Job = Box<dyn FnOnce() + Send + 'static>;
+
+      pub struct ThreadPool {
+          workers: Vec<Worker>,
+          sender: mpsc::Sender<Job>,
+      }
+
+      impl ThreadPool {
+          /// Create a new ThreadPool with `size` threads.
+          ///
+          /// # Panics
+          ///
+          /// Panics if the size is zero.
+          pub fn new(size: usize) -> ThreadPool {
+              assert!(size > 0);
+              let (sender, receiver) = mpsc::channel();
+              let receiver = Arc::new(Mutex::new(receiver));
+              let mut workers = Vec::with_capacity(size);
+              for id in 0..size {
+                  workers.push(Worker::new(id, Arc::clone(&receiver)));
+              }
+              ThreadPool { workers, sender }
+          }
+
+          pub fn execute<F>(&self, f: F)
+          where
+              F: FnOnce() + Send + 'static,
+          {
+              self.sender.send(Box::new(f)).unwrap();
+          }
+      }
+
+      #[allow(dead_code)]
+      struct Worker {
+          id: usize,
+          thread: thread::JoinHandle<()>,
+      }
+
+      impl Worker {
+          fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+              let thread = thread::spawn(move || loop {
+                  let Ok(job) = receiver.lock().unwrap().recv() else {
+                      break; // the pool is gone (lesson 3)
+                  };
+                  job();
+              });
+              Worker { id, thread }
+          }
+      }
+
+      fn main() {
+          let pool = ThreadPool::new(3);
+          let (tx, rx) = mpsc::channel();
+          let start = Instant::now();
+          for n in 0..6 {
+              let tx = tx.clone();
+              pool.execute(move || {
+                  thread::sleep(Duration::from_millis(100));
+                  tx.send((n, thread::current().id())).unwrap();
+              });
+          }
+          drop(tx);
+
+          let mut results: Vec<_> = rx.iter().collect();
+          let elapsed = start.elapsed();
+          results.sort_by_key(|&(n, _)| n);
+          let threads: HashSet<_> = results.iter().map(|&(_, id)| id).collect();
+          println!("jobs finished: {:?}", results.iter().map(|&(n, _)| n).collect::<Vec<_>>());
+          println!("threads used: {}", threads.len());
+          println!("about 200 ms instead of 600: {}", elapsed < Duration::from_millis(450));
+      }
+    output: |
+      jobs finished: [0, 1, 2, 3, 4, 5]
+      threads used: 3
+      about 200 ms instead of 600: true
+    explain: "Three workers run six 100 ms jobs in two rounds. `rx.iter()` ends when every `tx` clone has been dropped, that is, after the last job. In the server, `pool.execute(|| handle_connection(stream))` is all `main` needs."
+
+  - type: callout
+    kind: warning
+    title: "Why not while let?"
+    md: |
+      It is tempting to write the worker loop as `while let Ok(job) = receiver.lock().unwrap().recv() { job(); }`. It compiles and it is wrong. With `let job = receiver.lock().unwrap().recv().unwrap();` the temporary `MutexGuard` is dropped **at the end of the `let` statement**, so the lock is free while the job runs. In `while let` (and `if let` and `match`), temporaries in the condition live **until the end of the block**, so the worker holds the lock during `job()` and the other workers cannot even receive. The pool then runs one job at a time. The playground below lets you measure it.
+
+  - type: playground
+    id: ch25-play-whilelet
+    title: "Find the lock that never lets go"
+    lang: rust
+    md: |
+      Four workers, four jobs of 200 ms each: they should finish together in about 200 ms. With the `while let` loop they take 800 ms. Rewrite the worker loop so the `MutexGuard` is dropped before the job runs.
+    task: "Print `4 jobs of 200 ms took less than 500 ms: true`."
+    code: |
+      use std::sync::{Arc, Mutex, mpsc};
+      use std::thread;
+      use std::time::{Duration, Instant};
+
+      type Job = Box<dyn FnOnce() + Send + 'static>;
+
+      fn spawn_worker(receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> thread::JoinHandle<()> {
+          thread::spawn(move || {
+              // BUG: the MutexGuard from lock() lives until the end of the loop body
+              while let Ok(job) = receiver.lock().unwrap().recv() {
+                  job();
+              }
+          })
+      }
+
+      fn main() {
+          let (sender, receiver) = mpsc::channel::<Job>();
+          let receiver = Arc::new(Mutex::new(receiver));
+          let workers: Vec<_> = (0..4).map(|_| spawn_worker(Arc::clone(&receiver))).collect();
+
+          let start = Instant::now();
+          for _ in 0..4 {
+              sender.send(Box::new(|| thread::sleep(Duration::from_millis(200)))).unwrap();
+          }
+          drop(sender);
+          for w in workers {
+              w.join().unwrap();
+          }
+          let fast = start.elapsed() < Duration::from_millis(500);
+          println!("4 jobs of 200 ms took less than 500 ms: {fast}");
+      }
+    expected_output: |
+      4 jobs of 200 ms took less than 500 ms: true
+    solution_code: |
+      use std::sync::{Arc, Mutex, mpsc};
+      use std::thread;
+      use std::time::{Duration, Instant};
+
+      type Job = Box<dyn FnOnce() + Send + 'static>;
+
+      fn spawn_worker(receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> thread::JoinHandle<()> {
+          thread::spawn(move || loop {
+              // the guard is a temporary of this statement, so it is dropped here
+              let message = receiver.lock().unwrap().recv();
+              match message {
+                  Ok(job) => job(),
+                  Err(_) => break,
+              }
+          })
+      }
+
+      fn main() {
+          let (sender, receiver) = mpsc::channel::<Job>();
+          let receiver = Arc::new(Mutex::new(receiver));
+          let workers: Vec<_> = (0..4).map(|_| spawn_worker(Arc::clone(&receiver))).collect();
+
+          let start = Instant::now();
+          for _ in 0..4 {
+              sender.send(Box::new(|| thread::sleep(Duration::from_millis(200)))).unwrap();
+          }
+          drop(sender);
+          for w in workers {
+              w.join().unwrap();
+          }
+          let fast = start.elapsed() < Duration::from_millis(500);
+          println!("4 jobs of 200 ms took less than 500 ms: {fast}");
+      }
+    hints:
+      - "Receive in a `let` statement of its own: `let message = receiver.lock().unwrap().recv();`."
+      - "Then `match message { Ok(job) => job(), Err(_) => break }` inside a `loop`."
+
+  - type: exercise
+    id: ch25-ex-pool
+    exercise_dir: ch25-pool
+    title: "Build the ThreadPool"
+    difficulty: hard
+    goal: "Write the book's ThreadPool yourself, with the fallible constructor the book suggests as an extension."
+    behavior: |
+      - `PoolCreationError::ZeroThreads`, with `Display` text `a thread pool needs at least one thread`, and `impl std::error::Error`.
+      - `ThreadPool::build(size) -> Result<ThreadPool, PoolCreationError>`: an error for 0, otherwise a pool with `size` worker threads.
+      - `ThreadPool::new(size)`: the same, but panics for 0.
+      - `size(&self) -> usize`: the number of workers.
+      - `execute(&self, f)` for any `F: FnOnce() + Send + 'static`: the job runs on one of the pool's threads, and up to `size` jobs run at the same time.
+      - A worker leaves its loop when the channel is closed, without panicking.
+    hints:
+      - "Fields: `workers: Vec<Worker>` and `sender: mpsc::Sender<Job>` with `type Job = Box<dyn FnOnce() + Send + 'static>;`."
+      - "`new` can be `Self::build(size).unwrap_or_else(|e| panic!(\"{e}\"))`."
+      - "In the worker: `let message = receiver.lock().unwrap().recv();` on its own line, then match on it; never `while let` with the lock in the condition."
+    rust:
+      starter: |
+        use std::fmt;
+        use std::sync::{Arc, Mutex, mpsc};
+        use std::thread;
+
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        pub enum PoolCreationError {
+            ZeroThreads,
+        }
+
+        impl fmt::Display for PoolCreationError {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                todo!()
+            }
+        }
+
+        impl std::error::Error for PoolCreationError {}
+
+        pub struct ThreadPool {
+            // TODO: the workers and the sending half of the job channel
+        }
+
+        impl ThreadPool {
+            pub fn build(size: usize) -> Result<ThreadPool, PoolCreationError> {
+                todo!()
+            }
+
+            pub fn new(size: usize) -> ThreadPool {
+                todo!()
+            }
+
+            pub fn size(&self) -> usize {
+                todo!()
+            }
+
+            pub fn execute<F>(&self, f: F)
+            where
+                F: FnOnce() + Send + 'static,
+            {
+                todo!()
+            }
+        }
+      tests: |
+        use super::*;
+        use std::collections::HashSet;
+        use std::sync::Barrier;
+        use std::time::Duration;
+
+        #[test]
+        fn zero_is_an_error() {
+            assert_eq!(ThreadPool::build(0).err(), Some(PoolCreationError::ZeroThreads));
+            assert_eq!(PoolCreationError::ZeroThreads.to_string(), "a thread pool needs at least one thread");
+            assert_eq!(ThreadPool::build(3).unwrap().size(), 3);
+            assert_eq!(ThreadPool::new(1).size(), 1);
+        }
+
+        #[test]
+        #[should_panic]
+        fn new_zero_panics() {
+            ThreadPool::new(0);
+        }
+
+        #[test]
+        fn runs_every_job() {
+            let pool = ThreadPool::new(4);
+            let (tx, rx) = mpsc::channel();
+            for n in 0..50 {
+                let tx = tx.clone();
+                pool.execute(move || tx.send(n).unwrap());
+            }
+            drop(tx);
+            let mut got: Vec<i32> = rx.iter().take(50).collect();
+            got.sort();
+            assert_eq!(got, (0..50).collect::<Vec<_>>());
+        }
+
+        #[test]
+        fn jobs_run_on_pool_threads() {
+            let pool = ThreadPool::new(3);
+            let (tx, rx) = mpsc::channel();
+            for _ in 0..30 {
+                let tx = tx.clone();
+                pool.execute(move || {
+                    thread::sleep(Duration::from_millis(2));
+                    tx.send(thread::current().id()).unwrap();
+                });
+            }
+            let ids: HashSet<_> = (0..30).map(|_| rx.recv_timeout(Duration::from_secs(5)).unwrap()).collect();
+            assert!(ids.len() <= 3, "used {} threads", ids.len());
+            assert!(!ids.contains(&thread::current().id()), "jobs must not run on the caller's thread");
+        }
+
+        #[test]
+        fn runs_in_parallel() {
+            // every job waits until all four are running; a pool that runs one job at a time never gets there
+            let pool = ThreadPool::new(4);
+            let barrier = Arc::new(Barrier::new(4));
+            let (tx, rx) = mpsc::channel();
+            for _ in 0..4 {
+                let (barrier, tx) = (Arc::clone(&barrier), tx.clone());
+                pool.execute(move || {
+                    barrier.wait();
+                    tx.send(()).unwrap();
+                });
+            }
+            for _ in 0..4 {
+                rx.recv_timeout(Duration::from_secs(5)).expect("jobs did not run at the same time");
+            }
+        }
+
+        #[test]
+        fn closures_can_own_data() {
+            let pool = ThreadPool::new(2);
+            let (tx, rx) = mpsc::channel();
+            let data = vec![1, 2, 3];
+            let name = String::from("sum");
+            pool.execute(move || tx.send(format!("{name} = {}", data.iter().sum::<i32>())).unwrap());
+            assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), "sum = 6");
+        }
+      solution: |
+        use std::fmt;
+        use std::sync::{Arc, Mutex, mpsc};
+        use std::thread;
+
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        pub enum PoolCreationError {
+            ZeroThreads,
+        }
+
+        impl fmt::Display for PoolCreationError {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    PoolCreationError::ZeroThreads => write!(f, "a thread pool needs at least one thread"),
+                }
+            }
+        }
+
+        impl std::error::Error for PoolCreationError {}
+
+        type Job = Box<dyn FnOnce() + Send + 'static>;
+
+        pub struct ThreadPool {
+            workers: Vec<Worker>,
+            sender: mpsc::Sender<Job>,
+        }
+
+        impl ThreadPool {
+            pub fn build(size: usize) -> Result<ThreadPool, PoolCreationError> {
+                if size == 0 {
+                    return Err(PoolCreationError::ZeroThreads);
+                }
+                let (sender, receiver) = mpsc::channel();
+                let receiver = Arc::new(Mutex::new(receiver));
+                let workers = (0..size).map(|id| Worker::new(id, Arc::clone(&receiver))).collect();
+                Ok(ThreadPool { workers, sender })
+            }
+
+            pub fn new(size: usize) -> ThreadPool {
+                Self::build(size).unwrap_or_else(|e| panic!("{e}"))
+            }
+
+            pub fn size(&self) -> usize {
+                self.workers.len()
+            }
+
+            pub fn execute<F>(&self, f: F)
+            where
+                F: FnOnce() + Send + 'static,
+            {
+                self.sender.send(Box::new(f)).expect("workers are running while the pool exists");
+            }
+        }
+
+        #[allow(dead_code)]
+        struct Worker {
+            id: usize,
+            thread: thread::JoinHandle<()>,
+        }
+
+        impl Worker {
+            fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+                let thread = thread::spawn(move || loop {
+                    let message = receiver.lock().unwrap().recv();
+                    match message {
+                        Ok(job) => job(),
+                        Err(_) => break,
+                    }
+                });
+                Worker { id, thread }
+            }
+        }
+    solution_explain: "The pool is a `Sender` plus workers that share one `Receiver` through `Arc<Mutex<...>>`. Taking the job in its own `let` statement releases the lock before the job runs, which is what lets the barrier test pass. `build` returns a typed error that implements `Error`, so callers can use `?` with it, while `new` keeps the book's panicking API on top of it."
+
+  - type: quiz
+    id: ch25-quiz-pool
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What is the main problem with spawning a thread per connection?"
+        options: ["Threads cannot use TcpStream", "There is no limit, so a flood of requests can exhaust the machine", "It is slower than one thread", "Closures cannot move streams"]
+        answer: 1
+        explanation: "The pool bounds the number of threads."
+      - type: single
+        q: "Why is a job `Box<dyn FnOnce() + Send + 'static>`?"
+        options: ["Boxes are faster", "Every closure has its own type, so a trait object lets one channel carry them all", "FnOnce must be boxed", "To allow recursion"]
+        answer: 1
+        explanation: "A channel has one element type."
+      - type: single
+        q: "Why is the receiver wrapped in `Arc<Mutex<...>>`?"
+        options: ["To make it Copy", "Several workers own it (Arc) and only one may take a job at a time (Mutex)", "Channels require it", "To make recv non-blocking"]
+        answer: 1
+        explanation: "mpsc has a single consumer."
+      - type: single
+        q: "Why does `while let Ok(job) = receiver.lock().unwrap().recv()` serialize the pool?"
+        options: ["recv is slow", "The MutexGuard lives until the end of the loop body, so the lock is held while the job runs", "while let cannot call closures", "It drops the job"]
+        answer: 1
+        explanation: "A let statement drops its temporaries at its end; while let keeps them for the block."
+      - type: single
+        q: "Which bounds does `execute` copy from `thread::spawn`?"
+        options: ["Fn + Sync", "FnOnce + Send + 'static", "FnMut + Copy", "Fn + 'static"]
+        answer: 1
+        explanation: "Run once, on another thread, with no borrowed data."
+
+  - type: summary
+    points:
+      - "One slow request blocks a single-threaded server; a thread per connection has no upper bound."
+      - "A thread pool runs at most N jobs at once and queues the rest."
+      - "Design the API first (new, execute) and let compiler errors guide the implementation."
+      - "Workers own JoinHandles and share one Receiver<Job> through Arc<Mutex<...>>; jobs are boxed FnOnce trait objects."
+      - "Receive in a plain let so the MutexGuard is dropped before the job runs; while let would hold it."
+terms:
+  - term: thread pool
+    def: "A fixed set of threads that take tasks from a shared queue."
+  - term: worker
+    def: "One thread of the pool together with its id; it loops taking and running jobs."
+  - term: job
+    def: "A unit of work sent to the pool, here a boxed closure."
+  - term: compiler-driven development
+    def: "Writing the code you want to call first, then fixing compiler errors until it works."

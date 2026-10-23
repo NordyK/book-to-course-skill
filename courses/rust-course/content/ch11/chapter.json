@@ -1,0 +1,10 @@
+{
+  "title": "Writing Automated Tests",
+  "summary": "How Rust tests work: test functions and assertion macros, testing panics and returning Result, controlling how cargo test runs, and organizing unit tests, integration tests and doc tests.",
+  "goals": [
+    "Write test functions with assert!, assert_eq!, assert_ne! and custom failure messages",
+    "Test for panics with should_panic and write tests that return Result",
+    "Control cargo test with filters, ignored tests, threads and output capture",
+    "Organize unit tests in modules, integration tests in tests/, and examples as doc tests"
+  ]
+}

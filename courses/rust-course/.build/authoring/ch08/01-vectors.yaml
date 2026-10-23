@@ -1,0 +1,363 @@
+title: "Vectors"
+summary: "Vec<T>, the growable list: creating, pushing, reading with [] and get, why a reference blocks push, iterating, storing several types with an enum, and how a Vec grows."
+minutes: 28
+source:
+  chapter: ch08
+  sections: ["TRPL 8.1 Storing Lists of Values with Vectors", "TRPL 8.1 Reading Elements of Vectors", "TRPL 8.1 Iterating Over the Values in a Vector", "TRPL 8.1 Using an Enum to Store Multiple Types", "TRPL 8.1 Dropping a Vector Drops Its Elements", "PR ch16 Vec<T>", "PR ch16 Accessing Elements", "PR ch16 Growing and Shrinking Vectors", "CR Day 2 Vec"]
+blocks:
+  - type: text
+    md: |
+      Arrays and tuples have a fixed size known at compile time. The standard library's **collections** hold any number of values, stored on the heap, so they can grow and shrink while the program runs. The most used of all is **`Vec<T>`**, a *vector*: a list of values of one type `T`, stored next to each other in memory.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let v: Vec<i32> = Vec::new();      // empty: the type must be written
+          let w = vec![1, 2, 3];             // the vec! macro: the type is inferred
+          let mut x = Vec::new();
+          x.push(5);                          // the type is inferred from the push
+          x.push(6);
+          println!("{v:?} {w:?} {x:?}");
+      }
+    output: "[] [1, 2, 3] [5, 6]"
+    explain: "`push` adds to the end, so the vector must be `mut`. When a vector is dropped, all its elements are dropped with it."
+
+  - type: text
+    title: Reading elements
+    md: |
+      There are two ways to read an element, and they differ in what happens when the index is past the end:
+
+      - `&v[i]` gives a reference to the element, and **panics** if there is none. Use it when a bad index is a bug.
+      - `v.get(i)` gives an `Option<&T>`: `Some(&element)` or `None`. Use it when an index might legitimately be out of range, such as a number typed by a user.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let v = vec![1, 2, 3, 4, 5];
+          let third: &i32 = &v[2];
+          println!("The third element is {third}");
+
+          match v.get(2) {
+              Some(third) => println!("The third element is {third}"),
+              None => println!("There is no third element."),
+          }
+          println!("get(100) is {:?}", v.get(100));
+      }
+    output: |
+      The third element is 3
+      The third element is 3
+      get(100) is None
+
+  - type: text
+    title: A reference blocks push
+    md: |
+      This looks harmless but does not compile:
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    code: |
+      fn main() {
+          let mut v = vec![1, 2, 3, 4, 5];
+          let first = &v[0];
+          v.push(6);
+          println!("The first element is: {first}");
+      }
+    output: |
+      error[E0502]: cannot borrow `v` as mutable because it is also borrowed as immutable
+       --> src/main.rs:4:5
+        |
+      3 |     let first = &v[0];
+        |                  - immutable borrow occurs here
+      4 |     v.push(6);
+        |     ^^^^^^^^^ mutable borrow occurs here
+      5 |     println!("The first element is: {first}");
+        |                                      ----- immutable borrow later used here
+    output_label: Compiler output
+    explain: "Why should a reference to the **first** element care about a push at the **end**? Because a vector stores its elements side by side. If there is no room for one more, `push` allocates a bigger block, copies the elements there and frees the old block, and `first` would point at freed memory. The borrowing rules from chapter 4 prevent exactly that."
+
+  - type: text
+    title: Iterating
+    md: |
+      `for` over `&v` borrows each element; over `&mut v` lets you change each one (with `*`); over `v` itself moves the elements out and consumes the vector.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let mut v = vec![100, 32, 57];
+          for i in &mut v {
+              *i += 50;
+          }
+          for i in &v {
+              print!("{i} ");
+          }
+          println!();
+          let total: i32 = v.iter().sum();
+          println!("total {total}, len {}, max {:?}", v.len(), v.iter().max());
+      }
+    output: |
+      150 82 107
+      total 339, len 3, max Some(150)
+    explain: "`v.iter()` gives an iterator over references, which methods like `sum` and `max` consume. Chapter 13 covers iterators; you will use them constantly."
+
+  - type: text
+    title: Storing different types with an enum
+    md: |
+      A vector holds one type. When you need a list of different kinds of things, such as the cells of a spreadsheet row, define an enum whose variants hold the different types. The vector then holds the enum, and `match` makes you handle every kind:
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      enum Cell {
+          Int(i32),
+          Float(f64),
+          Text(String),
+      }
+
+      fn main() {
+          let row = vec![Cell::Int(3), Cell::Text(String::from("blue")), Cell::Float(10.12)];
+          for cell in &row {
+              match cell {
+                  Cell::Int(n) => println!("integer {n}"),
+                  Cell::Float(f) => println!("float {f}"),
+                  Cell::Text(s) => println!("text {s:?}"),
+              }
+          }
+      }
+    output: |
+      integer 3
+      text "blue"
+      float 10.12
+
+  - type: text
+    title: Capacity
+    md: |
+      A vector keeps three values on the stack: a pointer to its heap buffer, its **length** (elements in use) and its **capacity** (elements the buffer can hold). When length reaches capacity, `push` allocates a buffer about twice as big. If you know how many elements are coming, `Vec::with_capacity(n)` allocates once up front.
+
+  - type: table
+    title: Everyday Vec methods
+    headers: ["Method", "Does"]
+    rows:
+      - ["`push(x)` / `pop()`", "add at the end / remove from the end (`Option<T>`)"]
+      - ["`insert(i, x)` / `remove(i)`", "add / remove at index i, shifting later elements (slow for big vectors)"]
+      - ["`len()` / `is_empty()`", "number of elements / whether there are none"]
+      - ["`contains(&x)`", "whether x is in the vector"]
+      - ["`sort()` / `dedup()`", "sort in place / remove consecutive duplicates"]
+      - ["`extend(other)` / `truncate(n)` / `clear()`", "append many / keep the first n / remove all"]
+      - ["`first()` / `last()`", "`Option<&T>` of the ends"]
+
+  - type: playground
+    id: ch08-play-vec
+    title: "Grades"
+    lang: rust
+    md: |
+      `grades` holds test scores. Print the number of scores, the average with one decimal, the highest score, and the scores sorted from high to low. `sort()` sorts low to high, and `reverse()` reverses a vector in place.
+    task: "Print `5 scores, average 78.4, best 95` and then `[95, 88, 76, 70, 63]`."
+    code: |
+      fn main() {
+          let mut grades = vec![76, 95, 63, 88, 70];
+          // your code here
+          println!("{grades:?}");
+      }
+    expected_output: |
+      5 scores, average 78.4, best 95
+      [95, 88, 76, 70, 63]
+    solution_code: |
+      fn main() {
+          let mut grades = vec![76, 95, 63, 88, 70];
+          let total: i32 = grades.iter().sum();
+          let average = total as f64 / grades.len() as f64;
+          let best = grades.iter().max().unwrap();
+          println!("{} scores, average {average:.1}, best {best}", grades.len());
+          grades.sort();
+          grades.reverse();
+          println!("{grades:?}");
+      }
+    hints:
+      - "`let total: i32 = grades.iter().sum();` then divide as `f64`: `total as f64 / grades.len() as f64`."
+      - "`grades.iter().max()` is an `Option<&i32>`; `.unwrap()` is fine here because the list is not empty."
+      - "Print the first line **before** sorting, or use `best` from before: `max` borrows `grades`, so finish using `best` before calling `sort`."
+
+  - type: exercise
+    id: ch08-ex-vec
+    exercise_dir: ch08-vectors
+    title: "Working with lists"
+    difficulty: medium
+    goal: "Write vector functions that cover reading, building new vectors, and changing them in place."
+    behavior: |
+      - `pub fn evens(values: &[i32]) -> Vec<i32>`: a new vector with only the even numbers, in order.
+      - `pub fn running_total(values: &[i32]) -> Vec<i32>`: each element is the sum of all values up to and including that position.
+      - `pub fn remove_duplicates(values: &mut Vec<i32>)`: keep the first occurrence of each value, in the original order.
+      - `pub fn median(values: &[f64]) -> Option<f64>`: the middle value after sorting (the mean of the two middle values for an even count); `None` for an empty slice.
+    examples:
+      - input: "evens(&[1, 2, 3, 4])"
+        output: "[2, 4]"
+      - input: "running_total(&[1, 2, 3])"
+        output: "[1, 3, 6]"
+      - input: "remove_duplicates on [3, 1, 3, 2, 1]"
+        output: "[3, 1, 2]"
+      - input: "median(&[5.0, 1.0, 3.0, 2.0])"
+        output: "Some(2.5)"
+    hints:
+      - "Build results with `let mut out = Vec::new();` and `out.push(...)`."
+      - "`remove_duplicates`: build a new `Vec` of values you have seen (`if !seen.contains(&v) { seen.push(v) }`), then `*values = seen;`."
+      - "`median`: copy into a new vector with `values.to_vec()`, then sort floats with `sorted.sort_by(|a, b| a.partial_cmp(b).unwrap())` (floats have no total order because of NaN)."
+    rust:
+      starter: |
+        /// The even numbers, in order.
+        pub fn evens(values: &[i32]) -> Vec<i32> {
+            todo!()
+        }
+
+        /// Element i is values[0] + ... + values[i].
+        pub fn running_total(values: &[i32]) -> Vec<i32> {
+            todo!()
+        }
+
+        /// Keeps the first occurrence of each value.
+        pub fn remove_duplicates(values: &mut Vec<i32>) {
+            todo!()
+        }
+
+        /// The median, or None for no values.
+        pub fn median(values: &[f64]) -> Option<f64> {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn even_numbers() {
+            assert_eq!(evens(&[1, 2, 3, 4]), vec![2, 4]);
+            assert_eq!(evens(&[-2, 0, 7]), vec![-2, 0], "zero and negatives");
+            assert_eq!(evens(&[]), Vec::<i32>::new());
+        }
+
+        #[test]
+        fn totals() {
+            assert_eq!(running_total(&[1, 2, 3]), vec![1, 3, 6]);
+            assert_eq!(running_total(&[5, -5, 5]), vec![5, 0, 5]);
+            assert_eq!(running_total(&[]), Vec::<i32>::new());
+        }
+
+        #[test]
+        fn duplicates() {
+            let mut v = vec![3, 1, 3, 2, 1];
+            remove_duplicates(&mut v);
+            assert_eq!(v, vec![3, 1, 2]);
+            let mut same = vec![7, 7, 7];
+            remove_duplicates(&mut same);
+            assert_eq!(same, vec![7]);
+        }
+
+        #[test]
+        fn medians() {
+            assert_eq!(median(&[5.0, 1.0, 3.0]), Some(3.0), "odd count");
+            assert_eq!(median(&[5.0, 1.0, 3.0, 2.0]), Some(2.5), "even count");
+            assert_eq!(median(&[]), None);
+        }
+
+        #[test]
+        fn median_does_not_reorder_input() {
+            let data = [3.0, 1.0, 2.0];
+            let _ = median(&data);
+            assert_eq!(data, [3.0, 1.0, 2.0]);
+        }
+      solution: |
+        /// The even numbers, in order.
+        pub fn evens(values: &[i32]) -> Vec<i32> {
+            let mut out = Vec::new();
+            for &v in values {
+                if v % 2 == 0 {
+                    out.push(v);
+                }
+            }
+            out
+        }
+
+        /// Element i is values[0] + ... + values[i].
+        pub fn running_total(values: &[i32]) -> Vec<i32> {
+            let mut out = Vec::with_capacity(values.len());
+            let mut sum = 0;
+            for &v in values {
+                sum += v;
+                out.push(sum);
+            }
+            out
+        }
+
+        /// Keeps the first occurrence of each value.
+        pub fn remove_duplicates(values: &mut Vec<i32>) {
+            let mut seen = Vec::new();
+            for &v in values.iter() {
+                if !seen.contains(&v) {
+                    seen.push(v);
+                }
+            }
+            *values = seen;
+        }
+
+        /// The median, or None for no values.
+        pub fn median(values: &[f64]) -> Option<f64> {
+            if values.is_empty() {
+                return None;
+            }
+            let mut sorted = values.to_vec();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let mid = sorted.len() / 2;
+            if sorted.len() % 2 == 0 {
+                Some((sorted[mid - 1] + sorted[mid]) / 2.0)
+            } else {
+                Some(sorted[mid])
+            }
+        }
+    solution_explain: "`with_capacity` avoids regrowing because the final length is known. `remove_duplicates` is quadratic because `contains` scans the list; with a `HashSet` (lesson 3) it would be linear. `median` copies the data so the caller's order is untouched."
+
+  - type: quiz
+    id: ch08-quiz-vec
+    title: Check yourself
+    questions:
+      - type: single
+        q: "`let v = vec![1, 2, 3];` What does `v.get(3)` return?"
+        options: ["`3`", "`Some(&3)`", "`None`", "It panics"]
+        answer: 2
+        explanation: "Index 3 is past the end; `get` returns `None` instead of panicking."
+      - type: single
+        q: "Why can't you `push` while holding `let first = &v[0];` and using it later?"
+        options: ["`push` is slow", "`push` may reallocate the buffer, leaving `first` pointing at freed memory", "Vectors cannot hold references", "`first` is a copy"]
+        answer: 1
+        explanation: "The borrow rules stop the mutable borrow while the shared one is alive."
+      - type: single
+        q: "Which loop lets you add 1 to every element in place?"
+        options: ["`for x in &v { x += 1; }`", "`for x in &mut v { *x += 1; }`", "`for x in v { x += 1; }`", "`for x in v.iter() { *x += 1; }`"]
+        answer: 1
+        explanation: "A mutable reference, dereferenced with `*`."
+      - type: single
+        q: "How can one `Vec` hold integers and strings?"
+        options: ["`Vec<Any>`", "Use an enum with a variant for each type", "It cannot, ever", "`Vec<i32, String>`"]
+        answer: 1
+        explanation: "An enum puts the alternatives in one type, and `match` handles each."
+      - type: truefalse
+        q: "`Vec::with_capacity(10)` creates a vector of length 10."
+        answer: false
+        explanation: "It has length 0 and room for 10 before it needs to grow."
+
+  - type: summary
+    points:
+      - "`Vec<T>` is a growable list on the heap: `Vec::new()`, `vec![...]`, `push`, `pop`."
+      - "`&v[i]` panics past the end; `v.get(i)` returns an `Option`."
+      - "Holding a reference into a vector blocks changes that might reallocate it."
+      - "Iterate with `&v` (read), `&mut v` (change with `*`), or `v` (consume)."
+      - "An enum lets one vector hold several kinds of values."
+      - "Length versus capacity: `with_capacity` allocates once when you know the size."
+terms:
+  - term: "Vec<T>"
+    def: "A growable, heap-allocated list of values of type T, stored contiguously."
+  - term: capacity
+    def: "How many elements a vector's buffer can hold before it must reallocate."
+  - term: "vec!"
+    def: "A macro that creates a Vec with the given elements."

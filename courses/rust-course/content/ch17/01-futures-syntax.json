@@ -1,0 +1,242 @@
+{
+  "title": "Futures and the async syntax",
+  "summary": "Parallelism versus concurrency, why async exists, futures as values that complete later, async fn and .await, laziness, runtimes like Tokio and the trpl crate, and a working block_on executor written with only the standard library.",
+  "minutes": 45,
+  "source": {
+    "chapter": "ch17",
+    "sections": [
+      "TRPL 17 Fundamentals of Asynchronous Programming: Async, Await, Futures, and Streams",
+      "TRPL 17 Parallelism and Concurrency",
+      "TRPL 17.1 Futures and the Async Syntax",
+      "TRPL 17.1 Our First Async Program",
+      "TRPL 17.1 Defining the page_title Function",
+      "TRPL 17.1 Executing an Async Function with a Runtime",
+      "TRPL 17.1 Racing Two URLs Against Each Other Concurrently",
+      "PR ch20 From Synchronous to Asynchronous",
+      "PR ch20 Futures",
+      "PR ch20 Async Functions and Await Expressions",
+      "PR ch20 Calling Async Functions from Synchronous Code: block_on",
+      "PR ch20 Primitive Futures and Executors: When Is a Future Worth Polling Again?",
+      "PR ch20 Invoking Wakers: spawn_blocking",
+      "PR ch20 Implementing block_on",
+      "CR Concurrency Afternoon Async Basics",
+      "CR Concurrency Afternoon async/await",
+      "CR Concurrency Afternoon Futures",
+      "CR Concurrency Afternoon Runtimes"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Many programs spend most of their time **waiting**: for the network, the disk, a timer, a user. A web server may hold ten thousand connections, each idle most of the time. One thread per connection works but is expensive (chapter 16: each thread has its own stack and costs the OS scheduler). **Async** lets one thread juggle many waiting tasks: whenever a task would wait, it steps aside and another runs.\n"
+    },
+    {
+      "type": "table",
+      "title": "Parallelism and concurrency (The Rust Programming Language)",
+      "headers": [
+        "",
+        "Meaning",
+        "Analogy"
+      ],
+      "rows": [
+        [
+          "**Concurrency**",
+          "several tasks make progress in overlapping time; one worker may switch between them",
+          "one person working on several tickets, switching when blocked"
+        ],
+        [
+          "**Parallelism**",
+          "several tasks run at literally the same instant on different cores",
+          "several people each taking a ticket"
+        ],
+        [
+          "Threads",
+          "concurrency, and parallelism on multi-core machines",
+          ""
+        ],
+        [
+          "Async",
+          "concurrency; parallel too if the runtime uses several threads",
+          ""
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Futures",
+      "md": "The core idea is the **future**: a value that may not be ready yet, but will be at some point. In Rust a future is any type implementing the **`Future`** trait. You rarely write one by hand; instead:\n\n- **`async fn`** declares a function that returns a future instead of running its body immediately.\n- **`.await`** inside an async function or block waits for a future to finish and gives its result. While it waits, the task yields control so other work can run.\n\n```rust\nasync fn page_title(url: &str) -> Option<String> {\n    let response_text = trpl::get(url).await.text().await;\n    Html::parse(&response_text)\n        .select_first(\"title\")\n        .map(|title| title.inner_html())\n}\n```\n\nThis is *The Rust Programming Language*'s first async function. It reads like normal sequential code; the `await`s mark where it may pause. `.await` is a **postfix** keyword, so calls chain naturally.\n"
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "title": "async fn returns a future",
+      "md": "The compiler rewrites `async fn page_title(url: &str) -> Option<String>` into roughly `fn page_title(url: &str) -> impl Future<Output = Option<String>>`. The body becomes a **state machine**: one state per `.await` point, storing the local variables that must survive the pause. No extra thread, no heap allocation unless you ask for one."
+    },
+    {
+      "type": "text",
+      "title": "Futures are lazy",
+      "md": "Like iterators, futures do nothing until something drives them. Calling an `async fn` only **creates** the future. Something must **poll** it repeatedly until it is done; `.await` does that from inside other async code. The compiler warns when you create one and drop it:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "async fn say_hello() {\n    println!(\"hello\");\n}\n\nfn main() {\n    println!(\"start\");\n    say_hello();\n}\n",
+      "explain": "This prints only `start`. The future returned by `say_hello()` is created and immediately dropped, never polled."
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "warning: unused implementer of `Future` that must be used\n --> src/main.rs:7:5\n  |\n7 |     say_hello();\n  |     ^^^^^^^^^^^\n  |\n  = note: futures do nothing unless you `.await` or poll them\n  = note: `#[warn(unused_must_use)]` (part of `#[warn(unused)]`) on by default\n"
+    },
+    {
+      "type": "text",
+      "title": "Runtimes and executors",
+      "md": "But who awaits the outermost future? `main` cannot be `async` on its own. Rust deliberately ships **no async runtime** in the standard library, so different programs (a web server, an embedded device) can choose one that fits. A **runtime** provides an **executor** that polls futures, plus async versions of I/O, timers and channels. The most widely used is **Tokio**; *The Rust Programming Language* wraps one in its teaching crate `trpl`:\n\n```rust\nfn main() {\n    let args: Vec<String> = std::env::args().collect();\n    trpl::block_on(async {\n        let url = &args[1];\n        match page_title(url).await {\n            Some(title) => println!(\"The title for {url} was {title}\"),\n            None => println!(\"{url} had no title\"),\n        }\n    })\n}\n```\n\nWith Tokio you would write `#[tokio::main] async fn main()`, a macro that expands to the same `block_on` call.\n"
+    },
+    {
+      "type": "text",
+      "title": "Building block_on yourself",
+      "md": "An executor is less magic than it sounds. *Programming Rust* builds one in a dozen lines, and you can too, with only the standard library. You need two facts, explained fully in lesson 3:\n\n1. Polling a future returns `Poll::Ready(value)` or `Poll::Pending`.\n2. A pending future arranges to be **woken** when it can make progress, through a **`Waker`** it gets from the executor.\n\nSo `block_on` polls; on `Pending` it puts the thread to sleep with `thread::park()`; the waker's job is to `unpark` it.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::future::Future;\nuse std::pin::pin;\nuse std::sync::Arc;\nuse std::task::{Context, Poll, Wake, Waker};\nuse std::thread::{self, Thread};\n\n/// Wakes the executor's thread.\nstruct ThreadWaker(Thread);\n\nimpl Wake for ThreadWaker {\n    fn wake(self: Arc<Self>) {\n        self.0.unpark();\n    }\n}\n\n/// Runs a future to completion on the current thread.\nfn block_on<F: Future>(fut: F) -> F::Output {\n    let mut fut = pin!(fut);\n    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));\n    let mut cx = Context::from_waker(&waker);\n    loop {\n        match fut.as_mut().poll(&mut cx) {\n            Poll::Ready(value) => return value,\n            Poll::Pending => thread::park(), // sleep until woken\n        }\n    }\n}\n\nasync fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\nasync fn compute() -> i32 {\n    let x = add(1, 2).await;\n    let y = add(x, 10).await;\n    x * y\n}\n\nfn main() {\n    let fut = compute(); // nothing has run yet\n    println!(\"future created\");\n    println!(\"result = {}\", block_on(fut));\n}\n",
+      "output": "future created\nresult = 39\n",
+      "explain": "`pin!` fixes the future in place on the stack; lesson 3 explains why futures must not move once polled. `Wake` is a standard trait that turns any `Arc<T: Wake>` into a `Waker`. Real executors add a task queue and I/O integration, but the loop is the same."
+    },
+    {
+      "type": "text",
+      "title": "async blocks and move",
+      "md": "Besides `async fn`, an **`async` block** creates a future in place: `let fut = async { ... };`. Like closures, async blocks capture variables from their surroundings by reference, unless written **`async move`**, which takes ownership. You need `async move` when the future outlives the current scope, for example when it is handed to another task.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::future::Future;\nuse std::pin::pin;\nuse std::sync::Arc;\nuse std::task::{Context, Poll, Wake, Waker};\nuse std::thread::{self, Thread};\n\nstruct ThreadWaker(Thread);\nimpl Wake for ThreadWaker {\n    fn wake(self: Arc<Self>) {\n        self.0.unpark();\n    }\n}\nfn block_on<F: Future>(fut: F) -> F::Output {\n    let mut fut = pin!(fut);\n    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));\n    let mut cx = Context::from_waker(&waker);\n    loop {\n        match fut.as_mut().poll(&mut cx) {\n            Poll::Ready(v) => return v,\n            Poll::Pending => thread::park(),\n        }\n    }\n}\n\nfn make_greeting(name: String) -> impl Future<Output = String> {\n    async move { format!(\"Hello, {name}!\") } // owns name\n}\n\nfn main() {\n    let names = vec![String::from(\"Ferris\"), String::from(\"Corro\")];\n    let joined = block_on(async {\n        let mut out = Vec::new();\n        for n in &names {\n            out.push(make_greeting(n.clone()).await);\n        }\n        out.join(\" \")\n    });\n    println!(\"{joined}\");\n    println!(\"names still here: {}\", names.len());\n}\n",
+      "output": "Hello, Ferris! Hello, Corro!\nnames still here: 2\n",
+      "explain": "The outer block borrows `names`, which is fine because `block_on` finishes before `main` continues. `make_greeting` must use `async move`: the future it returns outlives the function's parameter."
+    },
+    {
+      "type": "playground",
+      "id": "ch17-play-block-on",
+      "title": "Count the polls",
+      "lang": "rust",
+      "md": "`YieldOnce` is a future that returns `Pending` the first time it is polled (waking itself immediately) and `Ready` the second time. Add a counter to `block_on` so it returns how many times it polled, and print it. Awaiting three `YieldOnce`s in a row should need 4 polls of the outer future: one per pause, plus the final one.\n",
+      "task": "Print `value = 42 after 4 polls`.",
+      "code": "use std::future::Future;\nuse std::pin::{Pin, pin};\nuse std::sync::Arc;\nuse std::task::{Context, Poll, Wake, Waker};\nuse std::thread::{self, Thread};\n\nstruct ThreadWaker(Thread);\nimpl Wake for ThreadWaker {\n    fn wake(self: Arc<Self>) {\n        self.0.unpark();\n    }\n}\n\nfn block_on<F: Future>(fut: F) -> (F::Output, u32) {\n    let mut fut = pin!(fut);\n    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));\n    let mut cx = Context::from_waker(&waker);\n    loop {\n        match fut.as_mut().poll(&mut cx) {\n            Poll::Ready(v) => return (v, 0), // TODO: count polls\n            Poll::Pending => thread::park(),\n        }\n    }\n}\n\nstruct YieldOnce(bool);\nimpl Future for YieldOnce {\n    type Output = ();\n    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {\n        if self.0 {\n            Poll::Ready(())\n        } else {\n            self.0 = true;\n            cx.waker().wake_by_ref();\n            Poll::Pending\n        }\n    }\n}\n\nfn main() {\n    let (value, polls) = block_on(async {\n        YieldOnce(false).await;\n        YieldOnce(false).await;\n        YieldOnce(false).await;\n        42\n    });\n    println!(\"value = {value} after {polls} polls\");\n}\n",
+      "expected_output": "value = 42 after 4 polls",
+      "hints": [
+        "`let mut polls = 0;` before the loop, `polls += 1;` before each `poll`, and `return (v, polls)`.",
+        "`wake_by_ref` unparks the thread before it parks, so `park` returns at once: a parked thread with a pending unpark token wakes immediately."
+      ]
+    },
+    {
+      "type": "quiz",
+      "id": "ch17-quiz-futures",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "What does calling an `async fn` do?",
+          "options": [
+            "Runs it on a new thread",
+            "Returns a future; the body runs only when the future is polled",
+            "Runs it immediately and returns the result",
+            "Blocks until it finishes"
+          ],
+          "answer": 1,
+          "explanation": "Futures are lazy."
+        },
+        {
+          "type": "single",
+          "q": "What does `.await` do?",
+          "options": [
+            "Creates a thread",
+            "Polls the future until it is ready, letting other tasks run while it waits",
+            "Cancels the future",
+            "Converts it to a Result"
+          ],
+          "answer": 1,
+          "explanation": "It is only allowed inside async code."
+        },
+        {
+          "type": "single",
+          "q": "Why does the standard library not include an async runtime?",
+          "options": [
+            "Async is unstable",
+            "So programs can choose a runtime that fits them, like Tokio for servers or Embassy for embedded",
+            "Runtimes are slow",
+            "It does include one"
+          ],
+          "answer": 1,
+          "explanation": "The language provides the traits; libraries provide executors."
+        },
+        {
+          "type": "single",
+          "q": "In a minimal block_on, what should happen when poll returns Pending?",
+          "options": [
+            "Poll again immediately in a busy loop",
+            "Sleep the thread until the future's waker wakes it",
+            "Return an error",
+            "Drop the future"
+          ],
+          "answer": 1,
+          "explanation": "Busy-polling wastes CPU; the waker signals when to retry."
+        },
+        {
+          "type": "single",
+          "q": "Concurrency without parallelism means...",
+          "options": [
+            "Tasks run on several cores at once",
+            "One worker switches between tasks so they all make progress",
+            "Nothing runs",
+            "Only one task exists"
+          ],
+          "answer": 1,
+          "explanation": "A single-threaded async runtime is an example."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Async gives concurrency for waiting-heavy work without a thread per task.",
+        "A future is a value that will be ready later; `async fn` returns one and `.await` waits for it.",
+        "Futures are lazy: nothing happens until an executor polls them.",
+        "Runtimes such as Tokio provide executors and async I/O; the standard library provides only the traits.",
+        "`block_on` is a loop: poll, and on `Pending` park until the `Waker` unparks."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "future",
+      "def": "A value implementing Future that represents a computation which may complete later."
+    },
+    {
+      "term": "async fn",
+      "def": "A function whose body runs as a future; calling it returns the future."
+    },
+    {
+      "term": ".await",
+      "def": "A postfix operator that waits for a future, letting other tasks run in the meantime."
+    },
+    {
+      "term": "runtime",
+      "def": "A library that executes futures and provides async I/O, timers and channels, such as Tokio."
+    },
+    {
+      "term": "executor",
+      "def": "The part of a runtime that polls futures until they complete."
+    },
+    {
+      "term": "concurrency",
+      "def": "Several tasks making progress in overlapping periods of time."
+    },
+    {
+      "term": "parallelism",
+      "def": "Several tasks running at the same instant on different processors."
+    }
+  ]
+}

@@ -1,0 +1,402 @@
+title: "Decisions and loops"
+summary: "Branch with if and else, repeat with loop, while and for, get values out of loops, and break out of nested loops with labels."
+minutes: 28
+source:
+  chapter: ch03
+  sections: ["TRPL 3.5 Control Flow", "TRPL 3.5 if Expressions", "TRPL 3.5 Repetition with Loops", "TRPL 3.5 Returning Values from Loops", "TRPL 3.5 Loop Labels", "TRPL 3.5 Looping Through a Collection with for", "CR Loops", "CR break and continue", "PR ch6 Loops", "RiA 2.6 Control flow"]
+blocks:
+  - type: text
+    md: |
+      Programs need to make decisions and repeat work. Rust gives you one way to decide, `if`, and three ways to repeat: `loop`, `while` and `for`. You have used most of them already. This lesson fills in the rules and the patterns you will use every day.
+
+  - type: text
+    title: if, else if, else
+    md: |
+      An `if` checks a condition and runs a block when it is `true`. The condition must be a `bool`: Rust will not treat a number or an empty string as false, so `if count { }` does not compile; write `if count != 0 { }`. Braces are required around every block, and parentheses around the condition are not used.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let number = 6;
+          if number % 4 == 0 {
+              println!("number is divisible by 4");
+          } else if number % 3 == 0 {
+              println!("number is divisible by 3");
+          } else if number % 2 == 0 {
+              println!("number is divisible by 2");
+          } else {
+              println!("number is not divisible by 4, 3, or 2");
+          }
+      }
+    output: "number is divisible by 3"
+    explain: "Rust checks each condition in order and runs only the **first** block whose condition is true, so 6 never reaches the \"divisible by 2\" branch. A long `else if` chain is often clearer as a `match`, which chapter 6 covers."
+
+  - type: text
+    title: loop, and getting a value out
+    md: |
+      `loop` repeats its block forever, until you `break` out. `continue` skips the rest of the current pass and starts the next one. Because `loop` is an expression, `break` can carry a value out of it. That is the natural way to retry something until it succeeds and keep the result.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let mut counter = 0;
+          let result = loop {
+              counter += 1;
+              if counter == 10 {
+                  break counter * 2;
+              }
+          };
+          println!("The result is {result}");
+      }
+    output: "The result is 20"
+
+  - type: text
+    title: Loop labels
+    md: |
+      With loops inside loops, `break` and `continue` apply to the innermost one. To act on an outer loop, give it a **label**, a name starting with a single quote, and name it: `break 'outer;`.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let grid = [[1, 2, 3], [4, 99, 6], [7, 8, 9]];
+          let mut found = None;
+          'rows: for (r, row) in grid.iter().enumerate() {
+              for (c, value) in row.iter().enumerate() {
+                  if *value == 99 {
+                      found = Some((r, c));
+                      break 'rows;
+                  }
+              }
+          }
+          println!("99 found at {found:?}");
+      }
+    output: "99 found at Some((1, 1))"
+    explain: "`enumerate()` gives each element with its index. `*value` reads the number behind a reference; references are chapter 4's topic. Without the label, `break` would only leave the inner loop and the search would carry on through the next rows."
+
+  - type: text
+    title: while
+    md: |
+      `while` runs as long as a condition stays true. It is the right tool when you do not know how many passes you need but you can say when to stop.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let mut n = 27u64;
+          let mut steps = 0;
+          while n != 1 {
+              n = if n % 2 == 0 { n / 2 } else { 3 * n + 1 };
+              steps += 1;
+          }
+          println!("27 reaches 1 after {steps} steps");
+      }
+    output: "27 reaches 1 after 111 steps"
+    explain: "This is the Collatz sequence: halve even numbers, triple-and-add-one odd ones. Nobody has proved it always reaches 1, which is exactly the situation `while` is for."
+
+  - type: text
+    title: for
+    md: |
+      `for` goes through every element of something you can iterate over: an array, a range, and (later) vectors, strings, maps, files and much more. It is the loop you will write most often, because it cannot run past the end and needs no counter to update by hand.
+
+      A **range** `a..b` counts from `a` up to but not including `b`; `a..=b` includes `b`. `.rev()` goes backwards and `.step_by(n)` skips.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          for number in (1..4).rev() {
+              print!("{number}... ");
+          }
+          println!("LIFTOFF!");
+
+          for even in (0..=10).step_by(2) {
+              print!("{even} ");
+          }
+          println!();
+      }
+    output: |
+      3... 2... 1... LIFTOFF!
+      0 2 4 6 8 10
+    explain: "`print!` is `println!` without the newline; `println!()` alone ends the line."
+
+  - type: table
+    title: Which loop?
+    headers: ["You want to", "Use"]
+    rows:
+      - ["Go through every element, or count over a range", "`for`"]
+      - ["Repeat while a condition holds", "`while`"]
+      - ["Repeat until something inside decides to stop, possibly returning a value", "`loop` with `break value`"]
+
+  - type: playground
+    id: ch03-play-fizzbuzz
+    title: "FizzBuzz"
+    lang: rust
+    md: |
+      The classic: for the numbers 1 to 15, print `Fizz` for multiples of 3, `Buzz` for multiples of 5, `FizzBuzz` for multiples of both, and the number otherwise, one per line. The loop is there; write the body.
+    code: |
+      fn main() {
+          for n in 1..=15 {
+              println!("{n}"); // replace with the FizzBuzz rules
+          }
+      }
+    expected_output: |
+      1
+      2
+      Fizz
+      4
+      Buzz
+      Fizz
+      7
+      8
+      Fizz
+      Buzz
+      11
+      Fizz
+      13
+      14
+      FizzBuzz
+    solution_code: |
+      fn main() {
+          for n in 1..=15 {
+              if n % 15 == 0 {
+                  println!("FizzBuzz");
+              } else if n % 3 == 0 {
+                  println!("Fizz");
+              } else if n % 5 == 0 {
+                  println!("Buzz");
+              } else {
+                  println!("{n}");
+              }
+          }
+      }
+    hints:
+      - "Order matters: check \"both\" (`n % 15 == 0`) before checking 3 and 5 separately."
+      - "`if n % 15 == 0 { ... } else if n % 3 == 0 { ... } else if n % 5 == 0 { ... } else { ... }`"
+
+  - type: playground
+    id: ch03-play-break-value
+    title: "Find the first square over 500"
+    lang: rust
+    md: |
+      Use a `loop` that counts `n` up from 1 and `break`s with the first `n * n` greater than 500. The program should print `first square over 500: 529`.
+    code: |
+      fn main() {
+          let mut n = 0;
+          let first = loop {
+              n += 1;
+              // break with n * n once it is over 500
+              if n > 1000 {
+                  break 0;
+              }
+          };
+          println!("first square over 500: {first}");
+      }
+    expected_output: "first square over 500: 529"
+    solution_code: |
+      fn main() {
+          let mut n = 0;
+          let first = loop {
+              n += 1;
+              if n * n > 500 {
+                  break n * n;
+              }
+          };
+          println!("first square over 500: {first}");
+      }
+    hints:
+      - "Replace the comment and the `if n > 1000` guard with `if n * n > 500 { break n * n; }`."
+
+  - type: exercise
+    id: ch03-ex-loops
+    exercise_dir: ch03-loops
+    title: "Loops that compute"
+    difficulty: medium
+    goal: "Pick the right loop for each job and get the edge cases right."
+    behavior: |
+      - `pub fn fibonacci(n: u32) -> u64`: the n-th Fibonacci number, where `fibonacci(0) = 0`, `fibonacci(1) = 1`, and each next one is the sum of the two before. Must work up to `n = 90`.
+      - `pub fn sum_of_multiples(limit: u32) -> u32`: the sum of all numbers below `limit` that are multiples of 3 or 5 (counted once).
+      - `pub fn digits(n: u64) -> u32`: how many decimal digits `n` has. `digits(0)` is 1.
+      - `pub fn is_prime(n: u32) -> bool`: true for primes. 0 and 1 are not prime.
+    examples:
+      - input: "fibonacci(10)"
+        output: "55"
+      - input: "sum_of_multiples(10)"
+        output: "23  (3 + 5 + 6 + 9)"
+      - input: "digits(12345)"
+        output: "5"
+      - input: "is_prime(97)"
+        output: "true"
+    hints:
+      - "Fibonacci: keep two variables, `let (mut a, mut b) = (0u64, 1u64);`, and repeat `n` times: `(a, b) = (b, a + b);`. Return `a`."
+      - "`sum_of_multiples`: `for i in 0..limit` and add `i` when `i % 3 == 0 || i % 5 == 0`."
+      - "`digits`: start at 1 and divide by 10 in a `while n >= 10` loop."
+      - "`is_prime`: return false below 2, then try divisors `d` from 2 while `d * d <= n`."
+    rust:
+      starter: |
+        /// The n-th Fibonacci number: 0, 1, 1, 2, 3, 5, 8, ...
+        pub fn fibonacci(n: u32) -> u64 {
+            todo!()
+        }
+
+        /// The sum of every number below `limit` that is a multiple of 3 or 5.
+        pub fn sum_of_multiples(limit: u32) -> u32 {
+            todo!()
+        }
+
+        /// How many decimal digits `n` has (0 has one digit).
+        pub fn digits(n: u64) -> u32 {
+            todo!()
+        }
+
+        /// Is `n` a prime number?
+        pub fn is_prime(n: u32) -> bool {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn fibonacci_start() {
+            assert_eq!(fibonacci(0), 0, "fibonacci(0)");
+            assert_eq!(fibonacci(1), 1, "fibonacci(1)");
+            assert_eq!(fibonacci(2), 1, "fibonacci(2)");
+            assert_eq!(fibonacci(10), 55, "fibonacci(10)");
+        }
+
+        #[test]
+        fn fibonacci_large() {
+            assert_eq!(fibonacci(90), 2_880_067_194_370_816_120, "fibonacci(90) must not overflow u64");
+        }
+
+        #[test]
+        fn multiples() {
+            assert_eq!(sum_of_multiples(10), 23, "sum_of_multiples(10)");
+            assert_eq!(sum_of_multiples(16), 60, "15 is counted once");
+            assert_eq!(sum_of_multiples(1), 0, "sum_of_multiples(1)");
+            assert_eq!(sum_of_multiples(1000), 233_168, "sum_of_multiples(1000)");
+        }
+
+        #[test]
+        fn digit_counts() {
+            assert_eq!(digits(0), 1, "digits(0)");
+            assert_eq!(digits(9), 1, "digits(9)");
+            assert_eq!(digits(10), 2, "digits(10)");
+            assert_eq!(digits(12345), 5, "digits(12345)");
+            assert_eq!(digits(u64::MAX), 20, "digits(u64::MAX)");
+        }
+
+        #[test]
+        fn primes() {
+            for p in [2, 3, 5, 7, 11, 97, 7919] {
+                assert!(is_prime(p), "{p} is prime");
+            }
+            for n in [0, 1, 4, 9, 15, 91, 7917] {
+                assert!(!is_prime(n), "{n} is not prime");
+            }
+        }
+      solution: |
+        /// The n-th Fibonacci number: 0, 1, 1, 2, 3, 5, 8, ...
+        pub fn fibonacci(n: u32) -> u64 {
+            let (mut a, mut b) = (0u64, 1u64);
+            for _ in 0..n {
+                (a, b) = (b, a + b);
+            }
+            a
+        }
+
+        /// The sum of every number below `limit` that is a multiple of 3 or 5.
+        pub fn sum_of_multiples(limit: u32) -> u32 {
+            let mut sum = 0;
+            for i in 0..limit {
+                if i % 3 == 0 || i % 5 == 0 {
+                    sum += i;
+                }
+            }
+            sum
+        }
+
+        /// How many decimal digits `n` has (0 has one digit).
+        pub fn digits(n: u64) -> u32 {
+            let mut n = n;
+            let mut count = 1;
+            while n >= 10 {
+                n /= 10;
+                count += 1;
+            }
+            count
+        }
+
+        /// Is `n` a prime number?
+        pub fn is_prime(n: u32) -> bool {
+            if n < 2 {
+                return false;
+            }
+            let mut d = 2;
+            while d * d <= n {
+                if n % d == 0 {
+                    return false;
+                }
+                d += 1;
+            }
+            true
+        }
+    solution_explain: "`for _ in 0..n` repeats n times without needing the counter. `(a, b) = (b, a + b)` updates both at once, so no temporary is needed. `digits` and `is_prime` use `while` because the number of passes depends on the value. Testing divisors only up to √n is enough: any larger divisor pairs with a smaller one already tried."
+
+  - type: quiz
+    id: ch03-quiz-control
+    title: Check yourself
+    questions:
+      - type: single
+        q: "Why does `let n = 3; if n { println!(\"yes\"); }` not compile?"
+        options: ["`if` needs parentheses", "The condition must be a `bool`", "`println!` cannot be inside `if`", "`n` must be `mut`"]
+        answer: 1
+        explanation: "Rust never treats a number as true or false. Write `if n != 0`."
+      - type: numeric
+        q: "How many times does `for i in 2..7 { }` run?"
+        answer: 5
+        explanation: "2, 3, 4, 5, 6: the end of `..` is excluded."
+      - type: single
+        q: "What does this print?"
+        code: |
+          let mut i = 0;
+          let x = loop {
+              i += 3;
+              if i > 10 { break i; }
+          };
+          println!("{x}");
+        lang: rust
+        options: ["10", "11", "12", "It loops forever"]
+        answer: 2
+        explanation: "i goes 3, 6, 9, 12; 12 is the first value over 10, and `break i` returns it."
+      - type: single
+        q: "Inside two nested `for` loops, how do you stop **both** loops at once?"
+        options: ["`break break;`", "`return` is the only way", "Label the outer loop and use `break 'outer;`", "`exit;`"]
+        answer: 2
+        explanation: "Labels like `'outer:` let `break` and `continue` target an outer loop."
+      - type: order
+        q: "Put the countdown output in order for `for n in (1..=3).rev() { print!(\"{n} \"); }`"
+        items: ["3", "2", "1"]
+        explanation: "`rev()` walks the range backwards."
+      - type: truefalse
+        q: "`while` is the safest way to go through every element of an array."
+        answer: false
+        explanation: "`for` is: it cannot index past the end, and there is no counter to forget to update."
+
+  - type: summary
+    points:
+      - "`if` conditions must be `bool`; only the first true branch of an `else if` chain runs."
+      - "`loop` repeats until `break`; `break value` makes the loop produce a value."
+      - "`continue` skips to the next pass; labels like `'outer` let `break`/`continue` reach an outer loop."
+      - "`while` repeats while a condition holds; use it when the number of passes depends on the data."
+      - "`for x in collection` and `for i in a..b` are the everyday loops: no counters to manage, no running past the end."
+      - "Ranges: `a..b` excludes b, `a..=b` includes it; `.rev()` reverses, `.step_by(n)` skips."
+terms:
+  - term: loop label
+    def: "A name like 'outer: on a loop, so break 'outer; or continue 'outer; can target it from an inner loop."
+  - term: range
+    def: "A sequence of numbers written a..b (end excluded) or a..=b (end included)."
+  - term: break value
+    def: "break followed by an expression: ends a loop and makes the loop expression produce that value."

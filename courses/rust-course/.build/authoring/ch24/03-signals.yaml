@@ -1,0 +1,708 @@
+title: "Interrupts, exceptions and signals"
+summary: "How a running program gets interrupted: hardware interrupts, CPU exceptions (traps, faults, aborts) and Unix signals, the common signals and their default actions, suspending and resuming with SIGSTOP and SIGCONT, installing a signal handler from Rust with an atomic flag, what is allowed inside a handler, why setjmp and longjmp do not fit Rust, and the graceful-shutdown pattern."
+minutes: 35
+source:
+  chapter: ch24
+  sections: ["RiA 12 Signals, Interrupts and Exceptions", "RiA 12.1 Glossary", "RiA 12.1.1 Signals vs interrupts", "RiA 12.2 How interrupts affect applications", "RiA 12.3 Software interrupts", "RiA 12.4 Hardware interrupts", "RiA 12.5 Signal handling", "RiA 12.5.1 Default behavior", "RiA 12.5.2 Suspend and resume a program's operation", "RiA 12.5.4 Handling signals with custom actions", "RiA 12.5.5 Using a global variable to indicate that shutdown has been initiated", "RiA 12.6 Sending application-defined signals", "RiA 12.6.1 Understanding function pointers and their syntax", "RiA 12.7 Ignoring signals", "RiA 12.8 Shutting down from deeply nested call stacks", "RiA 12.9 A note on applying these techniques to platforms without signals"]
+blocks:
+  - type: text
+    md: |
+      A program does not run uninterrupted. The keyboard, the network card and the timer all need the CPU's attention; a program can divide by zero or touch memory it does not own; the user can press Ctrl-C. *Rust in Action*'s last chapter sorts these events into three kinds and follows each one from the hardware to your code.
+
+  - type: table
+    title: Three ways to interrupt a program
+    headers: ["Kind", "Comes from", "Handled by", "Examples"]
+    rows:
+      - ["hardware interrupt", "a device, asynchronously", "the OS kernel's interrupt handler", "key pressed, packet arrived, timer tick"]
+      - ["exception", "the CPU, caused by the current instruction", "the kernel; may become a signal", "divide by zero, page fault, invalid instruction, breakpoint"]
+      - ["signal", "the kernel or another process", "the process: a default action or your handler", "SIGINT from Ctrl-C, SIGSEGV after a bad pointer, SIGTERM from kill"]
+
+  - type: text
+    md: |
+      Exceptions come in three flavors. A **trap** is deliberate, like a breakpoint or a system call; execution continues after it. A **fault** can be fixed and the instruction retried, like a page fault that loads memory from swap. An **abort** cannot be recovered. When the kernel cannot fix a fault on the program's behalf (the address really is invalid), it turns it into a **signal**, such as `SIGSEGV`, and delivers it to the process. Signals are the Unix way for the kernel to tell a process "something happened to you".
+
+  - type: stepper
+    title: "What happens when you press Ctrl-C"
+    steps:
+      - title: The keyboard raises an interrupt
+        md: "The keyboard controller signals the CPU. The CPU stops the current instruction stream and jumps to the kernel's interrupt handler, registered in the interrupt descriptor table."
+        code: |
+          CPU running your program ──► keyboard IRQ ──► kernel interrupt handler
+      - title: The terminal driver sees Ctrl-C
+        md: "The kernel's terminal (tty) driver recognizes the interrupt character and, instead of passing `^C` as input, sends **SIGINT** to the foreground process group."
+        code: |
+          tty driver: ^C  ──►  kill(foreground process group, SIGINT)
+      - title: The signal is marked pending
+        md: "The kernel sets a pending bit for SIGINT on the process. If the process has SIGINT blocked, the bit just waits."
+        code: |
+          pending: ...0000 0100   (bit 2 = SIGINT)
+      - title: Delivery on the way back to user space
+        md: "The next time the process returns from the kernel to user space, the kernel checks pending, unblocked signals. With no handler, the default action for SIGINT runs: terminate. With a handler, the kernel arranges for your function to run first, then resumes the program where it was."
+        code: |
+          default:  process terminated by signal 2
+          handler:  on_interrupt(2) runs, then the program continues
+
+  - type: table
+    title: Common signals on Linux
+    headers: ["Signal", "Number", "Default action", "Typical cause"]
+    rows:
+      - ["SIGHUP", "1", "terminate", "the terminal closed"]
+      - ["SIGINT", "2", "terminate", "Ctrl-C"]
+      - ["SIGQUIT", "3", "core dump", "Ctrl-\\"]
+      - ["SIGABRT", "6", "core dump", "`abort()`, which Rust uses for some fatal errors"]
+      - ["SIGFPE", "8", "core dump", "integer divide by zero in C (Rust checks and panics first)"]
+      - ["SIGKILL", "9", "terminate", "`kill -9`; cannot be caught, blocked or ignored"]
+      - ["SIGSEGV", "11", "core dump", "invalid memory access, stack overflow"]
+      - ["SIGPIPE", "13", "terminate", "writing to a closed pipe (Rust ignores it at startup)"]
+      - ["SIGTERM", "15", "terminate", "`kill`, a polite request to shut down"]
+      - ["SIGUSR1 / SIGUSR2", "10 / 12", "terminate", "free for applications to use"]
+      - ["SIGCHLD", "17", "ignore", "a child process exited"]
+      - ["SIGCONT", "18", "continue", "resume a stopped process"]
+      - ["SIGSTOP / SIGTSTP", "19 / 20", "stop", "`kill -STOP` (uncatchable) / Ctrl-Z"]
+
+  - type: text
+    title: Suspending and resuming
+    md: |
+      `SIGSTOP` freezes a process and `SIGCONT` resumes it, which is how shells implement job control. *Rust in Action* demonstrates it from a shell (the numbers are Linux's; macOS numbers some signals differently, so prefer the names):
+
+  - type: code
+    lang: bash
+    code: |
+      $ sleep 60 &
+      [1] 2873
+      $ kill -STOP 2873      # or kill -SIGSTOP %1
+      [1]+  Stopped                 sleep 60
+      $ kill -CONT 2873
+      $ kill -TERM 2873
+      [1]+  Terminated              sleep 60
+      $ kill -l              # list every signal name and number
+    explain: "Numbers and job ids will differ on your machine. Ctrl-Z sends SIGTSTP, the catchable cousin of SIGSTOP; `fg` and `bg` send SIGCONT."
+
+  - type: text
+    title: Handling a signal in Rust
+    md: |
+      The C function **`signal(sig, handler)`** installs a handler, and **`raise(sig)`** sends a signal to the current process, which lets a program test its own handling. Real code takes these and the signal numbers from the **`libc`** crate, as *Rust in Action* does; here they are declared by hand, as in lesson 1, and the numbers are Linux's.
+
+      A handler can run **between any two instructions** of your program, even while `main` holds a lock or is halfway through `malloc`. So it may only do things that are **async-signal-safe**: no `println!`, no allocation, no locks. The safe pattern is to set a flag and let the main loop act on it. *Rust in Action* used a `static mut bool`; since the 2024 edition, references to a `static mut` are an error, and the correct tool is an **atomic**, which is lock-free and safe to touch from a handler.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::ffi::c_int;
+      use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+      const SIGUSR1: c_int = 10; // Linux numbering
+      const SIGTERM: c_int = 15;
+
+      unsafe extern "C" {
+          fn signal(sig: c_int, handler: extern "C" fn(c_int)) -> usize;
+          fn raise(sig: c_int) -> c_int;
+      }
+
+      static SHUT_DOWN: AtomicBool = AtomicBool::new(false);
+      static USR1_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+      extern "C" fn handle_sigterm(_sig: c_int) {
+          SHUT_DOWN.store(true, Ordering::SeqCst);
+      }
+
+      extern "C" fn handle_sigusr1(_sig: c_int) {
+          USR1_COUNT.fetch_add(1, Ordering::SeqCst);
+      }
+
+      fn main() {
+          unsafe {
+              signal(SIGTERM, handle_sigterm);
+              signal(SIGUSR1, handle_sigusr1);
+          }
+
+          let mut i = 0;
+          loop {
+              i += 1;
+              if i % 3 == 0 {
+                  unsafe { raise(SIGUSR1) };
+              }
+              if i == 10 {
+                  unsafe { raise(SIGTERM) }; // as if someone ran `kill <pid>`
+              }
+              if SHUT_DOWN.load(Ordering::SeqCst) {
+                  break;
+              }
+          }
+          println!("stopped after {i} iterations, SIGUSR1 seen {} times", USR1_COUNT.load(Ordering::SeqCst));
+      }
+    output: |
+      stopped after 10 iterations, SIGUSR1 seen 3 times
+    explain: "Without the SIGTERM handler, `raise(SIGTERM)` would end the process on the spot, skipping every destructor. With it, the loop notices the flag and leaves normally, so cleanup code runs. The handlers are `extern \"C\" fn`s because the kernel calls them with the C convention; *Rust in Action* shows that a function pointer is just an address by printing `handle_sigterm as usize`."
+
+  - type: callout
+    kind: warning
+    title: "Things not to do in a signal handler"
+    md: "Do not print, allocate, lock a `Mutex`, or call most library functions: if the signal arrived while the main code held the same lock or was inside the allocator, the handler deadlocks or corrupts it. Do not panic either: the handler is an `extern \"C\"` function, so a panic aborts. Store to an atomic, write a byte to a pipe, or call one of the few functions POSIX lists as async-signal-safe."
+
+  - type: text
+    title: Escaping from deep call stacks
+    md: |
+      *Rust in Action* also shows C's **`setjmp` / `longjmp`**: `setjmp` saves the CPU registers, and a later `longjmp` jumps straight back to that point from anywhere deeper in the call stack, as if `setjmp` had returned again. It works through LLVM intrinsics and nightly Rust, and the book warns that it is dangerous. In Rust it is worse than dangerous: jumping over stack frames **skips their destructors**, so locks stay locked and memory leaks, and it is undefined behavior if any skipped frame had something to drop.
+
+      Use Rust's own tools instead: return a `Result` and let `?` carry it up, or, for truly exceptional cases, panic and `catch_unwind` at a boundary (lesson 1). Both run every destructor on the way.
+
+  - type: text
+    title: Graceful shutdown in practice
+    md: |
+      Production programs rarely call `signal` themselves:
+
+      - The **`signal-hook`** crate installs handlers correctly (with `sigaction`), offers flags (`signal_hook::flag::register(SIGTERM, Arc::clone(&term))`) and an iterator of incoming signals you can read from a normal thread, where printing and locking are allowed.
+      - The **`ctrlc`** crate handles Ctrl-C on both Unix and Windows. Windows has no signals; it has console control events, which `ctrlc` maps to the same callback.
+      - Async runtimes have `tokio::signal::ctrl_c().await`, which fits the cancellation model from chapter 17.
+
+      The design is always the one above: the handler only **records** that a shutdown was requested; the main loop or a dedicated thread **acts** on it by finishing current work, closing connections and flushing files. Chapter 25's web server shuts down this way.
+
+  - type: playground
+    id: ch24-play-signal
+    title: "Survive Ctrl-C"
+    lang: rust
+    starter_ok: panic
+    md: |
+      The program pretends the user pressed Ctrl-C after job 3 by raising SIGINT. Right now nothing handles it, so the process dies before cleaning up. Install `on_interrupt` for SIGINT and make it set `STOP`, so the loop ends and the cleanup line runs.
+    task: "Print `job 1 done`, `job 2 done`, `job 3 done`, `cleaning up and exiting`."
+    code: |
+      use std::ffi::c_int;
+      use std::sync::atomic::{AtomicBool, Ordering};
+
+      const SIGINT: c_int = 2;
+
+      unsafe extern "C" {
+          fn signal(sig: c_int, handler: extern "C" fn(c_int)) -> usize;
+          fn raise(sig: c_int) -> c_int;
+      }
+
+      static STOP: AtomicBool = AtomicBool::new(false);
+
+      extern "C" fn on_interrupt(_sig: c_int) {
+          // TODO: tell the main loop to stop
+      }
+
+      fn main() {
+          // TODO: install on_interrupt as the SIGINT handler
+
+          for job in 1..=6 {
+              println!("job {job} done");
+              if job == 3 {
+                  unsafe { raise(SIGINT) }; // pretend the user pressed Ctrl-C
+              }
+              if STOP.load(Ordering::SeqCst) {
+                  break;
+              }
+          }
+          println!("cleaning up and exiting");
+      }
+    expected_output: |
+      job 1 done
+      job 2 done
+      job 3 done
+      cleaning up and exiting
+    solution_code: |
+      use std::ffi::c_int;
+      use std::sync::atomic::{AtomicBool, Ordering};
+
+      const SIGINT: c_int = 2;
+
+      unsafe extern "C" {
+          fn signal(sig: c_int, handler: extern "C" fn(c_int)) -> usize;
+          fn raise(sig: c_int) -> c_int;
+      }
+
+      static STOP: AtomicBool = AtomicBool::new(false);
+
+      extern "C" fn on_interrupt(_sig: c_int) {
+          STOP.store(true, Ordering::SeqCst);
+      }
+
+      fn main() {
+          unsafe { signal(SIGINT, on_interrupt) };
+
+          for job in 1..=6 {
+              println!("job {job} done");
+              if job == 3 {
+                  unsafe { raise(SIGINT) }; // pretend the user pressed Ctrl-C
+              }
+              if STOP.load(Ordering::SeqCst) {
+                  break;
+              }
+          }
+          println!("cleaning up and exiting");
+      }
+    hints:
+      - "In `main`: `unsafe { signal(SIGINT, on_interrupt) };`"
+      - "In the handler: `STOP.store(true, Ordering::SeqCst);` and nothing else."
+
+  - type: exercise
+    id: ch24-ex-signals
+    exercise_dir: ch24-signals
+    title: "A model of signal delivery"
+    difficulty: medium
+    goal: "Model how the kernel delivers signals to a process: default actions, handlers, ignoring, blocking with a bit mask, pending signals, and the two signals nobody can catch."
+    behavior: |
+      Signals are numbered as on Linux. This is a simplified model: a signal that is not blocked is delivered at once, even to a stopped process.
+      - `pub fn from_number(n: i32) -> Option<Signal>` and `pub fn default_action(s: Signal) -> Action` following the table in the lesson (HUP, INT, KILL, USR1, USR2, PIPE, ALRM, TERM terminate; QUIT, ILL, ABRT, FPE, SEGV dump core; CHLD is ignored; STOP and TSTP stop; CONT continues).
+      - `Process::new()`: alive, not stopped, every disposition `Default`, nothing blocked or pending.
+      - `set_disposition(s, d) -> Result<(), &'static str>`: an `Err` for `Kill` and `Stop`, which cannot be caught or ignored.
+      - `block(s)` / `unblock(s) -> Option<Outcome>` and `blocked_mask() -> u32` (bit `n` for signal number `n`). `Kill` and `Stop` cannot be blocked: `block` does nothing for them. `unblock` delivers the signal if it was pending.
+      - `send(s) -> Outcome`: `NoProcess` once the process has died. If `s` is blocked, mark it pending and return `Pending` (a second one while pending merges with the first: standard signals do not queue). Otherwise deliver it:
+        - `Cont` always resumes a stopped process, then returns `Handled(Cont)` if it has a handler and `Continued` otherwise.
+        - `Ignore` gives `Ignored`; `Handle` records the signal in `handled()` and gives `Handled(s)`.
+        - `Default` follows `default_action`: `Terminated(s)` or `CoreDumped(s)` (and the process is dead), `Ignored`, or `Stopped`.
+      - `is_alive()`, `is_stopped()`, `is_pending(s)`, `handled() -> &[Signal]`.
+    examples:
+      - input: "block(Usr1) with a handler, send(Usr1) twice, then unblock(Usr1)"
+        output: "Pending, Pending, then Some(Handled(Usr1)), and handled() == [Usr1]"
+    hints:
+      - "`from_number` is one `match` with a `_ => None` arm."
+      - "Index `dispositions` with `s as usize`; the bit for a signal is `1u32 << (s as u32)`."
+      - "Write a private `deliver(&mut self, s) -> Outcome` and call it from both `send` and `unblock`."
+    rust:
+      starter: |
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum Signal {
+            Hup = 1, Int = 2, Quit = 3, Ill = 4, Abrt = 6, Fpe = 8, Kill = 9, Usr1 = 10,
+            Segv = 11, Usr2 = 12, Pipe = 13, Alrm = 14, Term = 15, Chld = 17, Cont = 18, Stop = 19, Tstp = 20,
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum Action {
+            Terminate,
+            CoreDump,
+            Ignore,
+            Stop,
+            Continue,
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum Disposition {
+            Default,
+            Ignore,
+            Handle,
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum Outcome {
+            Terminated(Signal),
+            CoreDumped(Signal),
+            Stopped,
+            Continued,
+            Ignored,
+            Handled(Signal),
+            Pending,
+            NoProcess,
+        }
+
+        pub fn from_number(n: i32) -> Option<Signal> {
+            todo!()
+        }
+
+        pub fn default_action(s: Signal) -> Action {
+            todo!()
+        }
+
+        pub struct Process {
+            dispositions: [Disposition; 32],
+            blocked: u32,
+            pending: u32,
+            alive: bool,
+            stopped: bool,
+            handled: Vec<Signal>,
+        }
+
+        impl Process {
+            pub fn new() -> Process {
+                todo!()
+            }
+
+            pub fn set_disposition(&mut self, s: Signal, d: Disposition) -> Result<(), &'static str> {
+                todo!()
+            }
+
+            pub fn block(&mut self, s: Signal) {
+                todo!()
+            }
+
+            pub fn unblock(&mut self, s: Signal) -> Option<Outcome> {
+                todo!()
+            }
+
+            pub fn blocked_mask(&self) -> u32 {
+                todo!()
+            }
+
+            pub fn send(&mut self, s: Signal) -> Outcome {
+                todo!()
+            }
+
+            pub fn is_alive(&self) -> bool {
+                todo!()
+            }
+
+            pub fn is_stopped(&self) -> bool {
+                todo!()
+            }
+
+            pub fn is_pending(&self, s: Signal) -> bool {
+                todo!()
+            }
+
+            pub fn handled(&self) -> &[Signal] {
+                todo!()
+            }
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn numbers() {
+            assert_eq!(from_number(2), Some(Signal::Int));
+            assert_eq!(from_number(9), Some(Signal::Kill));
+            assert_eq!(from_number(19), Some(Signal::Stop));
+            assert_eq!(from_number(20), Some(Signal::Tstp));
+            assert_eq!(from_number(5), None);
+            assert_eq!(from_number(0), None);
+            assert_eq!(from_number(-1), None);
+            assert_eq!(Signal::Term as i32, 15);
+        }
+
+        #[test]
+        fn defaults() {
+            use Action::*;
+            for (s, a) in [
+                (Signal::Term, Terminate), (Signal::Int, Terminate), (Signal::Kill, Terminate),
+                (Signal::Usr1, Terminate), (Signal::Hup, Terminate), (Signal::Pipe, Terminate),
+                (Signal::Segv, CoreDump), (Signal::Abrt, CoreDump), (Signal::Quit, CoreDump), (Signal::Fpe, CoreDump),
+                (Signal::Chld, Ignore), (Signal::Stop, Stop), (Signal::Tstp, Stop), (Signal::Cont, Continue),
+            ] {
+                assert_eq!(default_action(s), a, "{s:?}");
+            }
+        }
+
+        #[test]
+        fn default_delivery() {
+            let mut p = Process::new();
+            assert!(p.is_alive() && !p.is_stopped());
+            assert_eq!(p.send(Signal::Chld), Outcome::Ignored);
+            assert_eq!(p.send(Signal::Segv), Outcome::CoreDumped(Signal::Segv));
+            assert!(!p.is_alive());
+            assert_eq!(p.send(Signal::Term), Outcome::NoProcess);
+        }
+
+        #[test]
+        fn handlers_and_ignore() {
+            let mut p = Process::new();
+            p.set_disposition(Signal::Term, Disposition::Handle).unwrap();
+            p.set_disposition(Signal::Int, Disposition::Ignore).unwrap();
+            assert_eq!(p.send(Signal::Term), Outcome::Handled(Signal::Term));
+            assert_eq!(p.send(Signal::Int), Outcome::Ignored);
+            assert_eq!(p.send(Signal::Term), Outcome::Handled(Signal::Term));
+            assert_eq!(p.handled(), &[Signal::Term, Signal::Term]);
+            assert!(p.is_alive());
+            p.set_disposition(Signal::Term, Disposition::Default).unwrap();
+            assert_eq!(p.send(Signal::Term), Outcome::Terminated(Signal::Term));
+            assert!(!p.is_alive());
+            assert_eq!(p.send(Signal::Usr1), Outcome::NoProcess);
+        }
+
+        #[test]
+        fn kill_and_stop_are_special() {
+            let mut p = Process::new();
+            assert!(p.set_disposition(Signal::Kill, Disposition::Handle).is_err());
+            assert!(p.set_disposition(Signal::Stop, Disposition::Ignore).is_err());
+            assert!(p.set_disposition(Signal::Tstp, Disposition::Ignore).is_ok());
+            p.block(Signal::Kill);
+            p.block(Signal::Stop);
+            assert_eq!(p.blocked_mask(), 0);
+            assert_eq!(p.send(Signal::Stop), Outcome::Stopped);
+            assert_eq!(p.send(Signal::Kill), Outcome::Terminated(Signal::Kill));
+        }
+
+        #[test]
+        fn stop_and_continue() {
+            let mut p = Process::new();
+            assert_eq!(p.send(Signal::Stop), Outcome::Stopped);
+            assert!(p.is_stopped());
+            assert_eq!(p.send(Signal::Cont), Outcome::Continued);
+            assert!(!p.is_stopped());
+
+            p.set_disposition(Signal::Cont, Disposition::Ignore).unwrap();
+            assert_eq!(p.send(Signal::Tstp), Outcome::Stopped);
+            assert_eq!(p.send(Signal::Cont), Outcome::Continued, "SIGCONT resumes even when ignored");
+            assert!(!p.is_stopped());
+
+            p.set_disposition(Signal::Cont, Disposition::Handle).unwrap();
+            p.send(Signal::Stop);
+            assert_eq!(p.send(Signal::Cont), Outcome::Handled(Signal::Cont));
+            assert!(!p.is_stopped());
+            assert_eq!(p.handled(), &[Signal::Cont]);
+        }
+
+        #[test]
+        fn blocking_and_pending() {
+            let mut p = Process::new();
+            p.set_disposition(Signal::Usr1, Disposition::Handle).unwrap();
+            p.block(Signal::Usr1);
+            assert_eq!(p.send(Signal::Usr1), Outcome::Pending);
+            assert_eq!(p.send(Signal::Usr1), Outcome::Pending);
+            assert!(p.is_pending(Signal::Usr1));
+            assert!(p.handled().is_empty());
+            assert_eq!(p.unblock(Signal::Usr1), Some(Outcome::Handled(Signal::Usr1)));
+            assert_eq!(p.handled(), &[Signal::Usr1], "standard signals do not queue");
+            assert!(!p.is_pending(Signal::Usr1));
+            assert_eq!(p.unblock(Signal::Usr1), None);
+            assert_eq!(p.send(Signal::Usr1), Outcome::Handled(Signal::Usr1));
+        }
+
+        #[test]
+        fn pending_default_acts_on_unblock() {
+            let mut p = Process::new();
+            p.block(Signal::Term);
+            assert_eq!(p.send(Signal::Term), Outcome::Pending);
+            assert!(p.is_alive());
+            assert_eq!(p.unblock(Signal::Term), Some(Outcome::Terminated(Signal::Term)));
+            assert!(!p.is_alive());
+        }
+
+        #[test]
+        fn mask() {
+            let mut p = Process::new();
+            p.block(Signal::Int);
+            p.block(Signal::Term);
+            p.block(Signal::Int);
+            assert_eq!(p.blocked_mask(), 1 << 2 | 1 << 15);
+            p.unblock(Signal::Int);
+            assert_eq!(p.blocked_mask(), 1 << 15);
+        }
+      solution: |
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum Signal {
+            Hup = 1, Int = 2, Quit = 3, Ill = 4, Abrt = 6, Fpe = 8, Kill = 9, Usr1 = 10,
+            Segv = 11, Usr2 = 12, Pipe = 13, Alrm = 14, Term = 15, Chld = 17, Cont = 18, Stop = 19, Tstp = 20,
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum Action {
+            Terminate,
+            CoreDump,
+            Ignore,
+            Stop,
+            Continue,
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum Disposition {
+            Default,
+            Ignore,
+            Handle,
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum Outcome {
+            Terminated(Signal),
+            CoreDumped(Signal),
+            Stopped,
+            Continued,
+            Ignored,
+            Handled(Signal),
+            Pending,
+            NoProcess,
+        }
+
+        pub fn from_number(n: i32) -> Option<Signal> {
+            use Signal::*;
+            Some(match n {
+                1 => Hup, 2 => Int, 3 => Quit, 4 => Ill, 6 => Abrt, 8 => Fpe, 9 => Kill, 10 => Usr1,
+                11 => Segv, 12 => Usr2, 13 => Pipe, 14 => Alrm, 15 => Term, 17 => Chld, 18 => Cont,
+                19 => Stop, 20 => Tstp,
+                _ => return None,
+            })
+        }
+
+        pub fn default_action(s: Signal) -> Action {
+            use Signal::*;
+            match s {
+                Hup | Int | Kill | Usr1 | Usr2 | Pipe | Alrm | Term => Action::Terminate,
+                Quit | Ill | Abrt | Fpe | Segv => Action::CoreDump,
+                Chld => Action::Ignore,
+                Stop | Tstp => Action::Stop,
+                Cont => Action::Continue,
+            }
+        }
+
+        fn bit(s: Signal) -> u32 {
+            1u32 << (s as u32)
+        }
+
+        fn uncatchable(s: Signal) -> bool {
+            matches!(s, Signal::Kill | Signal::Stop)
+        }
+
+        pub struct Process {
+            dispositions: [Disposition; 32],
+            blocked: u32,
+            pending: u32,
+            alive: bool,
+            stopped: bool,
+            handled: Vec<Signal>,
+        }
+
+        impl Process {
+            pub fn new() -> Process {
+                Process {
+                    dispositions: [Disposition::Default; 32],
+                    blocked: 0,
+                    pending: 0,
+                    alive: true,
+                    stopped: false,
+                    handled: Vec::new(),
+                }
+            }
+
+            pub fn set_disposition(&mut self, s: Signal, d: Disposition) -> Result<(), &'static str> {
+                if uncatchable(s) {
+                    return Err("SIGKILL and SIGSTOP cannot be caught or ignored");
+                }
+                self.dispositions[s as usize] = d;
+                Ok(())
+            }
+
+            pub fn block(&mut self, s: Signal) {
+                if !uncatchable(s) {
+                    self.blocked |= bit(s);
+                }
+            }
+
+            pub fn unblock(&mut self, s: Signal) -> Option<Outcome> {
+                self.blocked &= !bit(s);
+                if self.pending & bit(s) != 0 {
+                    self.pending &= !bit(s);
+                    Some(self.deliver(s))
+                } else {
+                    None
+                }
+            }
+
+            pub fn blocked_mask(&self) -> u32 {
+                self.blocked
+            }
+
+            pub fn send(&mut self, s: Signal) -> Outcome {
+                if !self.alive {
+                    return Outcome::NoProcess;
+                }
+                if self.blocked & bit(s) != 0 {
+                    self.pending |= bit(s);
+                    return Outcome::Pending;
+                }
+                self.deliver(s)
+            }
+
+            fn deliver(&mut self, s: Signal) -> Outcome {
+                let disposition = self.dispositions[s as usize];
+                if s == Signal::Cont {
+                    self.stopped = false;
+                    if disposition == Disposition::Handle {
+                        self.handled.push(s);
+                        return Outcome::Handled(s);
+                    }
+                    return Outcome::Continued;
+                }
+                match disposition {
+                    Disposition::Ignore => Outcome::Ignored,
+                    Disposition::Handle => {
+                        self.handled.push(s);
+                        Outcome::Handled(s)
+                    }
+                    Disposition::Default => match default_action(s) {
+                        Action::Terminate => {
+                            self.alive = false;
+                            Outcome::Terminated(s)
+                        }
+                        Action::CoreDump => {
+                            self.alive = false;
+                            Outcome::CoreDumped(s)
+                        }
+                        Action::Ignore => Outcome::Ignored,
+                        Action::Stop => {
+                            self.stopped = true;
+                            Outcome::Stopped
+                        }
+                        Action::Continue => Outcome::Continued,
+                    },
+                }
+            }
+
+            pub fn is_alive(&self) -> bool {
+                self.alive
+            }
+
+            pub fn is_stopped(&self) -> bool {
+                self.stopped
+            }
+
+            pub fn is_pending(&self, s: Signal) -> bool {
+                self.pending & bit(s) != 0
+            }
+
+            pub fn handled(&self) -> &[Signal] {
+                &self.handled
+            }
+        }
+    solution_explain: "The kernel really does keep two bit masks per thread, blocked and pending, which is why a second SIGUSR1 sent while the first is pending is lost: a bit cannot count. Putting delivery in one private `deliver` method keeps `send` and `unblock` consistent. Kill and Stop are refused in both `set_disposition` and `block`, so no process can make itself unkillable."
+
+  - type: quiz
+    id: ch24-quiz-signals
+    title: Check yourself
+    questions:
+      - type: single
+        q: "Which of these comes from the current instruction rather than a device?"
+        options: ["A timer tick", "A page fault", "A key press", "A network packet"]
+        answer: 1
+        explanation: "Exceptions are caused by the instruction being executed."
+      - type: single
+        q: "Which two signals can never be caught, blocked or ignored?"
+        options: ["SIGINT and SIGTERM", "SIGKILL and SIGSTOP", "SIGSEGV and SIGABRT", "SIGUSR1 and SIGUSR2"]
+        answer: 1
+        explanation: "So the system can always stop or kill a process."
+      - type: single
+        q: "What should a signal handler do?"
+        options: ["Print a message and exit", "Set an atomic flag and return", "Lock a Mutex and update state", "Allocate a log entry"]
+        answer: 1
+        explanation: "Only async-signal-safe work; the main loop acts on the flag."
+      - type: single
+        q: "Why is `longjmp` a bad fit for Rust?"
+        options: ["It is slow", "It skips the destructors of the frames it jumps over", "It needs threads", "It only works on Windows"]
+        answer: 1
+        explanation: "Use Result and ? or catch_unwind."
+      - type: single
+        q: "SIGUSR1 is blocked and sent three times. How many times does its handler run after unblocking?"
+        options: ["0", "1", "3", "It depends on timing"]
+        answer: 1
+        explanation: "Standard signals set one pending bit; they do not queue."
+
+  - type: summary
+    points:
+      - "Hardware interrupts come from devices, exceptions from the current instruction, signals from the kernel to a process."
+      - "Each signal has a default action: terminate, core dump, ignore, stop or continue."
+      - "SIGKILL and SIGSTOP cannot be caught, blocked or ignored."
+      - "Handlers run between any two instructions, so they only set atomics or do other async-signal-safe work."
+      - "Blocked signals wait as pending bits and do not queue."
+      - "Graceful shutdown: the handler records the request, the main loop acts on it; use signal-hook or ctrlc in real code."
+terms:
+  - term: interrupt
+    def: "A signal from hardware that makes the CPU stop and run a handler in the kernel."
+  - term: exception
+    def: "An event caused by the current CPU instruction: a trap, a fault or an abort."
+  - term: signal
+    def: "A notification the kernel delivers to a process, such as SIGINT or SIGTERM."
+  - term: signal handler
+    def: "A function the kernel runs in the process when a signal is delivered."
+  - term: async-signal-safe
+    def: "Safe to call from a signal handler, even if the signal interrupted the same code."
+  - term: pending signal
+    def: "A signal that has been sent but not yet delivered, usually because it is blocked."

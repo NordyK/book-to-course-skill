@@ -1,0 +1,421 @@
+title: "Methods and associated functions"
+summary: "Attach behavior to a struct with impl blocks: methods taking &self, &mut self or self, getters, methods with more parameters, associated functions like new, and automatic referencing."
+minutes: 30
+source:
+  chapter: ch05
+  sections: ["TRPL 5.3 Methods", "TRPL 5.3 Method Syntax", "TRPL 5.3 Methods with More Parameters", "TRPL 5.3 Associated Functions", "TRPL 5.3 Multiple impl Blocks", "PR ch9 Defining Methods with impl", "PR ch9 Passing Self as a Box, Rc, or Arc", "PR ch9 Type-Associated Functions", "RiA 3.2 Modeling files with struct", "RiA 3.3 Adding methods to a struct with impl", "CR Day 2 Methods"]
+blocks:
+  - type: text
+    md: |
+      A **method** is a function that belongs to a type. You define it inside an `impl` block (short for *implementation*), and its first parameter is always `self`, the instance the method is called on. Methods keep a type's behavior next to its data, and let callers write `rect.area()` instead of `area(&rect)`.
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      struct Rectangle {
+          width: u32,
+          height: u32,
+      }
+
+      impl Rectangle {
+          fn area(&self) -> u32 {
+              self.width * self.height
+          }
+      }
+
+      fn main() {
+          let rect1 = Rectangle { width: 30, height: 50 };
+          println!("The area of the rectangle is {} square pixels.", rect1.area());
+      }
+    output: "The area of the rectangle is 1500 square pixels."
+    explain: "Inside `impl Rectangle`, the type `Self` is an alias for `Rectangle`, and `&self` is short for `self: &Self`. The method borrows the instance, exactly as `area(rectangle: &Rectangle)` did, but now it is found through the type."
+
+  - type: table
+    title: "The three kinds of self"
+    headers: ["First parameter", "The method...", "Typical use"]
+    rows:
+      - ["`&self`", "borrows the instance to read it", "getters, calculations: `area`, `len`, `is_empty`"]
+      - ["`&mut self`", "borrows the instance to change it", "setters, updates: `push`, `resize`, `clear`"]
+      - ["`self`", "takes ownership; the caller cannot use the instance afterwards", "turning a value into something else: `into_string`, `finish`"]
+
+  - type: callout
+    kind: note
+    title: "Where is the -> operator?"
+    md: "C and C++ use `.` on a value and `->` on a pointer. Rust has only `.`: it adds `&`, `&mut` or `*` automatically so the receiver matches the method's `self`. `rect1.area()` and `(&rect1).area()` are the same call. This **automatic referencing** is why methods are so convenient: the signature says whether the method reads, changes or consumes, and the call site stays tidy."
+
+  - type: text
+    title: Methods with more parameters, and getters
+    md: |
+      A method can take more parameters after `self`. A method can also share a field's name: `rect.width()` with parentheses is the method, `rect.width` is the field. Such methods are **getters**, often used to make a field read-only from outside the module (privacy is covered in chapter 7).
+
+  - type: code
+    lang: rust
+    code: |
+      struct Rectangle {
+          width: u32,
+          height: u32,
+      }
+
+      impl Rectangle {
+          fn width(&self) -> bool {
+              self.width > 0
+          }
+
+          fn can_hold(&self, other: &Rectangle) -> bool {
+              self.width > other.width && self.height > other.height
+          }
+      }
+
+      fn main() {
+          let rect1 = Rectangle { width: 30, height: 50 };
+          let rect2 = Rectangle { width: 10, height: 40 };
+          let rect3 = Rectangle { width: 60, height: 45 };
+          println!("rect1 has a nonzero width: {}", rect1.width());
+          println!("Can rect1 hold rect2? {}", rect1.can_hold(&rect2));
+          println!("Can rect1 hold rect3? {}", rect1.can_hold(&rect3));
+      }
+    output: |
+      rect1 has a nonzero width: true
+      Can rect1 hold rect2? true
+      Can rect1 hold rect3? false
+
+  - type: text
+    title: Associated functions
+    md: |
+      Functions in an `impl` block that do **not** take `self` are **associated functions**. They belong to the type but do not need an instance, and you call them with `::`, as you did with `String::from`. The most common one is a constructor, by convention named `new`. Rust has no special constructor syntax; `new` is just a convention.
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      struct Rectangle {
+          width: u32,
+          height: u32,
+      }
+
+      impl Rectangle {
+          fn new(width: u32, height: u32) -> Self {
+              Self { width, height }
+          }
+
+          fn square(size: u32) -> Self {
+              Self { width: size, height: size }
+          }
+      }
+
+      fn main() {
+          let r = Rectangle::new(3, 4);
+          let sq = Rectangle::square(3);
+          println!("{r:?} {sq:?}");
+      }
+    output: "Rectangle { width: 3, height: 4 } Rectangle { width: 3, height: 3 }"
+    explain: "`Self` inside the `impl` means `Rectangle`, so renaming the type later only touches one line. A type may have several `impl` blocks; that is useful with generics and traits later, though one block is usual for a simple struct."
+
+  - type: text
+    title: "A worked example: files, from Rust in Action"
+    md: |
+      *Rust in Action* models a file as a struct with a name and its contents, then adds methods. `Vec<u8>` is a growable list of bytes (chapter 8 covers `Vec`); here it is enough to know that `Vec::new()` makes an empty one, `push` and `extend` add bytes, and `len` counts them.
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      struct File {
+          name: String,
+          data: Vec<u8>,
+      }
+
+      impl File {
+          fn new(name: &str) -> File {
+              File { name: String::from(name), data: Vec::new() }
+          }
+
+          fn len(&self) -> usize {
+              self.data.len()
+          }
+
+          fn write(&mut self, bytes: &[u8]) {
+              self.data.extend_from_slice(bytes);
+          }
+
+          fn into_name(self) -> String {
+              self.name
+          }
+      }
+
+      fn main() {
+          let mut f = File::new("f1.txt");
+          f.write(b"hello");
+          println!("{} is {} bytes", f.name, f.len());
+          let name = f.into_name();     // f is consumed here
+          println!("only the name is left: {name}");
+      }
+    output: |
+      f1.txt is 5 bytes
+      only the name is left: f1.txt
+    explain: "`b\"hello\"` is a **byte string**: a `&[u8; 5]`, which coerces to the `&[u8]` slice that `write` takes. `into_name(self)` consumes the file and returns its name; by convention, methods named `into_...` take `self`. Using `f` after that line is a compile error."
+
+  - type: playground
+    id: ch05-play-counter
+    title: "A counter with &mut self"
+    lang: rust
+    md: |
+      Complete the `impl` block: `new` starts the count at 0, `increment` adds one, `add` adds `n`, and `get` returns the current value. Then `main` prints `3`. Pay attention to which methods need `&mut self`.
+    task: "Make the program print `count: 3`."
+    code: |
+      struct Counter {
+          count: u32,
+      }
+
+      impl Counter {
+          // fn new() -> Self
+          // fn increment(...)
+          // fn add(..., n: u32)
+          // fn get(...) -> u32
+      }
+
+      fn main() {
+          let mut c = Counter::new();
+          c.increment();
+          c.add(2);
+          println!("count: {}", c.get());
+      }
+    starter_ok: compile_error
+    expected_output: "count: 3"
+    solution_code: |
+      struct Counter {
+          count: u32,
+      }
+
+      impl Counter {
+          fn new() -> Self {
+              Self { count: 0 }
+          }
+
+          fn increment(&mut self) {
+              self.count += 1;
+          }
+
+          fn add(&mut self, n: u32) {
+              self.count += n;
+          }
+
+          fn get(&self) -> u32 {
+              self.count
+          }
+      }
+
+      fn main() {
+          let mut c = Counter::new();
+          c.increment();
+          c.add(2);
+          println!("count: {}", c.get());
+      }
+    hints:
+      - "`new` takes no `self`: `fn new() -> Self { Self { count: 0 } }`."
+      - "`increment` and `add` change the count, so they take `&mut self`; `get` only reads, so `&self`."
+
+  - type: exercise
+    id: ch05-ex-methods
+    exercise_dir: ch05-bank-account
+    title: "A bank account with methods"
+    difficulty: medium
+    goal: "Design a type whose methods protect its rules: the balance never goes negative and every change is recorded."
+    behavior: |
+      `pub struct Account { owner: String, balance: u64, history: Vec<i64> }` (fields private) with:
+      - `pub fn new(owner: &str) -> Self`: balance 0, empty history.
+      - `pub fn owner(&self) -> &str` and `pub fn balance(&self) -> u64`: getters.
+      - `pub fn deposit(&mut self, amount: u64)`: adds to the balance and records `+amount` in the history.
+      - `pub fn withdraw(&mut self, amount: u64) -> bool`: if the balance is enough, subtracts it, records `-amount`, and returns `true`; otherwise changes nothing and returns `false`.
+      - `pub fn history(&self) -> &[i64]`: the recorded changes in order.
+      - `pub fn close(self) -> u64`: consumes the account and returns the final balance.
+    examples:
+      - input: "new(\"Ada\"), deposit(100), withdraw(30), withdraw(500)"
+        output: "balance 70, history [100, -30], last withdraw returned false"
+    hints:
+      - "`history.push(amount as i64)` and `history.push(-(amount as i64))`."
+      - "`withdraw`: `if amount > self.balance { return false; }` first."
+      - "`history(&self) -> &[i64]` can return `&self.history`: a `&Vec<i64>` coerces to `&[i64]`."
+    rust:
+      starter: |
+        /// A bank account. The balance can never go below zero.
+        pub struct Account {
+            owner: String,
+            balance: u64,
+            history: Vec<i64>,
+        }
+
+        impl Account {
+            /// A new, empty account.
+            pub fn new(owner: &str) -> Self {
+                todo!()
+            }
+
+            pub fn owner(&self) -> &str {
+                todo!()
+            }
+
+            pub fn balance(&self) -> u64 {
+                todo!()
+            }
+
+            /// Adds money and records +amount.
+            pub fn deposit(&mut self, amount: u64) {
+                todo!()
+            }
+
+            /// Takes money out if there is enough; records -amount. Returns whether it happened.
+            pub fn withdraw(&mut self, amount: u64) -> bool {
+                todo!()
+            }
+
+            /// Every change, in order.
+            pub fn history(&self) -> &[i64] {
+                todo!()
+            }
+
+            /// Closes the account and returns what was left.
+            pub fn close(self) -> u64 {
+                todo!()
+            }
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn new_account_is_empty() {
+            let a = Account::new("Ada");
+            assert_eq!(a.owner(), "Ada");
+            assert_eq!(a.balance(), 0);
+            assert!(a.history().is_empty(), "no history yet");
+        }
+
+        #[test]
+        fn deposits_and_withdrawals() {
+            let mut a = Account::new("Ada");
+            a.deposit(100);
+            assert!(a.withdraw(30), "withdrawing 30 of 100 works");
+            assert_eq!(a.balance(), 70);
+            assert_eq!(a.history(), &[100, -30]);
+        }
+
+        #[test]
+        fn cannot_overdraw() {
+            let mut a = Account::new("Ada");
+            a.deposit(50);
+            assert!(!a.withdraw(51), "withdrawing more than the balance fails");
+            assert_eq!(a.balance(), 50, "a failed withdrawal changes nothing");
+            assert_eq!(a.history(), &[50], "a failed withdrawal is not recorded");
+            assert!(a.withdraw(50), "withdrawing exactly the balance works");
+            assert_eq!(a.balance(), 0);
+        }
+
+        #[test]
+        fn closing_returns_the_balance() {
+            let mut a = Account::new("Ada");
+            a.deposit(7);
+            assert_eq!(a.close(), 7);
+        }
+      solution: |
+        /// A bank account. The balance can never go below zero.
+        pub struct Account {
+            owner: String,
+            balance: u64,
+            history: Vec<i64>,
+        }
+
+        impl Account {
+            /// A new, empty account.
+            pub fn new(owner: &str) -> Self {
+                Self { owner: String::from(owner), balance: 0, history: Vec::new() }
+            }
+
+            pub fn owner(&self) -> &str {
+                &self.owner
+            }
+
+            pub fn balance(&self) -> u64 {
+                self.balance
+            }
+
+            /// Adds money and records +amount.
+            pub fn deposit(&mut self, amount: u64) {
+                self.balance += amount;
+                self.history.push(amount as i64);
+            }
+
+            /// Takes money out if there is enough; records -amount. Returns whether it happened.
+            pub fn withdraw(&mut self, amount: u64) -> bool {
+                if amount > self.balance {
+                    return false;
+                }
+                self.balance -= amount;
+                self.history.push(-(amount as i64));
+                true
+            }
+
+            /// Every change, in order.
+            pub fn history(&self) -> &[i64] {
+                &self.history
+            }
+
+            /// Closes the account and returns what was left.
+            pub fn close(self) -> u64 {
+                self.balance
+            }
+        }
+    solution_explain: "Because the fields are private and the only way to change the balance is through `deposit` and `withdraw`, the rule \"never negative\" is enforced in one place. Using `u64` for the balance makes a negative balance impossible to even represent; `withdraw` checks first so the subtraction cannot underflow."
+
+  - type: quiz
+    id: ch05-quiz-methods
+    title: Check yourself
+    questions:
+      - type: single
+        q: "Which first parameter should a method have if it changes a field?"
+        options: ["`self`", "`&self`", "`&mut self`", "None: methods cannot change fields"]
+        answer: 2
+        explanation: "`&mut self` borrows the instance mutably."
+      - type: single
+        q: "How do you call an associated function `new` on `Rectangle`?"
+        options: ["`Rectangle.new()`", "`Rectangle::new()`", "`new Rectangle()`", "`rect.new()`"]
+        answer: 1
+        explanation: "Associated functions are called with `Type::function`."
+      - type: single
+        q: "After `let n = f.into_name();` where `into_name` takes `self`, what happens to `f`?"
+        options: ["Nothing", "It is consumed: using it afterwards is a compile error", "It becomes empty", "It is cloned"]
+        answer: 1
+        explanation: "A `self` method takes ownership of the instance."
+      - type: truefalse
+        q: "You must write `(&mut v).push(1)` to call a `&mut self` method on a `let mut v`."
+        answer: false
+        explanation: "Automatic referencing adds the `&mut` for you: `v.push(1)`."
+      - type: single
+        q: "Inside `impl Rectangle { ... }`, what is `Self`?"
+        options: ["The current instance", "An alias for the type `Rectangle`", "A keyword for constructors", "The module"]
+        answer: 1
+        explanation: "`Self` is the type; `self` (lowercase) is the instance."
+      - type: multi
+        q: "Which are associated functions rather than methods?"
+        options: ["`fn new(w: u32) -> Self`", "`fn area(&self) -> u32`", "`fn square(size: u32) -> Self`", "`fn close(self) -> u64`"]
+        answer: [0, 2]
+        explanation: "Associated functions have no `self` parameter."
+
+  - type: summary
+    points:
+      - "Methods live in `impl Type { ... }` blocks and take `self`, `&self` or `&mut self` first."
+      - "Choose the weakest `self` that works: read with `&self`, change with `&mut self`, consume with `self`."
+      - "Automatic referencing makes `value.method()` work for every kind of `self`."
+      - "Associated functions have no `self` and are called with `Type::name`; `new` is the usual constructor."
+      - "`Self` is the type being implemented; private fields plus methods let a type protect its own rules."
+terms:
+  - term: method
+    def: "A function defined in an impl block whose first parameter is self, &self or &mut self, called with value.method()."
+  - term: impl block
+    def: "A block that defines methods and associated functions for a type."
+  - term: associated function
+    def: "A function in an impl block without a self parameter, called with Type::name, like String::from."
+  - term: Self
+    def: "Inside an impl block, an alias for the type being implemented."
+  - term: getter
+    def: "A method that returns a field's value, often so the field itself can stay private."

@@ -1,0 +1,229 @@
+{
+  "title": "Transferring data between threads with message passing",
+  "summary": "Channels with mpsc, send and recv, ownership transfer through a channel, receiving with a for loop, multiple producers by cloning the sender, sync_channel and backpressure, and pipelines.",
+  "minutes": 30,
+  "source": {
+    "chapter": "ch16",
+    "sections": [
+      "TRPL 16.2 Using Message Passing to Transfer Data Between Threads",
+      "TRPL 16.2 Channels and Ownership Transference",
+      "TRPL 16.2 Sending Multiple Values and Seeing the Receiver Waiting",
+      "TRPL 16.2 Creating Multiple Producers by Cloning the Transmitter",
+      "PR ch19 Channels",
+      "PR ch19 Sending Values",
+      "PR ch19 Receiving Values",
+      "PR ch19 Running the Pipeline",
+      "PR ch19 Channel Features and Performance",
+      "RiA 10.3 Channels",
+      "CR Concurrency Morning Channels",
+      "CR Concurrency Morning Unbounded Channels",
+      "CR Concurrency Morning Bounded Channels"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "A popular way to make threads cooperate is **message passing**: threads send each other data instead of sharing memory. The Go documentation's slogan sums it up: \"Do not communicate by sharing memory; instead, share memory by communicating.\"\n\nRust's standard library provides **channels**. A channel has two halves: a **transmitter** (`Sender`) and a **receiver** (`Receiver`). One part of your code sends values into the transmitter; another takes them out of the receiver, in the order they were sent, like rubber ducks floating down a stream.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::sync::mpsc;\nuse std::thread;\n\nfn main() {\n    let (tx, rx) = mpsc::channel();\n\n    thread::spawn(move || {\n        let val = String::from(\"hi\");\n        tx.send(val).unwrap();\n    });\n\n    let received = rx.recv().unwrap();\n    println!(\"Got: {received}\");\n}\n",
+      "output": "Got: hi",
+      "explain": "`mpsc` means **multiple producer, single consumer**: many senders, one receiver. `send` returns `Err` if the receiver is gone. `recv` **blocks** until a value arrives, and returns `Err` when every sender has been dropped and nothing more can come. `try_recv` returns immediately instead, for a thread with other work to do."
+    },
+    {
+      "type": "text",
+      "title": "Sending moves ownership",
+      "md": "`send` takes ownership of the value. After sending, the spawned thread can no longer use it, which rules out a whole class of bugs: the receiving thread could be modifying or dropping it.\n\n```rust\ntx.send(val).unwrap();\nprintln!(\"val is {val}\"); // error[E0382]: borrow of moved value: `val`\n```\n"
+    },
+    {
+      "type": "text",
+      "title": "Receiving as an iterator",
+      "md": "The receiver can be used as an **iterator**: a `for` loop waits for each value and ends when the channel is closed, which happens when all senders are dropped.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::sync::mpsc;\nuse std::thread;\nuse std::time::Duration;\n\nfn main() {\n    let (tx, rx) = mpsc::channel();\n\n    thread::spawn(move || {\n        let vals = vec![\n            String::from(\"hi\"),\n            String::from(\"from\"),\n            String::from(\"the\"),\n            String::from(\"thread\"),\n        ];\n        for val in vals {\n            tx.send(val).unwrap();\n            thread::sleep(Duration::from_millis(50));\n        }\n        // tx is dropped here, closing the channel\n    });\n\n    for received in rx {\n        println!(\"Got: {received}\");\n    }\n    println!(\"channel closed\");\n}\n",
+      "output": "Got: hi\nGot: from\nGot: the\nGot: thread\nchannel closed\n"
+    },
+    {
+      "type": "text",
+      "title": "Multiple producers",
+      "md": "Clone the transmitter to give each producer its own. The receiver gets everything, interleaved in whatever order the threads send:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::sync::mpsc;\nuse std::thread;\n\nfn main() {\n    let (tx, rx) = mpsc::channel();\n\n    for id in 0..3 {\n        let tx = tx.clone();\n        thread::spawn(move || {\n            for n in 0..3 {\n                tx.send(id * 10 + n).unwrap();\n            }\n        });\n    }\n    drop(tx); // drop the original, or the for loop below never ends\n\n    let mut all: Vec<i32> = rx.iter().collect();\n    all.sort();\n    println!(\"{all:?}\");\n}\n",
+      "output": "[0, 1, 2, 10, 11, 12, 20, 21, 22]",
+      "explain": "The arrival order varies, so the example sorts before printing. Forgetting `drop(tx)` is a classic bug: the original sender stays alive in `main`, the channel never closes, and the loop waits forever."
+    },
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Bounded channels and backpressure",
+      "md": "`mpsc::channel()` is **unbounded**: a fast producer can fill memory if the consumer is slow. `mpsc::sync_channel(n)` holds at most `n` messages; `send` blocks when it is full. *Programming Rust* calls this **backpressure**: the slow stage of a pipeline automatically slows the fast one. `sync_channel(0)` is a rendezvous: each send waits for a matching receive."
+    },
+    {
+      "type": "stepper",
+      "title": "A pipeline (Programming Rust)",
+      "steps": [
+        {
+          "title": "Stages connected by channels",
+          "md": "*Programming Rust* builds a search index in stages: read files → split into words → build per-file indexes → merge. Each stage is a thread that receives from the previous channel and sends to the next.",
+          "code": "reader ──tx1/rx1──► tokenizer ──tx2/rx2──► indexer ──► merge\n"
+        },
+        {
+          "title": "Each stage is a loop over its receiver",
+          "md": "A stage owns its receiver and the next sender. When the upstream sender closes, `for x in rx` ends, the stage drops its own sender, and the close propagates down the pipeline.",
+          "code": "thread::spawn(move || {\n    for text in rx1 {\n        for word in text.split_whitespace() {\n            tx2.send(word.to_lowercase()).unwrap();\n        }\n    }\n});\n"
+        },
+        {
+          "title": "All stages run at once",
+          "md": "While the reader loads file 3, the tokenizer works on file 2 and the indexer on file 1. On a multi-core machine the throughput is set by the slowest stage."
+        }
+      ]
+    },
+    {
+      "type": "playground",
+      "id": "ch16-play-pipeline",
+      "title": "A two-stage pipeline",
+      "lang": "rust",
+      "md": "Stage 1 sends the numbers 1 to 10. Build stage 2: a thread that receives from the first channel, keeps only even numbers, squares them, and sends them on. `main` sums what comes out.\n",
+      "task": "Print `sum of even squares: 220`.",
+      "code": "use std::sync::mpsc;\nuse std::thread;\n\nfn main() {\n    let (tx1, rx1) = mpsc::channel();\n    let (tx2, rx2) = mpsc::channel::<u32>();\n\n    thread::spawn(move || {\n        for n in 1..=10u32 {\n            let _ = tx1.send(n); // ignore the error if stage 2 is gone\n        }\n    });\n\n    // TODO: replace these two lines with stage 2, reading rx1 and sending to tx2\n    drop(rx1);\n    drop(tx2);\n\n    let total: u32 = rx2.iter().sum();\n    println!(\"sum of even squares: {total}\");\n}\n",
+      "expected_output": "sum of even squares: 220",
+      "hints": [
+        "`thread::spawn(move || { for n in rx1 { if n % 2 == 0 { tx2.send(n * n).unwrap(); } } });`",
+        "The starter drops `tx2` right away so it does not hang. If you remove those lines without moving `tx2` into a thread, `rx2.iter()` waits forever, because a sender is still alive."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch16-ex-channels",
+      "exercise_dir": "ch16-channels",
+      "title": "A worker pool with channels",
+      "difficulty": "hard",
+      "goal": "Fan work out to several threads and collect results through a channel, preserving order.",
+      "behavior": "- `pub fn fan_out(jobs: Vec<u64>, workers: usize, f: fn(u64) -> u64) -> Vec<u64>`: start `workers` threads (at least 1). Distribute the jobs round-robin (job `i` goes to worker `i % workers`), each worker sends `(index, f(job))` for its jobs into one shared result channel. Return the results **in job order**.\n- `pub fn first_match(candidates: Vec<u64>, test: fn(u64) -> bool) -> Option<u64>`: test every candidate on its own thread, each sending the candidate if it passes; return the **smallest** passing candidate, or `None`.\n",
+      "examples": [
+        {
+          "input": "fan_out(vec![1, 2, 3, 4], 2, |x| x * x)",
+          "output": "[1, 4, 9, 16]"
+        },
+        {
+          "input": "first_match(vec![9, 4, 7, 2], |x| x % 2 == 0)",
+          "output": "Some(2)"
+        }
+      ],
+      "hints": [
+        "Split the jobs: `let mut buckets: Vec<Vec<(usize, u64)>> = vec![Vec::new(); w];` and push `(i, job)` into `buckets[i % w]`.",
+        "For each bucket: `let tx = tx.clone(); thread::spawn(move || for (i, job) in bucket { tx.send((i, f(job))).unwrap(); });`",
+        "`drop(tx)` before reading, collect `(i, v)` pairs, sort by `i`, keep the values.",
+        "`first_match`: collect what arrives and take `.min()`."
+      ],
+      "solution_explain": "Sending the index with each result lets the collector restore the original order, whatever order the workers finish in. Both functions drop the original `tx` so the receiver's iterator ends once every worker is done."
+    },
+    {
+      "type": "quiz",
+      "id": "ch16-quiz-channels",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "What does mpsc stand for?",
+          "options": [
+            "many processes, single core",
+            "multiple producer, single consumer",
+            "message passing, safe channel",
+            "main process, spawned child"
+          ],
+          "answer": 1,
+          "explanation": "Clone the Sender for more producers."
+        },
+        {
+          "type": "single",
+          "q": "What happens to a value after `tx.send(val)`?",
+          "options": [
+            "It is copied",
+            "Its ownership moves into the channel; the sender cannot use it",
+            "It is borrowed until received",
+            "It is dropped"
+          ],
+          "answer": 1,
+          "explanation": "No shared access, no data race."
+        },
+        {
+          "type": "single",
+          "q": "When does `for msg in rx` stop?",
+          "options": [
+            "After one message",
+            "When every Sender has been dropped and the channel is empty",
+            "After 1 second",
+            "Never"
+          ],
+          "answer": 1,
+          "explanation": "That is why you drop the original tx."
+        },
+        {
+          "type": "single",
+          "q": "What does `sync_channel(2)` do when it already holds 2 messages and a thread calls send?",
+          "options": [
+            "Drops the oldest",
+            "Blocks until there is room",
+            "Returns an error",
+            "Grows the buffer"
+          ],
+          "answer": 1,
+          "explanation": "Backpressure."
+        },
+        {
+          "type": "single",
+          "q": "Which receive call never blocks?",
+          "options": [
+            "`recv`",
+            "`try_recv`",
+            "`iter`",
+            "`recv_timeout(Duration::MAX)`"
+          ],
+          "answer": 1,
+          "explanation": "It returns Err(Empty) when nothing is waiting."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "`mpsc::channel()` returns a `(Sender, Receiver)` pair; `send` moves values in, `recv` waits for them.",
+        "Iterating the receiver ends when all senders are dropped.",
+        "Clone the sender for multiple producers; drop the original when done.",
+        "`sync_channel(n)` bounds the queue and provides backpressure.",
+        "Channels connect pipeline stages that run in parallel."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "channel",
+      "def": "A queue connecting threads, with a sending half and a receiving half."
+    },
+    {
+      "term": "message passing",
+      "def": "Threads cooperating by sending data to each other rather than sharing memory."
+    },
+    {
+      "term": "mpsc",
+      "def": "Multiple producer, single consumer: Rust's standard channel type."
+    },
+    {
+      "term": "backpressure",
+      "def": "A bounded queue making fast producers wait for slow consumers."
+    },
+    {
+      "term": "pipeline",
+      "def": "Stages running in parallel, each passing results to the next through a channel."
+    }
+  ]
+}

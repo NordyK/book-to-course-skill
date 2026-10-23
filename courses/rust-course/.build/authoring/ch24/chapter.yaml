@@ -1,0 +1,8 @@
+title: "Going Low-Level"
+summary: "Rust below the standard library: calling C and being called from C through the foreign function interface, freestanding no_std programs and a tiny kernel that writes straight to the screen's memory, bare-metal microcontrollers, and how interrupts, exceptions and Unix signals reach a running program."
+goals:
+  - Match C types and struct layouts with core::ffi and repr(C), and pass strings with CString and CStr
+  - Call C functions, hand C a Rust callback, and wrap a C handle in a safe RAII type
+  - Export Rust functions to C without letting panics cross the boundary
+  - Explain core, alloc and std, and write no_std code against core::fmt::Write and memory-mapped buffers
+  - Describe interrupts, exceptions and signals, and handle a Unix signal with an async-signal-safe handler

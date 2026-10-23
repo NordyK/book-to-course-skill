@@ -1,0 +1,256 @@
+{
+  "title": "Variables, constants and shadowing",
+  "summary": "Why Rust makes variables immutable by default, when to use mut, constants or shadowing, and how they differ.",
+  "minutes": 18,
+  "source": {
+    "chapter": "ch03",
+    "sections": [
+      "TRPL 3.1 Variables and Mutability",
+      "TRPL 3.1 Constants",
+      "TRPL 3.1 Shadowing",
+      "CR Variables",
+      "CR Type Inference"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "You already met `let` and `let mut` in the guessing game. This lesson explains *why* Rust works this way and adds two relatives: **constants** and **shadowing**. Knowing which of the four to reach for is one of the first habits of a Rust programmer.\n"
+    },
+    {
+      "type": "text",
+      "title": "Immutable by default",
+      "md": "A variable made with `let` cannot be changed after it gets its value. Try to assign to it again and the program does not compile:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/main.rs",
+      "code": "fn main() {\n    let x = 5;\n    println!(\"The value of x is: {x}\");\n    x = 6;\n    println!(\"The value of x is: {x}\");\n}\n",
+      "output": "error[E0384]: cannot assign twice to immutable variable `x`\n --> src/main.rs:4:5\n  |\n2 |     let x = 5;\n  |         - first assignment to `x`\n3 |     println!(\"The value of x is: {x}\");\n4 |     x = 6;\n  |     ^^^^^ cannot assign twice to immutable variable\n  |\nhelp: consider making this binding mutable\n  |\n2 |     let mut x = 5;\n  |         +++\n",
+      "output_label": "Compiler output",
+      "explain": "Why would a language forbid this? Picture a large program where one part relies on a value staying the same and another part quietly changes it. That kind of bug is hard to track down because the change happens far away from where things go wrong. When a value is immutable, you *know* it never changes; the compiler guarantees it. When you need change, you say so with `mut`, which also tells the next reader *this value will change*.\n"
+    },
+    {
+      "type": "callout",
+      "kind": "analogy",
+      "title": "Ink and pencil",
+      "md": "Think of `let` as writing in ink and `let mut` as writing in pencil. Most notes are fine in ink. You choose pencil only for the things you plan to erase, and anyone reading your page can see which is which."
+    },
+    {
+      "type": "text",
+      "title": "Constants",
+      "md": "A **constant** is a name for a value that never changes, written with `const`:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "const THREE_HOURS_IN_SECONDS: u32 = 60 * 60 * 3;\n",
+      "explain": "Constants differ from immutable variables in four ways:\n\n- They are always immutable; `mut` is not allowed.\n- Their **type must be written** (`: u32`); Rust does not infer it.\n- They can be declared anywhere, including outside every function, so the whole file can use them.\n- Their value must be computable **at compile time**. `60 * 60 * 3` is fine; a value read from the keyboard is not.\n\nBy convention constants are written in `UPPER_SNAKE_CASE`. Naming a value like `MAX_POINTS` or `THREE_HOURS_IN_SECONDS` documents what it means, and if it ever changes you edit one line.\n"
+    },
+    {
+      "type": "text",
+      "title": "Shadowing",
+      "md": "You saw shadowing in the guessing game: a new `let` with the same name creates a **new variable** that hides the old one. Shadowing also respects **scope**: the region of code, usually a block in `{ }`, where a name is valid. Step through this program and predict each value before reading the next step.\n"
+    },
+    {
+      "type": "stepper",
+      "title": "Shadowing, step by step",
+      "lang": "rust",
+      "steps": [
+        {
+          "title": "x is 5",
+          "md": "The first `x` is bound to 5.",
+          "code": "fn main() {\n    let x = 5;\n}\n",
+          "highlight": [
+            2
+          ]
+        },
+        {
+          "title": "A new x, equal to 6",
+          "md": "`let x = x + 1;` reads the old `x` (5), adds 1, and binds the result to a **new** variable also called `x`. The old one is now hidden.",
+          "code": "fn main() {\n    let x = 5;\n    let x = x + 1;\n}\n",
+          "highlight": [
+            3
+          ]
+        },
+        {
+          "title": "Inside the block, x is 12",
+          "md": "The curly brackets start an inner scope. Inside it, yet another `x` shadows the outer one: 6 × 2 = 12.",
+          "code": "fn main() {\n    let x = 5;\n    let x = x + 1;\n    {\n        let x = x * 2;\n        println!(\"The value of x in the inner scope is: {x}\");\n    }\n}\n",
+          "highlight": [
+            5,
+            6
+          ],
+          "output": "The value of x in the inner scope is: 12"
+        },
+        {
+          "title": "After the block, x is 6 again",
+          "md": "When the inner scope ends, its `x` disappears and the outer `x` (6) is visible again. Nothing was overwritten; each `x` was a separate variable.",
+          "code": "fn main() {\n    let x = 5;\n    let x = x + 1;\n    {\n        let x = x * 2;\n        println!(\"The value of x in the inner scope is: {x}\");\n    }\n    println!(\"The value of x is: {x}\");\n}\n",
+          "highlight": [
+            8
+          ],
+          "output": "The value of x in the inner scope is: 12\nThe value of x is: 6\n"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Shadowing versus mut",
+      "headers": [
+        "",
+        "`let mut x`",
+        "shadowing (`let x` again)"
+      ],
+      "rows": [
+        [
+          "Changes the existing variable?",
+          "Yes",
+          "No, makes a new one"
+        ],
+        [
+          "Can change the type?",
+          "No",
+          "Yes"
+        ],
+        [
+          "Result after the change",
+          "Mutable",
+          "Immutable again (unless the new `let` says `mut`)"
+        ],
+        [
+          "Typical use",
+          "A counter, a String you append to",
+          "Converting a value: text to number, raw to cleaned"
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "title": "Shadowing can change the type; mut cannot",
+      "code": "let spaces = \"   \";        // text\nlet spaces = spaces.len();  // now a number: 3   (fine)\n\nlet mut letters = \"   \";\nletters = letters.len();    // error[E0308]: mismatched types\n",
+      "highlight": [
+        2,
+        5
+      ]
+    },
+    {
+      "type": "callout",
+      "kind": "note",
+      "title": "Type inference",
+      "md": "In `let x = 5;` you did not write a type, yet `x` has one: `i32`. Rust **infers** types from how values are used, and checks them at compile time. You write types where the compiler cannot work them out (like `parse`), at function boundaries (next lessons), and wherever it makes the code clearer.\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch03-play-shadow",
+      "title": "Predict, then run",
+      "lang": "rust",
+      "md": "Write down the four numbers you expect this to print. Then run it and compare.",
+      "code": "fn main() {\n    let a = 2;\n    let a = a * 10;\n    let mut b = a;\n    {\n        let a = 7;\n        b += a;\n        println!(\"{a} {b}\");\n    }\n    println!(\"{a} {b}\");\n}\n",
+      "hints": [
+        "Inside the block, `a` is 7, and `b` started at 20.",
+        "After the block, the outer `a` (20) is back, but `b` was *changed*, not shadowed, so it keeps 27."
+      ]
+    },
+    {
+      "type": "playground",
+      "id": "ch03-play-const",
+      "title": "Name the magic number",
+      "lang": "rust",
+      "task": "Add two constants above `main`, `SECONDS_PER_MINUTE` and `MINUTES_PER_HOUR` (both `u32`, both 60). Use them instead of the bare `60`, then add a second line that prints the seconds in 2 hours: `2 hours = 7200 seconds`.",
+      "code": "fn main() {\n    let minutes: u32 = 5;\n    let seconds = minutes * 60;\n    println!(\"{minutes} minutes = {seconds} seconds\");\n}\n",
+      "expected_output": "5 minutes = 300 seconds\n2 hours = 7200 seconds\n",
+      "hints": [
+        "`const SECONDS_PER_MINUTE: u32 = 60;` goes on its own line above `fn main()`.",
+        "Seconds in an hour are `MINUTES_PER_HOUR * SECONDS_PER_MINUTE`. A second `let seconds` can shadow the first.",
+        "The point is readability: `hours * MINUTES_PER_HOUR * SECONDS_PER_MINUTE` says what `2 * 60 * 60` only implies."
+      ]
+    },
+    {
+      "type": "quiz",
+      "id": "ch03-quiz-variables",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "multi",
+          "q": "Which are true about `const`?",
+          "options": [
+            "The type must be written",
+            "It can be declared outside any function",
+            "It can be made mutable with `mut`",
+            "Its value can come from user input",
+            "By convention it is written in UPPER_SNAKE_CASE"
+          ],
+          "answer": [
+            0,
+            1,
+            4
+          ],
+          "explanation": "Constants are always immutable, need a type, can live at the top of a file, and must be computable at compile time."
+        },
+        {
+          "type": "single",
+          "q": "What does this print?",
+          "code": "let x = 1;\n{\n    let x = x + 1;\n    let x = x * 10;\n}\nprintln!(\"{x}\");\n",
+          "lang": "rust",
+          "options": [
+            "1",
+            "2",
+            "20",
+            "It does not compile"
+          ],
+          "answer": 0,
+          "explanation": "Both inner `x` variables disappear at the end of the block. The outer `x` is still 1."
+        },
+        {
+          "type": "single",
+          "q": "Which compiles?",
+          "options": [
+            "`let mut n = \"5\"; n = n.len();`",
+            "`let n = \"5\"; let n = n.len();`",
+            "`const N = 5;`",
+            "`let n = 5; n += 1;`"
+          ],
+          "answer": 1,
+          "explanation": "Shadowing may change the type. `mut` may not; a `const` needs a type; and `n += 1` needs `mut`."
+        },
+        {
+          "type": "truefalse",
+          "q": "Making variables immutable by default helps because the compiler guarantees a value you rely on is not changed elsewhere.",
+          "answer": true,
+          "explanation": "That is exactly the bug class it removes."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "`let` variables are immutable; add `mut` only when the value must change.",
+        "`const NAME: Type = value;` declares a compile-time constant; type required, UPPER_SNAKE_CASE, can be global.",
+        "Shadowing (`let x = ...` again) creates a new variable; it can change the type, and it ends with its scope.",
+        "A scope is a block in `{ }`; names declared inside vanish at its end.",
+        "Rust infers most types and checks all of them at compile time."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "immutable",
+      "def": "Cannot be changed after it is given a value. Rust variables are immutable unless declared with `mut`."
+    },
+    {
+      "term": "constant",
+      "def": "A named value fixed at compile time, declared with `const` and an explicit type."
+    },
+    {
+      "term": "scope",
+      "def": "The part of the program, usually a `{ }` block, in which a name is valid."
+    },
+    {
+      "term": "type inference",
+      "def": "The compiler working out a variable's type from how it is used, so you need not write it."
+    }
+  ]
+}

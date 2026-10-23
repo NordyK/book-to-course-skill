@@ -1,0 +1,232 @@
+{
+  "title": "Fixed-point numbers and random floats",
+  "summary": "The Q7 fixed-point format in one byte with From conversions to and from f32 and f64, its precision and saturation, then turning random bytes into floats between 0 and 1 by division and by writing bits straight into the mantissa.",
+  "minutes": 30,
+  "source": {
+    "chapter": "ch21",
+    "sections": [
+      "RiA 5.3.6 Representing decimal numbers in a single byte with a fixed-point number format",
+      "RiA 5.4 Generating f32 values between 0 and 1 from random bytes"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Knowing the bit layout lets you invent formats of your own. *Rust in Action* compresses numbers between -1 and 1 into a **single byte**, useful for machine-learning weights or audio samples where memory matters more than precision.\n\nA **fixed-point** number keeps the binary point in a fixed place, unlike a float, whose point \"floats\" with the exponent. The **Q format**, created by Texas Instruments for embedded processors, names how many bits sit after the point. **Q7** uses 7 fraction bits plus a sign bit: exactly one `i8`. The byte's integer value `n` stands for `n / 128`:\n"
+    },
+    {
+      "type": "table",
+      "title": "Some Q7 values",
+      "headers": [
+        "i8 inside",
+        "bits",
+        "value"
+      ],
+      "rows": [
+        [
+          "127",
+          "`0111_1111`",
+          "0.9921875 (the largest)"
+        ],
+        [
+          "64",
+          "`0100_0000`",
+          "0.5"
+        ],
+        [
+          "1",
+          "`0000_0001`",
+          "0.0078125 (the step size, 2^-7)"
+        ],
+        [
+          "0",
+          "`0000_0000`",
+          "0.0"
+        ],
+        [
+          "-64",
+          "`1100_0000`",
+          "-0.5"
+        ],
+        [
+          "-128",
+          "`1000_0000`",
+          "-1.0 (the smallest)"
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "#[derive(Debug, Clone, Copy, PartialEq, Eq)]\npub struct Q7(i8);\n\nimpl From<f64> for Q7 {\n    fn from(n: f64) -> Self {\n        if n >= 1.0 {\n            Q7(127)\n        } else if n <= -1.0 {\n            Q7(-128)\n        } else {\n            Q7((n * 128.0) as i8)\n        }\n    }\n}\n\nimpl From<Q7> for f64 {\n    fn from(n: Q7) -> f64 {\n        (n.0 as f64) * 2f64.powf(-7.0)\n    }\n}\n\nimpl From<f32> for Q7 {\n    fn from(n: f32) -> Self {\n        Q7::from(n as f64)\n    }\n}\n\nimpl From<Q7> for f32 {\n    fn from(n: Q7) -> f32 {\n        f64::from(n) as f32\n    }\n}\n\nfn main() {\n    let q1 = Q7::from(0.7_f32);\n    let q2 = Q7::from(-0.4);\n    let q3 = Q7::from(123.0);\n    println!(\"{q1:?} {q2:?} {q3:?}\");\n    println!(\"{} {}\", f32::from(q1), f64::from(q2));\n    println!(\"{}\", std::mem::size_of::<Q7>());\n}\n",
+      "output": "Q7(89) Q7(-51) Q7(127)\n0.6953125 -0.3984375\n1\n",
+      "explain": "Out-of-range inputs are clamped to the ends of the range. `as i8` truncates toward zero, so 0.7 × 128 = 89.6 becomes 89 and comes back as 0.6953125: an error of about 0.005, the price of fitting in one byte. The conversions to `f32` reuse the `f64` ones; `f32` to `f64` is always exact."
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "title": "From and Into",
+      "md": "Implementing `From<f64> for Q7` also gives you `Into<Q7> for f64` for free, so `let q: Q7 = 0.5.into();` works. Implement `From`, never `Into` directly."
+    },
+    {
+      "type": "text",
+      "title": "Random bytes to probabilities",
+      "md": "Random number generators produce **bytes**. Often you need a float in [0, 1): a probability. The obvious way divides:\n\n```rust\nfn mock_rand(n: u8) -> f32 {\n    (n as f32) / 255.0\n}\n```\n\nDivision is slow compared with bit operations. *Rust in Action* shows a trick: fix the exponent so the float lies in [0.5, 1), then put the random bits straight into the top of the mantissa. Exponent -1 is stored as 126 (`0b01111110`). Every mantissa then gives 0.5 × (1 + fraction), and scaling `2 × (m - 0.5)` maps the range to [0, 1):\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn mock_rand(n: u8) -> f32 {\n    let base: u32 = 0b0_01111110_00000000000000000000000;\n    let large_n = (n as u32) << 15;\n    let f32_bits = base | large_n;\n    let m = f32::from_bits(f32_bits);\n    2.0 * (m - 0.5)\n}\n\nfn main() {\n    println!(\"max of input range: {:08b} -> {:?}\", 0xff, mock_rand(0xff));\n    println!(\"mid of input range: {:08b} -> {:?}\", 0x77, mock_rand(0x77));\n    println!(\"min of input range: {:08b} -> {:?}\", 0x00, mock_rand(0x00));\n}\n",
+      "output": "max of input range: 11111111 -> 0.99609375\nmid of input range: 01110111 -> 0.46484375\nmin of input range: 00000000 -> 0.0\n",
+      "explain": "`<< 15` moves the 8 random bits into mantissa bits 22 to 15, the most significant ones. The result is always `n / 256`: evenly spaced, never reaching 1.0."
+    },
+    {
+      "type": "stepper",
+      "title": "What mock_rand(0x80) computes",
+      "steps": [
+        {
+          "title": "Place the byte",
+          "md": "`0x80 << 15` puts a single 1 at bit 22, the mantissa bit worth 2^-1.",
+          "code": "0_01111110_10000000000000000000000\n"
+        },
+        {
+          "title": "Read it as a float",
+          "md": "Exponent 126 - 127 = -1, mantissa 1 + 0.5 = 1.5, so m = 1.5 × 2^-1 = 0.75."
+        },
+        {
+          "title": "Rescale",
+          "md": "2 × (0.75 - 0.5) = 0.5, which is 128 / 256."
+        }
+      ]
+    },
+    {
+      "type": "playground",
+      "id": "ch21-play-q7",
+      "title": "Arithmetic on Q7",
+      "lang": "rust",
+      "md": "Add `impl std::ops::Add for Q7` (use `saturating_add` on the inner `i8` so 0.75 + 0.75 stops at the maximum instead of wrapping into a negative number) and `impl std::ops::Mul for Q7`: multiply the two `i8`s as `i16`, then shift right by 7 to put the point back.\n",
+      "task": "Print `0.75`, `0.9921875` and `0.25`.",
+      "code": "#[derive(Debug, Clone, Copy, PartialEq, Eq)]\nstruct Q7(i8);\n\nimpl From<f64> for Q7 {\n    fn from(n: f64) -> Self {\n        if n >= 1.0 { Q7(127) } else if n <= -1.0 { Q7(-128) } else { Q7((n * 128.0) as i8) }\n    }\n}\n\nimpl From<Q7> for f64 {\n    fn from(n: Q7) -> f64 {\n        n.0 as f64 / 128.0\n    }\n}\n\n// TODO: impl Add and Mul\n\nfn main() {\n    let half = Q7::from(0.5);\n    let quarter = Q7::from(0.25);\n    let three_q = Q7::from(0.75);\n    // println!(\"{}\", f64::from(half + quarter));\n    // println!(\"{}\", f64::from(three_q + three_q));\n    // println!(\"{}\", f64::from(half * half));\n    println!(\"{:?}\", (half, quarter, three_q));\n}\n",
+      "expected_output": "0.75\n0.9921875\n0.25\n",
+      "hints": [
+        "Adding two Q7 values is adding the raw integers: both are counted in units of 1/128.",
+        "For multiplication, (a/128) × (b/128) = (a × b / 128) / 128, so compute `a * b` in `i16` and shift right by 7."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch21-ex-fixed",
+      "exercise_dir": "ch21-fixed",
+      "title": "A Q8.8 fixed-point type",
+      "difficulty": "hard",
+      "goal": "Design a fixed-point format in a 16-bit integer with rounding conversions, arithmetic and formatting.",
+      "behavior": "`#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)] pub struct Q8_8(pub i16);` stores `value × 256` (8 integer bits including the sign, 8 fraction bits): range -128.0 to 127.99609375.\n- `impl From<f64> for Q8_8`: **round** to the nearest step (`(n * 256.0).round()`), clamping to the range.\n- `impl From<Q8_8> for f64`.\n- `impl Add`, `Sub` (both saturating), `Mul` (multiply in `i32`, shift right by 8, clamp to `i16`), `Neg` (saturating: `-(-128.0)` becomes the maximum).\n- `impl std::fmt::Display` printing the value with exactly 4 decimals, e.g. `\"1.5000\"`, `\"-0.2500\"`.\n- `pub fn rand_unit(byte: u8) -> f32`: *Rust in Action*'s mock_rand trick (fixed exponent, byte in the top mantissa bits).\n",
+      "examples": [
+        {
+          "input": "Q8_8::from(1.5)",
+          "output": "Q8_8(384)"
+        },
+        {
+          "input": "(Q8_8::from(2.0) * Q8_8::from(-1.25)).to_string()",
+          "output": "\"-2.5000\""
+        }
+      ],
+      "hints": [
+        "`(n * 256.0).round().clamp(i16::MIN as f64, i16::MAX as f64) as i16`.",
+        "`Mul`: `let p = (self.0 as i32 * rhs.0 as i32) >> 8; Q8_8(p.clamp(i16::MIN as i32, i16::MAX as i32) as i16)`.",
+        "`Display`: `write!(f, \"{:.4}\", f64::from(*self))`."
+      ],
+      "solution_explain": "Every operation works on the raw `i16`, counted in units of 1/256. Addition needs no conversion; multiplication doubles the scale, so one `>> 8` restores it. Doing the product in `i32` avoids overflow before clamping. Rounding on input halves the worst-case error compared with truncation."
+    },
+    {
+      "type": "quiz",
+      "id": "ch21-quiz-fixed",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "What value does the Q7 byte 32 represent?",
+          "options": [
+            "32",
+            "0.25",
+            "0.5",
+            "0.125"
+          ],
+          "answer": 1,
+          "explanation": "32 / 128."
+        },
+        {
+          "type": "single",
+          "q": "What is the main difference between fixed-point and floating-point?",
+          "options": [
+            "Fixed-point has no sign",
+            "Fixed-point keeps the binary point in one place; floats move it with an exponent",
+            "Floats are always exact",
+            "There is none"
+          ],
+          "answer": 1,
+          "explanation": "Fixed-point trades range for simplicity."
+        },
+        {
+          "type": "single",
+          "q": "Why does mock_rand shift the byte left by 15?",
+          "options": [
+            "To multiply by 15",
+            "To put the 8 random bits into the top of the 23-bit mantissa",
+            "To set the sign",
+            "To clear the exponent"
+          ],
+          "answer": 1,
+          "explanation": "23 - 8 = 15."
+        },
+        {
+          "type": "single",
+          "q": "What range does mock_rand produce?",
+          "options": [
+            "[0, 1]",
+            "[0, 1) in steps of 1/256",
+            "[-1, 1]",
+            "[0.5, 1)"
+          ],
+          "answer": 1,
+          "explanation": "Never quite 1.0."
+        },
+        {
+          "type": "single",
+          "q": "Multiplying two Q7 raw values a and b, how do you get the Q7 result?",
+          "options": [
+            "a * b",
+            "(a * b) >> 7, computed in a wider type",
+            "a + b",
+            "(a * b) << 7"
+          ],
+          "answer": 1,
+          "explanation": "The product has 14 fraction bits."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Fixed-point numbers store an integer count of fixed steps; Q7 uses steps of 1/128 in an i8.",
+        "Implement From for conversions, clamping out-of-range input.",
+        "Add raw values directly; multiply in a wider type and shift to rescale.",
+        "Random bytes become [0, 1) floats by fixing the exponent and filling the mantissa."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "fixed-point",
+      "def": "A number format with a fixed number of bits after the binary point."
+    },
+    {
+      "term": "Q format",
+      "def": "A naming scheme for fixed-point formats; Qn has n fraction bits."
+    },
+    {
+      "term": "saturating arithmetic",
+      "def": "Arithmetic that clamps to the type's minimum or maximum instead of wrapping."
+    }
+  ]
+}

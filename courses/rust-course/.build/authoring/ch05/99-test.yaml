@@ -1,0 +1,74 @@
+title: "Chapter test: Structs"
+kind: test
+summary: Ten questions on defining structs, update syntax, Debug printing, methods and associated functions. You need 70% to pass; you can retry and your best score is kept.
+blocks:
+  - type: quiz
+    id: ch05-test
+    pass_score: 0.7
+    questions:
+      - type: single
+        q: "Which defines a struct correctly?"
+        options: ["`struct Point { x: f64; y: f64 }`", "`struct Point { x: f64, y: f64 }`", "`struct Point(x: f64, y: f64)`", "`struct point { f64 x, f64 y }`"]
+        answer: 1
+        explanation: "Fields are `name: Type`, separated by commas."
+      - type: single
+        q: "What does this print?"
+        code: |
+          struct P { x: i32, y: i32 }
+          fn main() {
+              let a = P { x: 1, y: 2 };
+              let b = P { y: 9, ..a };
+              println!("{} {} {} {}", a.x, a.y, b.x, b.y);
+          }
+        lang: rust
+        options: ["1 2 1 9", "1 9 1 9", "It does not compile: a was moved", "9 2 1 9"]
+        answer: 0
+        explanation: "The fields are `i32`, which is `Copy`, so `a` stays usable; `b` takes `x` from `a` and its own `y`."
+      - type: single
+        q: "Why might you write `struct Celsius(f64);` instead of using `f64`?"
+        options: ["It is faster", "So the compiler stops you passing a Fahrenheit value where Celsius is expected", "`f64` cannot be printed", "To allocate on the heap"]
+        answer: 1
+        explanation: "A newtype gives a value its own type, checked by the compiler, at no run-time cost."
+      - type: fill
+        q: "To print a struct with `{:?}`, put `#[derive(_____)]` above it."
+        answer: ["Debug"]
+        explanation: "Deriving `Debug` generates the formatter."
+      - type: single
+        q: "Where does `dbg!` print?"
+        options: ["Standard output", "Standard error", "A log file", "Nowhere in release builds"]
+        answer: 1
+        explanation: "To stderr, so it does not mix with the program's normal output."
+      - type: single
+        q: "Which method signature fits a method that returns the length of a list without changing it?"
+        options: ["`fn len(self) -> usize`", "`fn len(&self) -> usize`", "`fn len(&mut self) -> usize`", "`fn len() -> usize`"]
+        answer: 1
+        explanation: "Reading needs only `&self`."
+      - type: single
+        q: "Does this compile?"
+        code: |
+          struct S { n: u32 }
+          impl S {
+              fn bump(&mut self) { self.n += 1; }
+          }
+          fn main() {
+              let s = S { n: 0 };
+              s.bump();
+          }
+        lang: rust
+        options: ["Yes", "No: `s` must be declared `let mut`", "No: methods cannot change fields", "No: `bump` must return a value"]
+        answer: 1
+        explanation: "Calling a `&mut self` method needs a mutable borrow, so the variable must be `mut`."
+      - type: multi
+        q: "Which are true about associated functions?"
+        options: ["They have no `self` parameter", "They are called with `Type::name()`", "`String::from` is one", "They can only be named `new`"]
+        answer: [0, 1, 2]
+        explanation: "`new` is only a convention; any name works."
+      - type: truefalse
+        q: "A struct can have more than one `impl` block."
+        answer: true
+        explanation: "Several blocks are allowed and are merged; it matters most with generics and traits."
+      - type: single
+        q: "A method `fn finish(self) -> Report` is called as `let r = builder.finish();`. Which is true afterwards?"
+        options: ["`builder` can still be used", "`builder` was moved into `finish` and cannot be used", "`builder` is reset", "`builder` becomes a reference to `r`"]
+        answer: 1
+        explanation: "A `self` method consumes its receiver."

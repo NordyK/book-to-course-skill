@@ -1,0 +1,531 @@
+title: "match"
+summary: "Compare a value against patterns and run the code for the first that fits: binding data from variants, matching Option, exhaustiveness, catch-alls, _, ranges, several patterns per arm, and guards."
+minutes: 32
+source:
+  chapter: ch06
+  sections: ["TRPL 6.2 The match Control Flow Construct", "TRPL 6.2 Patterns That Bind to Values", "TRPL 6.2 The Option<T> match Pattern", "TRPL 6.2 Matches Are Exhaustive", "TRPL 6.2 Catch-All Patterns and the _ Placeholder", "PR ch10 Patterns", "PR ch10 Literals, Variables, and Wildcards in Patterns", "PR ch10 Match Guards", "PR ch10 Matching Multiple Possibilities", "CR Day 2 Pattern Matching"]
+blocks:
+  - type: text
+    md: |
+      `match` compares a value against a list of **patterns** and runs the code of the first one that fits. *The Rust Programming Language* compares it to a coin-sorting machine: each coin slides down a track and drops through the first hole it fits. Two things make `match` more than a `switch` from other languages: patterns can **take data out** of the value, and the compiler checks that **every possible value** is handled.
+
+  - type: code
+    lang: rust
+    code: |
+      enum Coin {
+          Penny,
+          Nickel,
+          Dime,
+          Quarter,
+      }
+
+      fn value_in_cents(coin: Coin) -> u8 {
+          match coin {
+              Coin::Penny => {
+                  println!("Lucky penny!");
+                  1
+              }
+              Coin::Nickel => 5,
+              Coin::Dime => 10,
+              Coin::Quarter => 25,
+          }
+      }
+
+      fn main() {
+          println!("{}", value_in_cents(Coin::Penny));
+          println!("{}", value_in_cents(Coin::Quarter));
+      }
+    output: |
+      Lucky penny!
+      1
+      25
+    explain: "Each **arm** is `pattern => expression`. `match` is an expression: its value is the value of the arm that ran. An arm can be a block in braces when it needs several lines, as for `Penny`."
+
+  - type: text
+    title: Patterns that bind values
+    md: |
+      When a variant carries data, the pattern can give that data a name. From 1999 to 2008 the US minted quarters with a different design for each of the 50 states, so let a `Quarter` carry its state:
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      enum UsState {
+          Alabama,
+          Alaska,
+      }
+
+      enum Coin {
+          Penny,
+          Quarter(UsState),
+      }
+
+      fn value_in_cents(coin: Coin) -> u8 {
+          match coin {
+              Coin::Penny => 1,
+              Coin::Quarter(state) => {
+                  println!("State quarter from {state:?}!");
+                  25
+              }
+          }
+      }
+
+      fn main() {
+          value_in_cents(Coin::Quarter(UsState::Alaska));
+          println!("{}", value_in_cents(Coin::Penny) + value_in_cents(Coin::Quarter(UsState::Alabama)));
+      }
+    output: |
+      State quarter from Alaska!
+      State quarter from Alabama!
+      26
+    explain: "In the arm `Coin::Quarter(state)`, `state` is a new variable bound to the data inside the variant. This is the only way to get at that data, and it can only happen in the arm where it is known to exist."
+
+  - type: text
+    title: Matching Option
+    md: |
+      The same idea handles `Option`. To add one to a number that might be missing:
+
+  - type: code
+    lang: rust
+    code: |
+      fn plus_one(x: Option<i32>) -> Option<i32> {
+          match x {
+              None => None,
+              Some(i) => Some(i + 1),
+          }
+      }
+
+      fn main() {
+          let five = Some(5);
+          let six = plus_one(five);
+          let none = plus_one(None);
+          println!("{six:?} {none:?}");
+      }
+    output: "Some(6) None"
+
+  - type: text
+    title: Matches are exhaustive
+    md: |
+      Forget an arm and the program does not compile. The compiler lists exactly which values are not covered:
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    code: |
+      fn plus_one(x: Option<i32>) -> Option<i32> {
+          match x {
+              Some(i) => Some(i + 1),
+          }
+      }
+
+      fn main() {
+          println!("{:?}", plus_one(Some(1)));
+      }
+    output: |
+      error[E0004]: non-exhaustive patterns: `None` not covered
+       --> src/main.rs:2:11
+        |
+      2 |     match x {
+        |           ^ pattern `None` not covered
+        |
+      note: `Option<i32>` defined here
+       --> /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/option.rs:597:0
+       ::: /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/option.rs:601:4
+        |
+        = note: not covered
+        = note: the matched value is of type `Option<i32>`
+      help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+        |
+      3 ~         Some(i) => Some(i + 1),
+      4 ~         None => todo!(),
+    output_label: Compiler output
+    explain: "This is the billion-dollar mistake being prevented: you cannot forget the case where the value is missing. It also helps later: add a variant to an enum, and the compiler points to every `match` that needs a new arm."
+
+  - type: text
+    title: Catch-alls and _
+    md: |
+      For types with many values, like integers, list the cases you care about and finish with a **catch-all**: a variable name, which matches anything and binds it, or `_`, which matches anything and ignores it. The catch-all must come last, because arms are tried in order.
+
+  - type: code
+    lang: rust
+    code: |
+      fn roll(dice_roll: u8) -> String {
+          match dice_roll {
+              3 => String::from("add a fancy hat"),
+              7 => String::from("remove the fancy hat"),
+              other => format!("move {other} spaces"),
+          }
+      }
+
+      fn reroll(dice_roll: u8) -> &'static str {
+          match dice_roll {
+              3 | 7 => "special square",  // | : either pattern
+              1..=2 => "small step",      // an inclusive range
+              _ => "nothing happens",     // anything else, ignored
+          }
+      }
+
+      fn main() {
+          println!("{} / {} / {}", roll(3), roll(9), reroll(2));
+          println!("{}", reroll(12));
+      }
+    output: |
+      add a fancy hat / move 9 spaces / small step
+      nothing happens
+
+  - type: text
+    title: Match guards
+    md: |
+      A **guard** is an extra `if` condition on an arm: the arm only matches if the pattern fits **and** the condition is true. Guards are handy when the test is not a simple shape, like comparing a bound value with something else.
+
+  - type: code
+    lang: rust
+    code: |
+      fn classify(n: i32) -> &'static str {
+          match n {
+              0 => "zero",
+              x if x < 0 => "negative",
+              x if x % 2 == 0 => "positive and even",
+              _ => "positive and odd",
+          }
+      }
+
+      fn main() {
+          for n in [0, -3, 8, 7] {
+              println!("{n}: {}", classify(n));
+          }
+      }
+    output: |
+      0: zero
+      -3: negative
+      8: positive and even
+      7: positive and odd
+
+  - type: text
+    title: Matching tuples and structs
+    md: |
+      Patterns nest. You can match on a tuple of values at once, or take apart a struct-like variant by its field names. `..` ignores the rest of the fields.
+
+  - type: code
+    lang: rust
+    code: |
+      enum Shape {
+          Circle { radius: f64 },
+          Rect { w: f64, h: f64 },
+      }
+
+      fn area(s: &Shape) -> f64 {
+          match s {
+              Shape::Circle { radius } => 3.14159 * radius * radius,
+              Shape::Rect { w, h } => w * h,
+          }
+      }
+
+      fn fizz(n: u32) -> String {
+          match (n % 3, n % 5) {
+              (0, 0) => String::from("FizzBuzz"),
+              (0, _) => String::from("Fizz"),
+              (_, 0) => String::from("Buzz"),
+              _ => n.to_string(),
+          }
+      }
+
+      fn main() {
+          println!("{:.2} {}", area(&Shape::Circle { radius: 1.0 }), area(&Shape::Rect { w: 2.0, h: 3.0 }));
+          println!("{} {} {} {}", fizz(9), fizz(10), fizz(15), fizz(4));
+      }
+    output: |
+      3.14 6
+      Fizz Buzz FizzBuzz 4
+    explain: "Compare `fizz` with the `if` chain you wrote in chapter 3: the match on `(n % 3, n % 5)` lays out all four cases as a table, and the compiler confirms none is missing. Matching on a reference (`s: &Shape`) binds `radius`, `w` and `h` as references; arithmetic on them works because operators are implemented for `&f64` too."
+
+  - type: playground
+    id: ch06-play-traffic
+    title: "Traffic lights"
+    lang: rust
+    md: |
+      Write `next` (what comes after each light) and `wait_seconds` (Red 30, Yellow 5, Green 45) with `match`. `main` prints the cycle starting from red.
+    task: "Print `Red 30s`, `Green 45s`, `Yellow 5s`, `Red 30s`, one per line."
+    code: |
+      #[derive(Debug, Clone, Copy)]
+      enum Light {
+          Red,
+          Yellow,
+          Green,
+      }
+
+      impl Light {
+          fn next(self) -> Light {
+              self // replace with a match: Red -> Green -> Yellow -> Red
+          }
+
+          fn wait_seconds(self) -> u32 {
+              0 // replace with a match
+          }
+      }
+
+      fn main() {
+          let mut light = Light::Red;
+          for _ in 0..4 {
+              println!("{light:?} {}s", light.wait_seconds());
+              light = light.next();
+          }
+      }
+    expected_output: |
+      Red 30s
+      Green 45s
+      Yellow 5s
+      Red 30s
+    solution_code: |
+      #[derive(Debug, Clone, Copy)]
+      enum Light {
+          Red,
+          Yellow,
+          Green,
+      }
+
+      impl Light {
+          fn next(self) -> Light {
+              match self {
+                  Light::Red => Light::Green,
+                  Light::Green => Light::Yellow,
+                  Light::Yellow => Light::Red,
+              }
+          }
+
+          fn wait_seconds(self) -> u32 {
+              match self {
+                  Light::Red => 30,
+                  Light::Yellow => 5,
+                  Light::Green => 45,
+              }
+          }
+      }
+
+      fn main() {
+          let mut light = Light::Red;
+          for _ in 0..4 {
+              println!("{light:?} {}s", light.wait_seconds());
+              light = light.next();
+          }
+      }
+    hints:
+      - "`#[derive(Clone, Copy)]` makes `Light` a `Copy` type, so methods can take `self` without consuming anything you still need."
+      - "`match self { Light::Red => Light::Green, Light::Green => Light::Yellow, Light::Yellow => Light::Red }`"
+
+  - type: exercise
+    id: ch06-ex-match
+    exercise_dir: ch06-commands
+    title: "A command interpreter"
+    difficulty: medium
+    goal: "Model commands as an enum, parse text into it, and run each command with match."
+    behavior: |
+      `pub enum Command { Push(i64), Pop, Add, Mul, Dup }` and a stack `Vec<i64>` (use `push`, `pop` and `len` on it):
+      - `pub fn parse(word: &str) -> Option<Command>`: `"pop"`, `"add"`, `"mul"`, `"dup"` give those commands; text that parses as an `i64` gives `Push(n)`; anything else gives `None`.
+      - `pub fn apply(stack: &mut Vec<i64>, cmd: Command) -> Result<(), String>`: runs one command. `Pop` removes the top; `Add` and `Mul` pop two values and push their sum or product; `Dup` pushes a copy of the top. If the stack has too few values, return `Err(String::from("stack underflow"))` and leave the stack unchanged. Otherwise `Ok(())`.
+      - `pub fn eval(program: &str) -> Result<Option<i64>, String>`: splits on whitespace, parses and applies every word, and returns the top of the stack at the end (`None` if empty). An unknown word gives `Err(format!("unknown word: {w}"))`.
+    examples:
+      - input: "eval(\"2 3 add 4 mul\")"
+        output: "Ok(Some(20))"
+      - input: "eval(\"5 dup mul\")"
+        output: "Ok(Some(25))"
+      - input: "eval(\"1 add\")"
+        output: "Err(\"stack underflow\")"
+      - input: "eval(\"2 x\")"
+        output: "Err(\"unknown word: x\")"
+    hints:
+      - "`parse`: `match word { \"pop\" => Some(Command::Pop), ..., _ => word.parse().ok().map(Command::Push) }`. `ok()` turns a `Result` into an `Option`."
+      - "`apply`: check the length first, `if stack.len() < 2 { return Err(...) }`, then `let b = stack.pop().unwrap(); let a = stack.pop().unwrap();`."
+      - "`Result` is like `Option` with an error instead of `None` (chapter 9). `Ok(())` means success with no value. Inside `eval`, `apply(&mut stack, cmd)?;` returns the error early if there is one."
+      - "`program.split_whitespace()` gives the words. `stack.last().copied()` is the top as an `Option<i64>`."
+    rust:
+      starter: |
+        /// One instruction for a tiny stack machine.
+        #[derive(Debug, PartialEq)]
+        pub enum Command {
+            Push(i64),
+            Pop,
+            Add,
+            Mul,
+            Dup,
+        }
+
+        /// Turns one word into a command, if it is one.
+        pub fn parse(word: &str) -> Option<Command> {
+            todo!()
+        }
+
+        /// Runs one command on the stack.
+        pub fn apply(stack: &mut Vec<i64>, cmd: Command) -> Result<(), String> {
+            todo!()
+        }
+
+        /// Runs a whole program and returns the top of the stack.
+        pub fn eval(program: &str) -> Result<Option<i64>, String> {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn parsing() {
+            assert_eq!(parse("add"), Some(Command::Add));
+            assert_eq!(parse("dup"), Some(Command::Dup));
+            assert_eq!(parse("-42"), Some(Command::Push(-42)));
+            assert_eq!(parse("plus"), None, "unknown words are None");
+        }
+
+        #[test]
+        fn applying() {
+            let mut s = vec![2, 3];
+            assert_eq!(apply(&mut s, Command::Add), Ok(()));
+            assert_eq!(s, vec![5]);
+            assert_eq!(apply(&mut s, Command::Dup), Ok(()));
+            assert_eq!(s, vec![5, 5]);
+            assert_eq!(apply(&mut s, Command::Pop), Ok(()));
+            assert_eq!(s, vec![5]);
+        }
+
+        #[test]
+        fn underflow_leaves_stack_alone() {
+            let mut s = vec![7];
+            assert_eq!(apply(&mut s, Command::Mul), Err(String::from("stack underflow")));
+            assert_eq!(s, vec![7], "the stack is unchanged after an error");
+            let mut empty = Vec::new();
+            assert_eq!(apply(&mut empty, Command::Pop), Err(String::from("stack underflow")));
+            assert_eq!(apply(&mut empty, Command::Dup), Err(String::from("stack underflow")));
+        }
+
+        #[test]
+        fn programs() {
+            assert_eq!(eval("2 3 add 4 mul"), Ok(Some(20)));
+            assert_eq!(eval("5 dup mul"), Ok(Some(25)));
+            assert_eq!(eval(""), Ok(None), "an empty program leaves an empty stack");
+            assert_eq!(eval("1 add"), Err(String::from("stack underflow")));
+            assert_eq!(eval("2 x"), Err(String::from("unknown word: x")));
+        }
+      solution: |
+        /// One instruction for a tiny stack machine.
+        #[derive(Debug, PartialEq)]
+        pub enum Command {
+            Push(i64),
+            Pop,
+            Add,
+            Mul,
+            Dup,
+        }
+
+        /// Turns one word into a command, if it is one.
+        pub fn parse(word: &str) -> Option<Command> {
+            match word {
+                "pop" => Some(Command::Pop),
+                "add" => Some(Command::Add),
+                "mul" => Some(Command::Mul),
+                "dup" => Some(Command::Dup),
+                _ => word.parse().ok().map(Command::Push),
+            }
+        }
+
+        /// Runs one command on the stack.
+        pub fn apply(stack: &mut Vec<i64>, cmd: Command) -> Result<(), String> {
+            let needed = match cmd {
+                Command::Push(_) => 0,
+                Command::Pop | Command::Dup => 1,
+                Command::Add | Command::Mul => 2,
+            };
+            if stack.len() < needed {
+                return Err(String::from("stack underflow"));
+            }
+            match cmd {
+                Command::Push(n) => stack.push(n),
+                Command::Pop => {
+                    stack.pop();
+                }
+                Command::Dup => {
+                    let top = stack[stack.len() - 1];
+                    stack.push(top);
+                }
+                Command::Add | Command::Mul => {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(if cmd == Command::Add { a + b } else { a * b });
+                }
+            }
+            Ok(())
+        }
+
+        /// Runs a whole program and returns the top of the stack.
+        pub fn eval(program: &str) -> Result<Option<i64>, String> {
+            let mut stack = Vec::new();
+            for w in program.split_whitespace() {
+                match parse(w) {
+                    Some(cmd) => apply(&mut stack, cmd)?,
+                    None => return Err(format!("unknown word: {w}")),
+                }
+            }
+            Ok(stack.last().copied())
+        }
+    solution_explain: "Working out how many values each command needs, in one `match`, keeps the underflow check in a single place, so no command can half-run. Matching `Command::Pop | Command::Dup` groups variants that behave alike. Adding a new command later makes the compiler point at both matches."
+
+  - type: quiz
+    id: ch06-quiz-match
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What does `match` do when two arms both fit the value?"
+        options: ["Runs both", "Runs the first one that fits", "Runs the last one", "Compile error"]
+        answer: 1
+        explanation: "Arms are tried top to bottom; only the first match runs."
+      - type: single
+        q: "Why does a `match` on `Option<i32>` with only a `Some(n)` arm not compile?"
+        options: ["`n` is unused", "Matches must be exhaustive and `None` is not covered", "`Option` cannot be matched", "Arms need braces"]
+        answer: 1
+        explanation: "Every possible value must be handled."
+      - type: single
+        q: "Which arm matches any value without binding it?"
+        options: ["`other =>`", "`_ =>`", "`.. =>`", "`* =>`"]
+        answer: 1
+        explanation: "`_` ignores the value; a name like `other` binds it."
+      - type: single
+        q: "What does this return for `n = 4`?"
+        code: |
+          match n {
+              1 | 2 => "low",
+              3..=5 if n % 2 == 0 => "mid even",
+              3..=5 => "mid",
+              _ => "high",
+          }
+        lang: rust
+        options: ["\"low\"", "\"mid even\"", "\"mid\"", "\"high\""]
+        answer: 1
+        explanation: "4 is in 3..=5 and the guard `n % 2 == 0` holds."
+      - type: fill
+        q: "In `Coin::Quarter(state) => ...`, `state` is called a ______ (it binds the variant's data to a name)."
+        answer: ["binding", "pattern binding", "variable"]
+        explanation: "The pattern binds the inner value to a new variable."
+      - type: truefalse
+        q: "A catch-all arm can be put first, and the more specific arms after it will still run."
+        answer: false
+        explanation: "The catch-all would match everything first; the compiler warns that the later arms are unreachable."
+
+  - type: summary
+    points:
+      - "`match value { pattern => expr, ... }` runs the first arm whose pattern fits; `match` is an expression."
+      - "Patterns bind data out of variants: `Some(i)`, `Coin::Quarter(state)`, `Shape::Rect { w, h }`."
+      - "Matches are exhaustive: the compiler names any case you missed."
+      - "A name as the last arm catches and binds everything else; `_` catches and ignores."
+      - "`a | b` matches either; `1..=5` matches a range; `x if cond` adds a guard."
+      - "Matching a tuple, like `(n % 3, n % 5)`, checks several values at once."
+terms:
+  - term: match
+    def: "An expression that compares a value against patterns and runs the first arm that fits; must cover every case."
+  - term: pattern
+    def: "A shape a value can be compared against, which may bind parts of the value to names."
+  - term: arm
+    def: "One pattern => expression line of a match."
+  - term: exhaustive
+    def: "Covering every possible value; match requires it."
+  - term: match guard
+    def: "An extra if condition on a match arm."
+  - term: catch-all
+    def: "A final arm that matches any remaining value, written as a name or _."

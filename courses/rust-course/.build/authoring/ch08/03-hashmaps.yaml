@@ -1,0 +1,393 @@
+title: "Hash maps and the other collections"
+summary: "HashMap<K, V> for lookups by key: inserting, reading, ownership of keys and values, overwriting, the entry API, counting words; and when to choose BTreeMap, HashSet, BTreeSet or VecDeque instead."
+minutes: 30
+source:
+  chapter: ch08
+  sections: ["TRPL 8.3 Storing Keys with Associated Values in Hash Maps", "TRPL 8.3 Accessing Values in a Hash Map", "TRPL 8.3 Managing Ownership in Hash Maps", "TRPL 8.3 Updating a Hash Map", "TRPL 8.3 Hashing Functions", "PR ch16 Overview", "PR ch16 HashMap<K, V> and BTreeMap<K, V>", "PR ch16 Entries", "PR ch16 HashSet<T> and BTreeSet<T>", "PR ch16 VecDeque<T>", "CR Day 2 HashMap"]
+blocks:
+  - type: text
+    md: |
+      A **hash map**, `HashMap<K, V>`, stores values of type `V` looked up by keys of type `K`. Other languages call it a dictionary, an associative array or an object. Use it whenever you want to find something by a key rather than by position: a score by team name, a price by product id, a count by word.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::collections::HashMap;
+
+      fn main() {
+          let mut scores = HashMap::new();
+          scores.insert(String::from("Blue"), 10);
+          scores.insert(String::from("Yellow"), 50);
+
+          let team_name = String::from("Blue");
+          let score = scores.get(&team_name).copied().unwrap_or(0);
+          println!("Blue: {score}");
+          println!("Red: {:?}", scores.get("Red"));
+      }
+    output: |
+      Blue: 10
+      Red: None
+    explain: "`HashMap` is not in the prelude, so it needs a `use`. `get` returns `Option<&V>`: `copied()` turns `Option<&i32>` into `Option<i32>`, and `unwrap_or(0)` supplies a default. A `HashMap<String, _>` can be searched with a `&str`, which is why `get(\"Red\")` works."
+
+  - type: text
+    title: Iterating
+    md: |
+      `for (key, value) in &scores` visits every pair. The order is **arbitrary** and may change between runs: a hash map arranges entries by the hash of the key, not by insertion or sort order. If you need sorted keys, use `BTreeMap` (below).
+
+  - type: code
+    lang: rust
+    code: |
+      use std::collections::BTreeMap;
+
+      fn main() {
+          let mut scores = BTreeMap::new();
+          scores.insert("Yellow", 50);
+          scores.insert("Blue", 10);
+          for (team, score) in &scores {
+              println!("{team}: {score}");
+          }
+      }
+    output: |
+      Blue: 10
+      Yellow: 50
+    explain: "`BTreeMap` has the same methods but keeps keys sorted, so iteration is in key order. This example uses it so the output is predictable."
+
+  - type: text
+    title: Ownership
+    md: |
+      For `Copy` types like `i32`, values are copied into the map. Owned values like `String` are **moved** in, and the map becomes their owner:
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    code: |
+      use std::collections::HashMap;
+
+      fn main() {
+          let field_name = String::from("Favorite color");
+          let field_value = String::from("Blue");
+          let mut map = HashMap::new();
+          map.insert(field_name, field_value);
+          println!("{field_name}");
+      }
+    output: |
+      error[E0382]: borrow of moved value: `field_name`
+       --> src/main.rs:8:16
+        |
+      4 |     let field_name = String::from("Favorite color");
+        |         ---------- move occurs because `field_name` has type `String`, which does not implement the `Copy` trait
+      ...
+      7 |     map.insert(field_name, field_value);
+        |                ---------- value moved here
+      8 |     println!("{field_name}");
+        |                ^^^^^^^^^^ value borrowed here after move
+        |
+      help: consider cloning the value if the performance cost is acceptable
+        |
+      7 |     map.insert(field_name.clone(), field_value);
+        |                          ++++++++
+    output_label: Compiler output
+    explain: "Insert references instead (`&str`) and the map does not own them, but then the borrowed data must outlive the map. Chapter 10's lifetimes are what the compiler uses to check that."
+
+  - type: text
+    title: Updating
+    md: |
+      Each key has at most one value. When a key already exists you have three choices:
+
+      1. **Overwrite**: `insert` again replaces the old value (and returns it as `Some(old)`).
+      2. **Insert only if absent**: `entry(key).or_insert(value)`.
+      3. **Update based on the old value**: `or_insert` returns a `&mut V` to the value, new or existing, so you can change it.
+
+      The **entry API** in options 2 and 3 looks up the key once, then lets you act on the slot whether or not it was filled.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::collections::BTreeMap;
+
+      fn main() {
+          let text = "hello world wonderful world";
+          let mut counts = BTreeMap::new();
+          for word in text.split_whitespace() {
+              let count = counts.entry(word).or_insert(0);
+              *count += 1;
+          }
+          println!("{counts:?}");
+
+          let mut scores = BTreeMap::new();
+          scores.insert("Blue", 10);
+          scores.entry("Yellow").or_insert(50);
+          scores.entry("Blue").or_insert(50);   // Blue exists: unchanged
+          let old = scores.insert("Blue", 25);  // overwrite
+          println!("{scores:?}, old Blue was {old:?}");
+      }
+    output: |
+      {"hello": 1, "wonderful": 1, "world": 2}
+      {"Blue": 25, "Yellow": 50}, old Blue was Some(10)
+    explain: "`count` is a `&mut i32` pointing into the map; `*count += 1` changes the stored value. The mutable borrow ends at the end of each loop pass."
+
+  - type: callout
+    kind: note
+    title: Hashing
+    md: "By default `HashMap` uses SipHash, which resists denial-of-service attacks where someone sends keys chosen to collide. It is not the fastest hash. If profiling shows hashing matters and the keys are trusted, crates such as `ahash` or `fxhash` provide faster hashers. Keys must implement `Eq` and `Hash`; `#[derive(PartialEq, Eq, Hash)]` makes your own types usable as keys."
+
+  - type: table
+    title: Choosing a collection (from Programming Rust)
+    headers: ["Collection", "Holds", "Choose it when"]
+    rows:
+      - ["`Vec<T>`", "a list in order", "the default: append, index, iterate"]
+      - ["`VecDeque<T>`", "a list with fast add/remove at both ends", "queues: first in, first out"]
+      - ["`HashMap<K, V>`", "key → value, unordered", "fast lookup by key, order does not matter"]
+      - ["`BTreeMap<K, V>`", "key → value, sorted by key", "you need sorted output or ranges of keys"]
+      - ["`HashSet<T>`", "unique values, unordered", "\"have I seen this?\", removing duplicates"]
+      - ["`BTreeSet<T>`", "unique values, sorted", "unique and sorted"]
+      - ["`BinaryHeap<T>`", "values, largest first", "priority queues: always take the biggest"]
+
+  - type: code
+    lang: rust
+    code: |
+      use std::collections::{BTreeSet, HashSet, VecDeque};
+
+      fn main() {
+          let words = ["b", "a", "c", "a", "b"];
+          let unique: BTreeSet<&str> = words.iter().copied().collect();
+          println!("{unique:?}");
+
+          let mut seen = HashSet::new();
+          let first_repeat = words.iter().find(|w| !seen.insert(**w));
+          println!("first repeated: {first_repeat:?}");
+
+          let mut queue = VecDeque::new();
+          queue.push_back("first");
+          queue.push_back("second");
+          queue.push_front("urgent");
+          println!("{:?} then {:?}", queue.pop_front(), queue.pop_front());
+      }
+    output: |
+      {"a", "b", "c"}
+      first repeated: Some("a")
+      Some("urgent") then Some("first")
+    explain: "`collect()` can build any collection from an iterator; the type annotation says which. `HashSet::insert` returns `false` when the value was already there, which makes \"first repeat\" a one-liner."
+
+  - type: playground
+    id: ch08-play-group
+    title: "Group by first letter"
+    lang: rust
+    md: |
+      Group the names by their first letter into a `BTreeMap<char, Vec<&str>>` and print it. Use the entry API: `entry(letter).or_insert_with(Vec::new).push(name)` (or `or_default()`).
+    task: "Print `{'a': [\"ada\", \"alan\"], 'g': [\"grace\"], 'l': [\"linus\"]}`."
+    code: |
+      use std::collections::BTreeMap;
+
+      fn main() {
+          let names = ["ada", "grace", "alan", "linus"];
+          let mut groups: BTreeMap<char, Vec<&str>> = BTreeMap::new();
+          // fill groups here
+          println!("{groups:?}");
+      }
+    expected_output: "{'a': [\"ada\", \"alan\"], 'g': [\"grace\"], 'l': [\"linus\"]}"
+    solution_code: |
+      use std::collections::BTreeMap;
+
+      fn main() {
+          let names = ["ada", "grace", "alan", "linus"];
+          let mut groups: BTreeMap<char, Vec<&str>> = BTreeMap::new();
+          for name in names {
+              let letter = name.chars().next().unwrap();
+              groups.entry(letter).or_default().push(name);
+          }
+          println!("{groups:?}");
+      }
+    hints:
+      - "`for name in names`, then `let letter = name.chars().next().unwrap();`."
+      - "`groups.entry(letter).or_default().push(name);` creates an empty Vec the first time a letter is seen."
+
+  - type: exercise
+    id: ch08-ex-maps
+    exercise_dir: ch08-maps
+    title: "Company directory"
+    difficulty: medium
+    goal: "Use maps and sets to answer questions about data, as in The Rust Programming Language's end-of-chapter exercise."
+    behavior: |
+      - `pub fn word_frequencies(text: &str) -> HashMap<String, usize>`: lowercase every word (split on whitespace) and count it.
+      - `pub fn add_employee(dir: &mut BTreeMap<String, Vec<String>>, command: &str) -> bool`: commands look like `"Add Sally to Engineering"`. Add the name to that department and return `true`; anything else returns `false` and changes nothing.
+      - `pub fn department_list(dir: &BTreeMap<String, Vec<String>>, dept: &str) -> Vec<String>`: the names in that department sorted alphabetically (empty if none).
+      - `pub fn unique_letters(word: &str) -> usize`: how many different chars the word has.
+    examples:
+      - input: "word_frequencies(\"The cat the hat\")"
+        output: "{\"the\": 2, \"cat\": 1, \"hat\": 1}"
+      - input: "add_employee(&mut dir, \"Add Sally to Engineering\")"
+        output: "true, and dir[\"Engineering\"] == [\"Sally\"]"
+      - input: "unique_letters(\"banana\")"
+        output: "3"
+    hints:
+      - "`*counts.entry(word.to_lowercase()).or_insert(0) += 1;`"
+      - "`add_employee`: `let words: Vec<&str> = command.split_whitespace().collect();` then match the slice: `if let [\"Add\", name, \"to\", dept] = words.as_slice() { ... }`."
+      - "`department_list`: `dir.get(dept).cloned().unwrap_or_default()`, then `sort()`."
+      - "`unique_letters`: collect the chars into a `HashSet<char>` and take its `len()`."
+    rust:
+      starter: |
+        use std::collections::{BTreeMap, HashMap, HashSet};
+
+        /// Lowercased word -> how often it appears.
+        pub fn word_frequencies(text: &str) -> HashMap<String, usize> {
+            todo!()
+        }
+
+        /// "Add <name> to <department>". Returns whether the command was valid.
+        pub fn add_employee(dir: &mut BTreeMap<String, Vec<String>>, command: &str) -> bool {
+            todo!()
+        }
+
+        /// Everyone in the department, sorted.
+        pub fn department_list(dir: &BTreeMap<String, Vec<String>>, dept: &str) -> Vec<String> {
+            todo!()
+        }
+
+        /// How many different characters the word has.
+        pub fn unique_letters(word: &str) -> usize {
+            let _unused: HashSet<char> = HashSet::new();
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn frequencies() {
+            let f = word_frequencies("The cat the hat");
+            assert_eq!(f.get("the"), Some(&2));
+            assert_eq!(f.get("cat"), Some(&1));
+            assert_eq!(f.len(), 3);
+            assert!(word_frequencies("").is_empty());
+        }
+
+        #[test]
+        fn adding() {
+            let mut dir = BTreeMap::new();
+            assert!(add_employee(&mut dir, "Add Sally to Engineering"));
+            assert!(add_employee(&mut dir, "Add Amir to Sales"));
+            assert!(add_employee(&mut dir, "Add Bea to Engineering"));
+            assert_eq!(dir["Engineering"], vec!["Sally", "Bea"]);
+            assert_eq!(dir.len(), 2);
+        }
+
+        #[test]
+        fn bad_commands() {
+            let mut dir = BTreeMap::new();
+            assert!(!add_employee(&mut dir, "Remove Sally from Engineering"));
+            assert!(!add_employee(&mut dir, "Add Sally"));
+            assert!(!add_employee(&mut dir, ""));
+            assert!(dir.is_empty(), "nothing was added");
+        }
+
+        #[test]
+        fn listing() {
+            let mut dir = BTreeMap::new();
+            add_employee(&mut dir, "Add Zoe to Ops");
+            add_employee(&mut dir, "Add Ann to Ops");
+            assert_eq!(department_list(&dir, "Ops"), vec!["Ann", "Zoe"]);
+            assert!(department_list(&dir, "Legal").is_empty());
+        }
+
+        #[test]
+        fn letters() {
+            assert_eq!(unique_letters("banana"), 3);
+            assert_eq!(unique_letters(""), 0);
+            assert_eq!(unique_letters("ééa"), 2);
+        }
+      solution: |
+        use std::collections::{BTreeMap, HashMap, HashSet};
+
+        /// Lowercased word -> how often it appears.
+        pub fn word_frequencies(text: &str) -> HashMap<String, usize> {
+            let mut counts = HashMap::new();
+            for word in text.split_whitespace() {
+                *counts.entry(word.to_lowercase()).or_insert(0) += 1;
+            }
+            counts
+        }
+
+        /// "Add <name> to <department>". Returns whether the command was valid.
+        pub fn add_employee(dir: &mut BTreeMap<String, Vec<String>>, command: &str) -> bool {
+            let words: Vec<&str> = command.split_whitespace().collect();
+            if let ["Add", name, "to", dept] = words.as_slice() {
+                dir.entry(dept.to_string()).or_default().push(name.to_string());
+                true
+            } else {
+                false
+            }
+        }
+
+        /// Everyone in the department, sorted.
+        pub fn department_list(dir: &BTreeMap<String, Vec<String>>, dept: &str) -> Vec<String> {
+            let mut names = dir.get(dept).cloned().unwrap_or_default();
+            names.sort();
+            names
+        }
+
+        /// How many different characters the word has.
+        pub fn unique_letters(word: &str) -> usize {
+            let set: HashSet<char> = word.chars().collect();
+            set.len()
+        }
+    solution_explain: "The slice pattern `[\"Add\", name, \"to\", dept]` checks the shape of the whole command and binds the two parts in one step; chapter 19 covers slice patterns. `cloned()` turns `Option<&Vec<String>>` into `Option<Vec<String>>` so the result can be sorted without touching the directory."
+
+  - type: quiz
+    id: ch08-quiz-maps
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What does `map.get(\"k\")` return for a `HashMap<String, i32>`?"
+        options: ["`i32`", "`&i32`", "`Option<&i32>`", "`Result<i32, String>`"]
+        answer: 2
+        explanation: "The key may be missing, so it is an `Option` of a reference into the map."
+      - type: single
+        q: "What happens to a `String` key after `map.insert(key, 1)`?"
+        options: ["It is copied", "It is moved into the map", "It is borrowed until the map is dropped", "It is cleared"]
+        answer: 1
+        explanation: "The map owns its keys and values."
+      - type: single
+        q: "What does this print?"
+        code: |
+          let mut m = std::collections::HashMap::new();
+          m.insert("a", 1);
+          m.entry("a").or_insert(5);
+          *m.entry("b").or_insert(5) += 1;
+          println!("{} {}", m["a"], m["b"]);
+        lang: rust
+        options: ["5 6", "1 6", "1 5", "6 6"]
+        answer: 1
+        explanation: "`a` exists, so `or_insert` leaves 1; `b` is inserted as 5 and then incremented."
+      - type: single
+        q: "You need word counts printed in alphabetical order. Which map?"
+        options: ["`HashMap`", "`BTreeMap`", "`Vec<(String, usize)>` unsorted", "`HashSet`"]
+        answer: 1
+        explanation: "`BTreeMap` keeps keys sorted."
+      - type: single
+        q: "Which collection answers \"is this id already used?\" quickly, with no values attached?"
+        options: ["`Vec<u32>`", "`HashSet<u32>`", "`VecDeque<u32>`", "`BinaryHeap<u32>`"]
+        answer: 1
+        explanation: "A set stores unique values with fast membership tests."
+      - type: truefalse
+        q: "Iterating over a `HashMap` always returns entries in insertion order."
+        answer: false
+        explanation: "The order is arbitrary; use `BTreeMap` for sorted order."
+
+  - type: summary
+    points:
+      - "`HashMap<K, V>` maps keys to values; `use std::collections::HashMap;`."
+      - "`get` returns `Option<&V>`; owned keys and values are moved into the map."
+      - "`insert` overwrites; `entry(k).or_insert(v)` inserts only if absent and returns `&mut V` for updating."
+      - "Hash map order is arbitrary; `BTreeMap` keeps keys sorted."
+      - "Sets (`HashSet`, `BTreeSet`) hold unique values; `VecDeque` is a double-ended queue; `BinaryHeap` a priority queue."
+terms:
+  - term: "HashMap<K, V>"
+    def: "A collection that maps keys to values using hashing; lookups are fast and order is arbitrary."
+  - term: entry API
+    def: "map.entry(key) gives access to a key's slot whether or not it exists, for insert-or-update in one lookup."
+  - term: "BTreeMap<K, V>"
+    def: "A map that keeps its keys sorted."
+  - term: "HashSet<T>"
+    def: "A collection of unique values with fast membership tests."
+  - term: "VecDeque<T>"
+    def: "A growable ring buffer with fast push and pop at both ends."

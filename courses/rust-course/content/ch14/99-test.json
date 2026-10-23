@@ -1,0 +1,104 @@
+{
+  "title": "Chapter test: Cargo and Crates.io",
+  "kind": "test",
+  "summary": "Eight questions on profiles, documentation, publishing and workspaces. You need 70% to pass; you can retry and your best score is kept.",
+  "blocks": [
+    {
+      "type": "quiz",
+      "id": "ch14-test",
+      "pass_score": 0.7,
+      "questions": [
+        {
+          "type": "single",
+          "q": "Where do you set `opt-level = 1` for debug builds?",
+          "options": [
+            "`[profile.dev]` in Cargo.toml",
+            "`[profile.release]`",
+            "`[dependencies]`",
+            "In main.rs"
+          ],
+          "answer": 0,
+          "explanation": "dev is the profile for cargo build."
+        },
+        {
+          "type": "single",
+          "q": "Integer overflow in a release build by default...",
+          "options": [
+            "panics",
+            "wraps around",
+            "is a compile error",
+            "saturates"
+          ],
+          "answer": 1,
+          "explanation": "Debug builds panic; release builds wrap unless you enable overflow-checks."
+        },
+        {
+          "type": "single",
+          "q": "Which runs the code in a `# Examples` section of a doc comment?",
+          "options": [
+            "`cargo doc`",
+            "`cargo test`",
+            "`cargo build`",
+            "Nothing; it is only text"
+          ],
+          "answer": 1,
+          "explanation": "It is a doc test."
+        },
+        {
+          "type": "single",
+          "q": "What does a doc comment section titled `# Errors` describe?",
+          "options": [
+            "Compiler errors",
+            "When and which errors a function returning Result produces",
+            "Spelling mistakes",
+            "Panics"
+          ],
+          "answer": 1,
+          "explanation": "Panics go under `# Panics`."
+        },
+        {
+          "type": "single",
+          "q": "Why re-export with `pub use`?",
+          "options": [
+            "To hide the items",
+            "To give users simple paths and a clear docs front page, without reorganizing the code",
+            "To speed up compiling",
+            "It is required for publishing"
+          ],
+          "answer": 1,
+          "explanation": "Internal layout and public API can differ."
+        },
+        {
+          "type": "truefalse",
+          "q": "A version published to crates.io can be deleted with `cargo yank`.",
+          "answer": false,
+          "explanation": "Yanking only stops new projects from choosing it."
+        },
+        {
+          "type": "single",
+          "q": "Two workspace members both depend on `rand`. Which versions do they get?",
+          "options": [
+            "Possibly different ones",
+            "The same one, because of the shared Cargo.lock",
+            "Neither: workspaces cannot use external crates",
+            "The newest available for each"
+          ],
+          "answer": 1,
+          "explanation": "One lock file per workspace."
+        },
+        {
+          "type": "single",
+          "q": "Which tool flags `let x = 3.1415;` and suggests a constant?",
+          "options": [
+            "rustfmt",
+            "clippy",
+            "rustdoc",
+            "cargo install"
+          ],
+          "answer": 1,
+          "explanation": "Clippy has a lint for approximate constants."
+        }
+      ]
+    }
+  ]
+}

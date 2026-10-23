@@ -1,0 +1,328 @@
+{
+  "title": "A secret number and a comparison",
+  "summary": "Add your first library from crates.io to pick a random number, then compare the guess with match. You also turn text into a number and meet shadowing.",
+  "minutes": 28,
+  "source": {
+    "chapter": "ch02",
+    "sections": [
+      "TRPL 2 Generating a Secret Number",
+      "TRPL 2 Using a Crate to Get More Functionality",
+      "TRPL 2 Ensuring Reproducible Builds",
+      "TRPL 2 Updating a Crate",
+      "TRPL 2 Comparing the Guess to the Secret Number"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "The game needs a secret number that changes every time it is played. Rust's standard library does not generate random numbers, on purpose: it stays small, and the community maintains excellent libraries instead. In this lesson you add one of them, then compare the player's guess with the secret.\n"
+    },
+    {
+      "type": "text",
+      "title": "Crates and crates.io",
+      "md": "A **crate** is a package of Rust code. Your guessing game is a **binary crate**: it builds into a program you can run. The `rand` crate is a **library crate**: code meant to be used by other programs, which cannot run on its own.\n\nLibraries are published on **crates.io**, the public registry of Rust crates. To use one, you name it and its version in the `[dependencies]` section of `Cargo.toml`. Cargo downloads it (and anything it needs in turn) the next time you build.\n"
+    },
+    {
+      "type": "code",
+      "lang": "toml",
+      "file": "Cargo.toml",
+      "code": "[package]\nname = \"guessing_game\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\nrand = \"0.10.1\"\n",
+      "highlight": [
+        7
+      ]
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "title": "What \"0.10.1\" means",
+      "md": "Cargo reads versions as **Semantic Versioning** (SemVer). `\"0.10.1\"` is short for `^0.10.1`: *at least 0.10.1, but below 0.11.0*. Versions inside that range promise to stay compatible with the code you wrote, so Cargo may pick a newer one with bug fixes, but never one that could break your program.\n"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "file": "terminal",
+      "title": "The first build downloads the crate",
+      "code": "$ cargo build\n  Updating crates.io index\n Locking 3 packages to latest Rust 1.97.0 compatible versions\nDownloaded rand_core v0.10.1\nDownloaded rand v0.10.1\n   Compiling rand_core v0.10.1\n   Compiling getrandom v0.4.3\n   Compiling rand v0.10.1\n   Compiling guessing_game v0.1.0 (file:///projects/guessing_game)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.13s\n",
+      "explain": "You asked for one crate and got several: `rand` itself depends on `rand_core` and `getrandom`, and Cargo fetched them too. Build again and nothing is downloaded or recompiled: Cargo remembers what it built.\n"
+    },
+    {
+      "type": "text",
+      "title": "Cargo.lock keeps builds repeatable",
+      "md": "The first build also writes **Cargo.lock**, listing the exact version of every crate it chose. Later builds use exactly those versions, even if a newer compatible one appears on crates.io. So the program you build next month, or a teammate builds today, uses the same code as yours. Commit `Cargo.lock` to version control together with your source.\n\nWhen you *want* newer versions, run `cargo update`. It picks the newest versions allowed by `Cargo.toml` (still below 0.11.0 here) and rewrites the lock file. Moving to 0.11 or later is a deliberate step: you change the number in `Cargo.toml` yourself.\n"
+    },
+    {
+      "type": "table",
+      "title": "Who decides which version you get",
+      "headers": [
+        "File",
+        "Written by",
+        "Says"
+      ],
+      "rows": [
+        [
+          "`Cargo.toml`",
+          "You",
+          "Which crates, and which range of versions is acceptable"
+        ],
+        [
+          "`Cargo.lock`",
+          "Cargo",
+          "The exact version of every crate actually used"
+        ],
+        [
+          "`cargo update`",
+          "You run it",
+          "Move to the newest versions the ranges allow, update the lock file"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Generating the number",
+      "md": "Two new lines create the secret. `use rand::prelude::*;` brings in the most commonly used parts of `rand` (the `*` means *everything public in it*). Then `rand::rng()` gives a random number generator seeded by the operating system, and `.random_range(1..=100)` asks it for a number in a range.\n\n`1..=100` is a **range expression**. With `..=` both ends are included, so 1 and 100 are both possible. With `..` (as in `1..100`) the end is left out.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/main.rs",
+      "code": "use std::io;\n\nuse rand::prelude::*;\n\nfn main() {\n    println!(\"Guess the number!\");\n\n    let secret_number = rand::rng().random_range(1..=100);\n\n    println!(\"The secret number is: {secret_number}\");\n\n    println!(\"Please input your guess.\");\n\n    let mut guess = String::new();\n\n    io::stdin()\n        .read_line(&mut guess)\n        .expect(\"Failed to read line\");\n\n    println!(\"You guessed: {guess}\");\n}\n",
+      "highlight": [
+        3,
+        8,
+        10
+      ],
+      "explain": "Printing the secret is only for testing. You will remove that line once the game works."
+    },
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Documentation for every crate you use",
+      "md": "Run `cargo doc --open` inside the project. Cargo builds documentation for all your dependencies and opens it in the browser, so you can look up what `random_range` or anything else in `rand` does, even offline."
+    },
+    {
+      "type": "text",
+      "title": "Comparing the guess with the secret",
+      "md": "Now the interesting part. Here is the comparison, using a new tool called `match`:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/main.rs (part)",
+      "code": "use std::cmp::Ordering;\n\n// ... inside main, after reading the guess:\nmatch guess.cmp(&secret_number) {\n    Ordering::Less => println!(\"Too small!\"),\n    Ordering::Greater => println!(\"Too big!\"),\n    Ordering::Equal => println!(\"You win!\"),\n}\n"
+    },
+    {
+      "type": "stepper",
+      "title": "How the comparison works",
+      "lang": "rust",
+      "steps": [
+        {
+          "title": "Ordering: the three possible answers",
+          "md": "`Ordering` is an **enum** (short for enumeration): a type whose value is exactly one of a fixed list of **variants**. `Ordering` has three: `Less`, `Greater` and `Equal`. Those are the only possible results of comparing two values.\n",
+          "code": "use std::cmp::Ordering;\n// Ordering is one of: Ordering::Less, Ordering::Greater, Ordering::Equal\n"
+        },
+        {
+          "title": "cmp compares two values",
+          "md": "`a.cmp(&b)` compares `a` with `b` and returns an `Ordering`. Anything that can be ordered (numbers, text, ...) has `cmp`.",
+          "code": "guess.cmp(&secret_number)\n"
+        },
+        {
+          "title": "match picks the arm that fits",
+          "md": "A `match` expression is made of **arms**. Each arm is a **pattern** followed by `=>` and the code to run. Rust checks the value against each pattern from top to bottom and runs the first arm that fits. If the guess is 50 and the secret 38, `cmp` returns `Ordering::Greater`: the first arm does not fit, the second does, so `Too big!` is printed and the `match` ends.\n",
+          "code": "match guess.cmp(&secret_number) {\n    Ordering::Less => println!(\"Too small!\"),\n    Ordering::Greater => println!(\"Too big!\"),\n    Ordering::Equal => println!(\"You win!\"),\n}\n",
+          "highlight": [
+            3
+          ]
+        },
+        {
+          "title": "Rust checks you covered every case",
+          "md": "Delete one arm and the program does not compile: `non-exhaustive patterns: Ordering::Equal not covered`. A `match` must handle **every** possible value. This is one of the ways Rust catches forgotten cases before the program ever runs.\n",
+          "code": "match guess.cmp(&secret_number) {\n    Ordering::Less => println!(\"Too small!\"),\n    Ordering::Greater => println!(\"Too big!\"),\n    // error[E0004]: non-exhaustive patterns: `Equal` not covered\n}\n"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Text is not a number: mismatched types",
+      "md": "If you build now, the compiler stops with `error[E0308]: mismatched types ... expected struct String, found integer`. `guess` is a `String` (text), while `secret_number` is a number. Rust is **statically typed**: every value has a type known at compile time, and it will not silently compare text with a number.\n\nThe secret's type was **inferred**: Rust saw a number from 1 to 100 and picked `i32`, its default integer type. We need to turn the guess into a number too. We add one line:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "let guess: u32 = guess.trim().parse().expect(\"Please type a number!\");\n",
+      "explain": "- `guess.trim()` removes the newline (and any spaces) around the text, so `\"5\\n\"` becomes `\"5\"`.\n- `.parse()` converts text into another type. Which type? The one we wrote after the colon: `u32`, an unsigned (never negative) 32-bit integer. This is a **type annotation**.\n- Parsing can fail (the player might type `abc`), so `parse` returns a `Result`, and `.expect` handles it as before.\n\nBecause `guess` is now a `u32` and it is compared with `secret_number`, Rust infers that `secret_number` should be a `u32` too.\n"
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "title": "Shadowing",
+      "md": "Notice that the new line *reuses the name* `guess` with `let`. This is **shadowing**: a new variable with the same name hides the old one from that point on. It is handy for converting a value from one type to another without inventing names like `guess_str` and `guess_num`. Shadowing makes a brand-new variable (it may even have a different type), which is different from changing a `mut` variable.\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch02-play-compare",
+      "title": "Compare a guess",
+      "lang": "rust",
+      "md": "This is the game's comparison with fixed values instead of keyboard input and randomness. Run it. Then change the text in `typed` to `\"38\\n\"` and run again.",
+      "task": "With `typed` set so the guess equals the secret, the program prints `You guessed: 38` and then `You win!`.",
+      "code": "use std::cmp::Ordering;\n\nfn main() {\n    let secret_number: u32 = 38;\n    let typed = String::from(\"50\\n\"); // what the player \"typed\"\n\n    let guess: u32 = typed.trim().parse().expect(\"Please type a number!\");\n    println!(\"You guessed: {guess}\");\n\n    match guess.cmp(&secret_number) {\n        Ordering::Less => println!(\"Too small!\"),\n        Ordering::Greater => println!(\"Too big!\"),\n        Ordering::Equal => println!(\"You win!\"),\n    }\n}\n",
+      "expected_output": "You guessed: 38\nYou win!\n",
+      "hints": [
+        "Only the text inside `String::from(...)` needs to change.",
+        "`String::from(\"38\\n\")`. The `\\n` is the Enter key; `trim()` removes it."
+      ]
+    },
+    {
+      "type": "playground",
+      "id": "ch02-play-parse-fail",
+      "expect_panic": true,
+      "title": "What happens with bad input?",
+      "lang": "rust",
+      "md": "Run this. The player typed `forty`, which is not a number, so `parse` returns `Err` and `expect` **panics**. Read the message in the console: it names the file, the line, and the reason (`invalid digit found in string`). Then try `\"-5\\n\"`: why does that fail for a `u32`? The next lesson replaces the panic with a friendly second chance.\n",
+      "code": "fn main() {\n    let typed = String::from(\"forty\\n\");\n    let guess: u32 = typed.trim().parse().expect(\"Please type a number!\");\n    println!(\"You guessed: {guess}\");\n}\n",
+      "hints": [
+        "`u32` is unsigned: it can hold 0 to 4,294,967,295 but no negative numbers, so `-5` is invalid for it."
+      ]
+    },
+    {
+      "type": "from_book",
+      "source": "Programming Rust, ch. 2",
+      "md": "*Programming Rust* makes the same point about types with its first function, which computes the greatest common divisor of two numbers. Rust insists on types at function boundaries (`u64` here: an unsigned 64-bit integer) and infers them inside. `assert!` checks a condition and panics if it is false, so the function refuses the input it cannot handle instead of returning nonsense.\n",
+      "code": "fn gcd(mut n: u64, mut m: u64) -> u64 {\n    assert!(n != 0 && m != 0);\n    while m != 0 {\n        if m < n {\n            let t = m;\n            m = n;\n            n = t;\n        }\n        m = m % n;\n    }\n    n\n}\n",
+      "lang": "rust"
+    },
+    {
+      "type": "quiz",
+      "id": "ch02-quiz-compare",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Your `Cargo.toml` says `rand = \"0.10.1\"`. Which version could `cargo update` move you to?",
+          "options": [
+            "0.10.4",
+            "0.11.0",
+            "1.0.0",
+            "Only exactly 0.10.1"
+          ],
+          "answer": 0,
+          "explanation": "`0.10.1` means at least 0.10.1 and below 0.11.0. Crossing to 0.11 needs a change in `Cargo.toml`."
+        },
+        {
+          "type": "truefalse",
+          "q": "You should commit `Cargo.lock` so everyone builds with the same dependency versions.",
+          "answer": true,
+          "explanation": "For programs, yes: the lock file is what makes builds repeatable."
+        },
+        {
+          "type": "single",
+          "q": "The secret is 70 and the guess is 25. Which arm runs?",
+          "code": "match guess.cmp(&secret_number) {\n    Ordering::Less => println!(\"Too small!\"),\n    Ordering::Greater => println!(\"Too big!\"),\n    Ordering::Equal => println!(\"You win!\"),\n}\n",
+          "lang": "rust",
+          "options": [
+            "`Too small!`",
+            "`Too big!`",
+            "`You win!`",
+            "All three, top to bottom"
+          ],
+          "answer": 0,
+          "explanation": "25 compared with 70 is `Less`. Only the first matching arm runs, then the `match` is done."
+        },
+        {
+          "type": "multi",
+          "q": "Which numbers can `random_range(1..=100)` return?",
+          "options": [
+            "0",
+            "1",
+            "50",
+            "100",
+            "101"
+          ],
+          "answer": [
+            1,
+            2,
+            3
+          ],
+          "explanation": "`..=` includes both ends, so 1 through 100. `1..100` would exclude 100."
+        },
+        {
+          "type": "single",
+          "q": "Why does `let guess: u32 = guess.trim().parse()...` need the `: u32`?",
+          "options": [
+            "Without it, `parse` does not know what type to produce.",
+            "Variables must always have written types in Rust.",
+            "It makes `guess` mutable.",
+            "It removes the newline."
+          ],
+          "answer": 0,
+          "explanation": "`parse` can produce many types. The annotation tells it which one; elsewhere Rust usually infers types for you."
+        },
+        {
+          "type": "fill",
+          "q": "Reusing a variable name with a new `let`, as in `let guess: u32 = guess.trim()...`, is called ______.",
+          "answer": [
+            "shadowing"
+          ],
+          "explanation": "Shadowing creates a new variable that hides the previous one with the same name."
+        },
+        {
+          "type": "single",
+          "q": "Which mistake causes this error? `error[E0308]: mismatched types: expected struct String, found integer`",
+          "options": [
+            "A `String` was compared with a number",
+            "A variable was changed without `mut`",
+            "A `match` is missing an arm",
+            "A crate was not downloaded"
+          ],
+          "answer": 0,
+          "explanation": "`guess.cmp(&secret_number)` before converting the guess: Rust never compares text with numbers implicitly."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Crates are packages of Rust code; binary crates run, library crates are used by others. They live on crates.io.",
+        "List dependencies in `Cargo.toml`; `\"0.10.1\"` accepts compatible versions from 0.10.1 up to (not including) 0.11.0.",
+        "`Cargo.lock` pins exact versions for repeatable builds; `cargo update` refreshes it within the allowed ranges.",
+        "`rand::rng().random_range(1..=100)` picks a number from 1 to 100; `..=` includes the end, `..` excludes it.",
+        "`a.cmp(&b)` returns an `Ordering` (`Less`, `Greater`, `Equal`); `match` runs the first arm whose pattern fits and must cover every case.",
+        "`text.trim().parse()` turns text into a number; the type comes from the annotation, like `let n: u32`.",
+        "Shadowing reuses a name with a new `let`, often to change a value's type."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "crate",
+      "def": "A package of Rust code. A binary crate builds a program; a library crate is code for other programs to use."
+    },
+    {
+      "term": "crates.io",
+      "def": "The public registry where Rust crates are published and downloaded from."
+    },
+    {
+      "term": "Semantic Versioning",
+      "def": "Version numbers as MAJOR.MINOR.PATCH with rules about compatibility. Cargo uses it to decide which versions are safe."
+    },
+    {
+      "term": "Cargo.lock",
+      "def": "File written by Cargo listing the exact versions of all dependencies, so builds can be repeated."
+    },
+    {
+      "term": "match",
+      "def": "An expression that compares a value against patterns (arms) and runs the code of the first one that fits. It must cover every possible value."
+    },
+    {
+      "term": "enum",
+      "def": "A type whose value is one of a fixed list of variants, like `Ordering::Less`, `Ordering::Greater`, `Ordering::Equal`."
+    },
+    {
+      "term": "type annotation",
+      "def": "Writing a type explicitly, as in `let n: u32 = ...`, when Rust cannot or should not infer it."
+    },
+    {
+      "term": "shadowing",
+      "def": "Declaring a new variable with the same name as an earlier one, which hides the earlier one from then on."
+    }
+  ]
+}

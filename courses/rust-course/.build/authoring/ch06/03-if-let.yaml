@@ -1,0 +1,331 @@
+title: "if let and let...else"
+summary: "Shorter forms for when you care about one pattern: if let, if let with else, while let, and let...else for the happy path. Plus a tour of where patterns appear."
+minutes: 22
+source:
+  chapter: ch06
+  sections: ["TRPL 6.3 Concise Control Flow with if let and let...else", "TRPL 6.3 Staying on the Happy Path with let...else", "PR ch10 Where Patterns Are Allowed", "CR Day 2 Let Control Flow"]
+blocks:
+  - type: text
+    md: |
+      `match` is thorough, and sometimes that is more than you need. When you only care about **one** pattern and want to ignore everything else, `match` makes you write a `_ => ()` arm that says nothing. Rust has shorter forms for this.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let config_max = Some(3u8);
+
+          // with match
+          match config_max {
+              Some(max) => println!("The maximum is configured to be {max}"),
+              _ => (),
+          }
+
+          // the same with if let
+          if let Some(max) = config_max {
+              println!("The maximum is configured to be {max}");
+          }
+      }
+    output: |
+      The maximum is configured to be 3
+      The maximum is configured to be 3
+    explain: "`if let PATTERN = VALUE { ... }` runs the block only if the value fits the pattern, with its bindings in scope. You lose the exhaustiveness check, which is exactly the trade you are choosing: less typing, and other cases deliberately ignored."
+
+  - type: text
+    title: if let ... else
+    md: |
+      An `else` handles everything that does not match, like the `_` arm of a `match`. Here we count every coin that is not a quarter, and announce the quarters:
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      enum Coin {
+          Penny,
+          Quarter(String),
+      }
+
+      fn main() {
+          let coins = [Coin::Penny, Coin::Quarter(String::from("Alaska")), Coin::Penny];
+          let mut count = 0;
+          for coin in &coins {
+              if let Coin::Quarter(state) = coin {
+                  println!("State quarter from {state}!");
+              } else {
+                  count += 1;
+              }
+          }
+          println!("{count} other coin(s)");
+      }
+    output: |
+      State quarter from Alaska!
+      2 other coin(s)
+
+  - type: text
+    title: "let...else: staying on the happy path"
+    md: |
+      Often a function can only continue if a value matches a pattern, and should leave early otherwise. `let PATTERN = VALUE else { ... };` binds the pattern's variables **for the rest of the function**, and the `else` block must leave: `return`, `break`, `continue` or panic. The main logic stays at the left margin instead of nesting deeper and deeper.
+
+  - type: code
+    lang: rust
+    code: |
+      fn parse_point(text: &str) -> Option<(i32, i32)> {
+          let Some((x, y)) = text.split_once(',') else {
+              return None;
+          };
+          let Ok(x) = x.trim().parse() else {
+              return None;
+          };
+          let Ok(y) = y.trim().parse() else {
+              return None;
+          };
+          Some((x, y))
+      }
+
+      fn main() {
+          println!("{:?}", parse_point("3, -4"));
+          println!("{:?}", parse_point("3 -4"));
+          println!("{:?}", parse_point("3, four"));
+      }
+    output: |
+      Some((3, -4))
+      None
+      None
+    explain: "`split_once(',')` returns `Option<(&str, &str)>`: the text before and after the first comma. `parse()` returns a `Result`, whose success variant is `Ok`. Each `let...else` either unpacks a value or leaves the function, so by the last line `x` and `y` are known to be valid numbers."
+
+  - type: text
+    title: while let
+    md: |
+      `while let` keeps looping as long as the value matches. The classic use is draining a stack: `pop` returns `Some(top)` until the stack is empty, then `None`.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let mut stack = vec![1, 2, 3];
+          while let Some(top) = stack.pop() {
+              print!("{top} ");
+          }
+          println!();
+      }
+    output: "3 2 1"
+    explain: "`vec![1, 2, 3]` creates a `Vec`, the growable list from chapter 8."
+
+  - type: table
+    title: Choosing a form
+    headers: ["You want to", "Use"]
+    rows:
+      - ["Handle every case, with the compiler checking you did", "`match`"]
+      - ["Do something only when one pattern fits", "`if let`"]
+      - ["Handle one pattern, and treat everything else the same way", "`if let ... else`"]
+      - ["Continue only if a pattern fits, otherwise leave", "`let ... else`"]
+      - ["Loop while a pattern fits", "`while let`"]
+
+  - type: callout
+    kind: key
+    title: Patterns are everywhere
+    md: "You have been using patterns since chapter 2. `let (a, b) = pair;` is a pattern. `for (i, item) in list.iter().enumerate()` uses a pattern. Function parameters are patterns: `fn print_point(&(x, y): &(i32, i32))` takes a tuple apart right in the signature. `let` and parameters need patterns that **always** match (irrefutable); `if let`, `while let`, `let...else` and `match` arms accept patterns that might not (refutable). Chapter 19 covers the full pattern language."
+
+  - type: playground
+    id: ch06-play-let-else
+    title: "Rewrite with let...else"
+    lang: rust
+    md: |
+      `describe_age` works but nests three levels deep. Rewrite it with `let...else` so that the success path is not indented, and the output stays the same.
+    task: "Keep the output (`Ada is 36`, `bad input`, `bad age`) and remove all nesting from describe_age."
+    code: |
+      fn describe_age(line: &str) -> String {
+          if let Some((name, age)) = line.split_once(':') {
+              if let Ok(age) = age.trim().parse::<u32>() {
+                  format!("{} is {age}", name.trim())
+              } else {
+                  String::from("bad age")
+              }
+          } else {
+              String::from("bad input")
+          }
+      }
+
+      fn main() {
+          for line in ["Ada: 36", "Ada 36", "Ada: old"] {
+              println!("{}", describe_age(line));
+          }
+      }
+    hints:
+      - "`let Some((name, age)) = line.split_once(':') else { return String::from(\"bad input\"); };`"
+      - "The output does not change, so there is no automatic check here: the point is the shape of the code. Compare your version with the nested one."
+      - "The finished function is three statements: two `let ... else` lines and the final `format!`."
+
+  - type: exercise
+    id: ch06-ex-iflet
+    exercise_dir: ch06-config
+    title: "Reading settings safely"
+    difficulty: medium
+    goal: "Use Option, if let and let...else to read key=value settings without ever panicking."
+    behavior: |
+      - `pub fn parse_line(line: &str) -> Option<(String, String)>`: for `"key = value"` return the trimmed key and value. Lines that are empty, start with `#` (comments) or have no `=` give `None`. An empty key also gives `None`.
+      - `pub fn port(lines: &[&str]) -> u16`: find the line with key `port` and return its value as a number; if there is no such line or the value is not a valid `u16`, return 8080.
+      - `pub fn count_settings(lines: &[&str]) -> usize`: how many lines are valid settings.
+    examples:
+      - input: "parse_line(\" name = demo \")"
+        output: "Some((\"name\", \"demo\"))"
+      - input: "parse_line(\"# port = 1\")"
+        output: "None"
+      - input: "port(&[\"debug = true\", \"port = 3000\"])"
+        output: "3000"
+      - input: "port(&[\"port = lots\"])"
+        output: "8080"
+    hints:
+      - "`let line = line.trim(); if line.is_empty() || line.starts_with('#') { return None; }`"
+      - "`let Some((k, v)) = line.split_once('=') else { return None; };`"
+      - "`port`: loop over the lines; `if let Some((k, v)) = parse_line(line)` and `k == \"port\"`, then `if let Ok(p) = v.parse::<u16>() { return p; }`."
+    rust:
+      starter: |
+        /// "key = value" -> Some((key, value)), trimmed. Comments, blank lines and lines without '=' are None.
+        pub fn parse_line(line: &str) -> Option<(String, String)> {
+            todo!()
+        }
+
+        /// The value of `port`, or 8080 when it is missing or invalid.
+        pub fn port(lines: &[&str]) -> u16 {
+            todo!()
+        }
+
+        /// How many lines are valid settings.
+        pub fn count_settings(lines: &[&str]) -> usize {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        fn pair(k: &str, v: &str) -> Option<(String, String)> {
+            Some((k.to_string(), v.to_string()))
+        }
+
+        #[test]
+        fn parses_settings() {
+            assert_eq!(parse_line(" name = demo "), pair("name", "demo"));
+            assert_eq!(parse_line("url=http://x/?a=b"), pair("url", "http://x/?a=b"), "only the first = splits");
+            assert_eq!(parse_line("empty ="), pair("empty", ""), "an empty value is allowed");
+        }
+
+        #[test]
+        fn skips_non_settings() {
+            assert_eq!(parse_line(""), None, "blank");
+            assert_eq!(parse_line("   "), None, "spaces only");
+            assert_eq!(parse_line("# port = 1"), None, "comment");
+            assert_eq!(parse_line("no equals sign"), None, "no =");
+            assert_eq!(parse_line(" = value"), None, "empty key");
+        }
+
+        #[test]
+        fn finds_the_port() {
+            assert_eq!(port(&["debug = true", "port = 3000"]), 3000);
+            assert_eq!(port(&["debug = true"]), 8080, "missing");
+            assert_eq!(port(&["port = lots"]), 8080, "not a number");
+            assert_eq!(port(&["port = 70000"]), 8080, "too big for u16");
+            assert_eq!(port(&["# port = 1", "port=22"]), 22, "comments are skipped");
+        }
+
+        #[test]
+        fn counts() {
+            assert_eq!(count_settings(&["a=1", "# b=2", "", "c = 3", "junk"]), 2);
+        }
+      solution: |
+        /// "key = value" -> Some((key, value)), trimmed. Comments, blank lines and lines without '=' are None.
+        pub fn parse_line(line: &str) -> Option<(String, String)> {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let Some((k, v)) = line.split_once('=') else {
+                return None;
+            };
+            let k = k.trim();
+            if k.is_empty() {
+                return None;
+            }
+            Some((k.to_string(), v.trim().to_string()))
+        }
+
+        /// The value of `port`, or 8080 when it is missing or invalid.
+        pub fn port(lines: &[&str]) -> u16 {
+            for line in lines {
+                if let Some((k, v)) = parse_line(line) {
+                    if k == "port" {
+                        if let Ok(p) = v.parse::<u16>() {
+                            return p;
+                        }
+                    }
+                }
+            }
+            8080
+        }
+
+        /// How many lines are valid settings.
+        pub fn count_settings(lines: &[&str]) -> usize {
+            let mut n = 0;
+            for line in lines {
+                if parse_line(line).is_some() {
+                    n += 1;
+                }
+            }
+            n
+        }
+    solution_explain: "No function can panic: every missing or malformed piece is an `Option` or a `Result` handled on the spot. `split_once` splits only at the first `=`, so URLs with query strings survive."
+
+  - type: quiz
+    id: ch06-quiz-iflet
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What do you give up by using `if let` instead of `match`?"
+        options: ["Speed", "The exhaustiveness check", "The ability to bind values", "Nothing at all"]
+        answer: 1
+        explanation: "Other cases are silently ignored, which is the point, but the compiler no longer checks them."
+      - type: single
+        q: "What must the `else` block of a `let ... else` do?"
+        options: ["Return a default value", "Leave the current block: return, break, continue or panic", "Nothing: it is optional", "Print an error"]
+        answer: 1
+        explanation: "Otherwise the bindings would not exist after the statement."
+      - type: single
+        q: "What does this print?"
+        code: |
+          let mut v = vec![10, 20];
+          let mut sum = 0;
+          while let Some(x) = v.pop() {
+              sum += x;
+          }
+          println!("{sum} {}", v.len());
+        lang: rust
+        options: ["30 0", "30 2", "20 1", "It loops forever"]
+        answer: 0
+        explanation: "`pop` returns `Some` twice, then `None`, and the vector is empty."
+      - type: truefalse
+        q: "`let (a, b) = (1, 2);` uses a pattern."
+        answer: true
+        explanation: "The left side of `let` is always a pattern."
+      - type: single
+        q: "Which form fits \"if this `Option` is `Some`, print it; otherwise do nothing\"?"
+        options: ["`match` with two arms", "`if let Some(x) = opt { ... }`", "`let Some(x) = opt else { ... };`", "`while let`"]
+        answer: 1
+        explanation: "`if let` without `else` is exactly \"do this only if it matches\"."
+
+  - type: summary
+    points:
+      - "`if let PATTERN = value { }` runs only when the pattern fits; add `else` for everything else."
+      - "`let PATTERN = value else { return ...; };` keeps the success path flat; the else must leave."
+      - "`while let` loops while the pattern keeps matching, like draining a stack with `pop`."
+      - "Use `match` when you want the compiler to check every case."
+      - "Patterns appear in `let`, function parameters, `for` loops, `match` arms, `if let`, `while let` and `let...else`."
+terms:
+  - term: if let
+    def: "Runs a block only when a value matches one pattern, binding its parts."
+  - term: let...else
+    def: "Binds a pattern for the rest of the scope, or runs an else block that must leave when the pattern does not match."
+  - term: while let
+    def: "A loop that continues as long as a value matches a pattern."
+  - term: refutable pattern
+    def: "A pattern that might not match, like Some(x); allowed in if let, while let, let...else and match."
+  - term: irrefutable pattern
+    def: "A pattern that always matches, like a plain name or a tuple of names; required by let and parameters."

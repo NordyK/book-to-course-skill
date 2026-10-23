@@ -1,0 +1,287 @@
+{
+  "title": "Closures",
+  "summary": "Anonymous functions that capture their environment: the shirt giveaway example, type inference for closures, the three ways of capturing, move closures, the Fn traits, and closures as parameters and return values.",
+  "minutes": 40,
+  "source": {
+    "chapter": "ch13",
+    "sections": [
+      "TRPL 13 Functional Language Features",
+      "TRPL 13.1 Closures",
+      "TRPL 13.1 Capturing the Environment",
+      "TRPL 13.1 Inferring and Annotating Closure Types",
+      "TRPL 13.1 Capturing References or Moving Ownership",
+      "TRPL 13.1 Moving Captured Values Out of Closures",
+      "TRPL 13.1 The Fn Traits",
+      "PR ch14 Closures",
+      "PR ch14 Capturing Variables",
+      "PR ch14 Closures That Borrow",
+      "PR ch14 Closures That Steal",
+      "PR ch14 Function and Closure Types",
+      "PR ch14 Closure Performance",
+      "PR ch14 Closures and Safety",
+      "PR ch14 FnOnce",
+      "PR ch14 FnMut",
+      "PR ch14 Callbacks",
+      "CR Day 2 Closures"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "A **closure** is an anonymous function you can store in a variable or pass to another function. Unlike `fn` items, closures can **capture** values from the scope where they are defined. You have used them already: `unwrap_or_else(|err| { ... })` in minigrep took a closure.\n\nThe syntax uses vertical bars for parameters:\n\n```rust\nfn  add_one_v1   (x: u32) -> u32 { x + 1 }  // a function\nlet add_one_v2 = |x: u32| -> u32 { x + 1 }; // a fully annotated closure\nlet add_one_v3 = |x|             { x + 1 }; // types inferred\nlet add_one_v4 = |x|               x + 1  ; // one expression: no braces\n```\n"
+    },
+    {
+      "type": "text",
+      "title": "Capturing the environment",
+      "md": "*The Rust Programming Language* uses a T-shirt company that gives away a shirt to people on its mailing list. Each person may name a favorite color; if they did not, they get the color the company has most of in stock:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "#[derive(Debug, PartialEq, Copy, Clone)]\nenum ShirtColor {\n    Red,\n    Blue,\n}\n\nstruct Inventory {\n    shirts: Vec<ShirtColor>,\n}\n\nimpl Inventory {\n    fn giveaway(&self, user_preference: Option<ShirtColor>) -> ShirtColor {\n        user_preference.unwrap_or_else(|| self.most_stocked())\n    }\n\n    fn most_stocked(&self) -> ShirtColor {\n        let mut num_red = 0;\n        let mut num_blue = 0;\n        for color in &self.shirts {\n            match color {\n                ShirtColor::Red => num_red += 1,\n                ShirtColor::Blue => num_blue += 1,\n            }\n        }\n        if num_red > num_blue { ShirtColor::Red } else { ShirtColor::Blue }\n    }\n}\n\nfn main() {\n    let store = Inventory {\n        shirts: vec![ShirtColor::Blue, ShirtColor::Red, ShirtColor::Blue],\n    };\n\n    let user_pref1 = Some(ShirtColor::Red);\n    let giveaway1 = store.giveaway(user_pref1);\n    println!(\"The user with preference {user_pref1:?} gets {giveaway1:?}\");\n\n    let user_pref2 = None;\n    let giveaway2 = store.giveaway(user_pref2);\n    println!(\"The user with preference {user_pref2:?} gets {giveaway2:?}\");\n}\n",
+      "output": "The user with preference Some(Red) gets Red\nThe user with preference None gets Blue\n",
+      "explain": "`|| self.most_stocked()` takes no parameters and captures `self`, an immutable reference to the `Inventory`. `unwrap_or_else` only calls it when the option is `None`. A plain function could not do this: it cannot see `self`."
+    },
+    {
+      "type": "text",
+      "title": "Closure types are inferred, once",
+      "md": "Closures are usually short and used in one place, so Rust infers their parameter and return types. Each closure gets **one** concrete type, fixed by its first use:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let example_closure = |x| x;\n\n    let s = example_closure(String::from(\"hello\"));\n    let n = example_closure(5);\n}\n",
+      "output": "error[E0308]: mismatched types\n --> src/main.rs:5:29\n  |\n5 |     let n = example_closure(5);\n  |             --------------- ^ expected `String`, found integer\n  |             |\n  |             arguments to this function are incorrect\n  |\nnote: expected because the closure was earlier called with an argument of type `String`\n --> src/main.rs:4:29\n  |\n4 |     let s = example_closure(String::from(\"hello\"));\n  |             --------------- ^^^^^^^^^^^^^^^^^^^^^ expected because this argument is of type `String`\n  |             |\n  |             in this closure call\nnote: closure parameter defined here\n --> src/main.rs:2:28\n  |\n2 |     let example_closure = |x| x;\n  |                            ^\nhelp: try using a conversion method\n  |\n5 |     let n = example_closure(5.to_string());\n  |                              ++++++++++++\n",
+      "output_label": "Compiler output",
+      "explain": "The first call fixed `x` to `String`. Closures are not generic; for that, write a generic `fn`."
+    },
+    {
+      "type": "text",
+      "title": "Three ways to capture",
+      "md": "A closure captures each variable in the **least demanding** way its body allows, in this order:\n\n1. **By shared reference** (`&T`), if it only reads the value.\n2. **By mutable reference** (`&mut T`), if it changes it.\n3. **By value** (moving ownership), if it moves the value out, such as returning or dropping it.\n\nThe usual borrowing rules then apply for as long as the closure exists.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    // 1. reads: borrows immutably, so list is still usable\n    let list = vec![1, 2, 3];\n    let only_borrows = || println!(\"From closure: {list:?}\");\n    println!(\"Before calling closure: {list:?}\");\n    only_borrows();\n    println!(\"After calling closure: {list:?}\");\n\n    // 2. changes: borrows mutably, so no other use until its last call\n    let mut list = vec![1, 2, 3];\n    let mut borrows_mutably = || list.push(7);\n    borrows_mutably();\n    println!(\"After calling closure: {list:?}\");\n\n    // 3. consumes: takes ownership\n    let words = vec![String::from(\"a\"), String::from(\"b\")];\n    let consume = || words; // returns the vector, moving it\n    let v = consume();\n    println!(\"moved out: {v:?}\");\n}\n",
+      "output": "Before calling closure: [1, 2, 3]\nFrom closure: [1, 2, 3]\nAfter calling closure: [1, 2, 3]\nAfter calling closure: [1, 2, 3, 7]\nmoved out: [\"a\", \"b\"]\n",
+      "explain": "Between defining `borrows_mutably` and its last call, a `println!` of `list` would be an error: you cannot borrow immutably while a mutable borrow is alive. The closure binding itself must be `mut` because calling it changes its captured state."
+    },
+    {
+      "type": "text",
+      "title": "move closures",
+      "md": "Put **`move`** before the parameter list to make the closure take **ownership** of everything it uses, even values it only reads. This matters when the closure must outlive the current scope, most importantly when handing it to a **new thread** (chapter 16), which may run longer than the function that created it:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::thread;\n\nfn main() {\n    let list = vec![1, 2, 3];\n    println!(\"Before defining closure: {list:?}\");\n\n    thread::spawn(move || println!(\"From thread: {list:?}\"))\n        .join()\n        .unwrap();\n}\n",
+      "output": "Before defining closure: [1, 2, 3]\nFrom thread: [1, 2, 3]\n",
+      "explain": "Without `move`, the closure would borrow `list`, but the compiler cannot prove the thread finishes before `main` drops `list`, so it rejects the code (E0373) and suggests `move`."
+    },
+    {
+      "type": "text",
+      "title": "The Fn traits",
+      "md": "What a closure does with its captures decides which of three traits it implements. Functions that take closures use these traits as bounds, saying what kind of closure they accept:\n"
+    },
+    {
+      "type": "table",
+      "title": "FnOnce, FnMut and Fn",
+      "headers": [
+        "Trait",
+        "The closure...",
+        "Can be called",
+        "Example user"
+      ],
+      "rows": [
+        [
+          "`FnOnce`",
+          "may move captured values out of its body",
+          "at least once; maybe only once",
+          "`Option::unwrap_or_else`"
+        ],
+        [
+          "`FnMut`",
+          "may mutate captured values, but does not move them out",
+          "many times, needs `&mut`",
+          "`sort_by_key`, `retain`"
+        ],
+        [
+          "`Fn`",
+          "only reads captures, or captures nothing",
+          "many times, even at once from several threads",
+          "a callback stored in a struct"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "title": "The traits nest",
+      "md": "Every closure implements `FnOnce`. Those that do not move out also implement `FnMut`; those that also do not mutate implement `Fn`. So a function asking for `FnOnce` accepts **any** closure, and one asking for `Fn` accepts the fewest. Choose the loosest bound your function can work with. Plain functions implement all three, so you can pass `String::new` where a closure is expected."
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "#[derive(Debug)]\nstruct Rectangle {\n    width: u32,\n    height: u32,\n}\n\nfn main() {\n    let mut list = [\n        Rectangle { width: 10, height: 1 },\n        Rectangle { width: 3, height: 5 },\n        Rectangle { width: 7, height: 12 },\n    ];\n\n    let mut num_sort_operations = 0;\n    list.sort_by_key(|r| {\n        num_sort_operations += 1;\n        r.width\n    });\n    println!(\"{list:#?}\");\n    println!(\"sorted in {num_sort_operations} operations\");\n}\n",
+      "output": "[\n    Rectangle {\n        width: 3,\n        height: 5,\n    },\n    Rectangle {\n        width: 7,\n        height: 12,\n    },\n    Rectangle {\n        width: 10,\n        height: 1,\n    },\n]\nsorted in 6 operations\n",
+      "explain": "`sort_by_key` calls the closure many times, so it requires `FnMut`. Counting with a captured `&mut` is fine. Pushing a captured `String` into a vector inside it would move the string out on the first call, making it `FnOnce`, and the compiler would refuse."
+    },
+    {
+      "type": "text",
+      "title": "Taking and returning closures",
+      "md": "Every closure has its own anonymous type, so you accept them through generics with an `Fn` bound, and return them with `impl Fn`:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn apply_twice<F: Fn(i32) -> i32>(f: F, x: i32) -> i32 {\n    f(f(x))\n}\n\nfn make_adder(n: i32) -> impl Fn(i32) -> i32 {\n    move |x| x + n\n}\n\nfn call_n_times(mut f: impl FnMut(), n: usize) {\n    for _ in 0..n {\n        f();\n    }\n}\n\nfn main() {\n    let add_five = make_adder(5);\n    println!(\"{}\", apply_twice(&add_five, 1));\n    println!(\"{}\", apply_twice(|x| x * x, 3));\n\n    let mut count = 0;\n    call_n_times(|| count += 2, 4);\n    println!(\"count = {count}\");\n}\n",
+      "output": "11\n81\ncount = 8\n",
+      "explain": "`make_adder` must use `move`: `n` is a parameter that dies when the function returns, so the closure has to own its copy. Passing `&add_five` works because a shared reference to an `Fn` closure is itself `Fn`."
+    },
+    {
+      "type": "playground",
+      "id": "ch13-play-closures",
+      "title": "Closures as configuration",
+      "lang": "rust",
+      "md": "`apply_discounts` takes a list of prices and a **rule**: a closure deciding the new price. Write two rules in `main`: one that takes 10% off prices over 100, and one that subtracts a fixed `coupon` captured from the environment but never goes below zero.\n",
+      "task": "Print `[50.0, 108.0, 180.0]` and `[35.0, 105.0, 185.0]`.",
+      "code": "fn apply_discounts<F: Fn(f64) -> f64>(prices: &[f64], rule: F) -> Vec<f64> {\n    let mut out = Vec::new();\n    for &p in prices {\n        out.push(rule(p));\n    }\n    out\n}\n\nfn main() {\n    let prices = [50.0, 120.0, 200.0];\n    let coupon = 15.0;\n\n    let bulk = |p: f64| p; // TODO: 10% off prices over 100\n    let fixed = |p: f64| p; // TODO: subtract coupon, at least 0\n\n    println!(\"{:?}\", apply_discounts(&prices, bulk));\n    println!(\"{:?}\", apply_discounts(&prices, fixed));\n}\n",
+      "expected_output": "[50.0, 108.0, 180.0]\n[35.0, 105.0, 185.0]\n",
+      "hints": [
+        "`|p: f64| if p > 100.0 { p * 0.9 } else { p }`",
+        "`|p: f64| (p - coupon).max(0.0)` captures `coupon` by reference."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch13-ex-closures",
+      "exercise_dir": "ch13-closures",
+      "title": "Higher-order helpers",
+      "difficulty": "hard",
+      "goal": "Write functions that take and return closures with the right Fn bound, including a closure that keeps state.",
+      "behavior": "- `pub fn compose<A, B, C>(f: impl Fn(A) -> B, g: impl Fn(B) -> C) -> impl Fn(A) -> C`: a closure computing `g(f(x))`.\n- `pub fn counter() -> impl FnMut() -> u32`: each call returns the next number, starting at 1.\n- `pub fn retry<T, E>(times: usize, mut op: impl FnMut() -> Result<T, E>) -> Result<T, E>`: calls `op` up to `times` times (at least once), returning the first `Ok`, or the last `Err`.\n- `pub fn group_by_key<T, K: PartialEq>(items: Vec<T>, key: impl Fn(&T) -> K) -> Vec<(K, Vec<T>)>`: groups **consecutive** items with equal keys, keeping order.\n",
+      "examples": [
+        {
+          "input": "compose(|x: i32| x + 1, |x: i32| x * 10)(4)",
+          "output": "50"
+        },
+        {
+          "input": "let mut c = counter(); (c(), c(), c())",
+          "output": "(1, 2, 3)"
+        },
+        {
+          "input": "group_by_key(vec![1, 3, 2, 4, 5], |x| x % 2)",
+          "output": "[(1, [1, 3]), (0, [2, 4]), (1, [5])]"
+        }
+      ],
+      "hints": [
+        "`compose`: `move |x| g(f(x))`. `move` is needed because `f` and `g` are parameters.",
+        "`counter`: `let mut n = 0; move || { n += 1; n }`.",
+        "`retry`: loop `for attempt in 1..=times.max(1)`, keep the last error, and return immediately on `Ok`.",
+        "`group_by_key`: for each item compute `k`; if the last group's key equals `k`, push into it, otherwise push a new `(k, vec![item])`. `groups.last_mut()` gives `Option<&mut (K, Vec<T>)>`."
+      ],
+      "solution_explain": "`counter` returns `impl FnMut` because calling it changes the captured `n`; the caller must hold it in a `mut` binding. `retry` needs `FnMut` because it calls `op` several times and the closure may update state, like `calls`. `group_by_key` only reads through `key`, so `Fn` is enough. The match guard `if *last_k == k` decides whether the item joins the current group."
+    },
+    {
+      "type": "quiz",
+      "id": "ch13-quiz-closures",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "How does `let c = || println!(\"{v:?}\");` capture `v`?",
+          "options": [
+            "By value",
+            "By shared reference",
+            "By mutable reference",
+            "It does not capture"
+          ],
+          "answer": 1,
+          "explanation": "It only reads v."
+        },
+        {
+          "type": "single",
+          "q": "What does `move` change?",
+          "options": [
+            "The closure moves into a new thread automatically",
+            "The closure takes ownership of the captured values",
+            "The closure can be called only once",
+            "The closure becomes generic"
+          ],
+          "answer": 1,
+          "explanation": "It still implements Fn if it only reads."
+        },
+        {
+          "type": "single",
+          "q": "A closure moves a captured String out of its body (e.g., returns it). Which traits does it implement?",
+          "options": [
+            "Fn, FnMut and FnOnce",
+            "FnMut and FnOnce",
+            "Only FnOnce",
+            "None"
+          ],
+          "answer": 2,
+          "explanation": "After moving out, a second call would have nothing to move."
+        },
+        {
+          "type": "single",
+          "q": "Your function calls a closure parameter many times and the closure may change captured state. Which bound?",
+          "options": [
+            "`F: Fn()`",
+            "`F: FnMut()`",
+            "`F: FnOnce()`",
+            "`F: Copy`"
+          ],
+          "answer": 1,
+          "explanation": "FnMut allows mutation and repeated calls."
+        },
+        {
+          "type": "single",
+          "q": "Why must `make_adder(n)` return `move |x| x + n`?",
+          "options": [
+            "Closures always need move",
+            "n is a parameter that would be dropped when the function returns; the closure must own it",
+            "To make it Fn",
+            "For performance"
+          ],
+          "answer": 1,
+          "explanation": "A borrowed n would dangle."
+        },
+        {
+          "type": "truefalse",
+          "q": "`let id = |x| x; id(1); id(\"a\");` compiles.",
+          "answer": false,
+          "explanation": "The first call fixes the closure's type."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Closures are anonymous functions written `|args| body` that can capture variables from their scope.",
+        "They capture by reference, mutable reference or value, whichever the body needs; `move` forces ownership.",
+        "`FnOnce` ⊇ `FnMut` ⊇ `Fn`: accept the loosest one your function can use.",
+        "Take closures with generic bounds (`F: Fn(i32) -> i32` or `impl Fn`) and return them with `impl Fn`."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "closure",
+      "def": "An anonymous function that can capture values from the scope where it is defined."
+    },
+    {
+      "term": "capture",
+      "def": "A closure's use of a variable from its environment, by reference, mutable reference or by value."
+    },
+    {
+      "term": "move closure",
+      "def": "A closure marked move, which takes ownership of everything it captures."
+    },
+    {
+      "term": "Fn / FnMut / FnOnce",
+      "def": "Traits describing how a closure uses its captures: only reads, mutates, or may move them out."
+    }
+  ]
+}

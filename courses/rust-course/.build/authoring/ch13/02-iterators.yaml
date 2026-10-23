@@ -1,0 +1,525 @@
+title: "Processing a series of items with iterators"
+summary: "Iterators are lazy, the Iterator trait and next, iter versus iter_mut versus into_iter, consuming adapters like sum, collect and fold, iterator adapters like map, filter, enumerate, zip, take, skip and chain, closures that capture, and implementing Iterator yourself."
+minutes: 45
+source:
+  chapter: ch13
+  sections: ["TRPL 13.2 Processing a Series of Items with Iterators", "TRPL 13.2 The Iterator Trait and the next Method", "TRPL 13.2 Methods That Consume the Iterator", "TRPL 13.2 Methods That Produce Other Iterators", "TRPL 13.2 Using Closures That Capture Their Environment", "PR ch15 Iterators", "PR ch15 The Iterator and IntoIterator Traits", "PR ch15 Creating Iterators", "PR ch15 Iterator Adapters", "PR ch15 Consuming Iterators", "PR ch15 Implementing Your Own Iterators", "CR Day 2 Iterators", "CR Day 2 IntoIterator", "CR Day 2 FromIterator"]
+blocks:
+  - type: text
+    md: |
+      An **iterator** produces a sequence of items, one at a time, and knows when it is finished. Iterators in Rust are **lazy**: creating one does nothing until you consume it.
+
+      ```rust
+      let v1 = vec![1, 2, 3];
+      let v1_iter = v1.iter(); // nothing happens yet
+
+      for val in v1_iter {     // the for loop consumes it
+          println!("Got: {val}");
+      }
+      ```
+
+      Every `for` loop you have written used an iterator underneath. Iterators let you write the "go through each element" logic once, in the standard library, instead of index variables in every loop.
+
+  - type: text
+    title: The Iterator trait
+    md: |
+      All iterators implement one trait from the standard library:
+
+      ```rust
+      pub trait Iterator {
+          type Item;
+
+          fn next(&mut self) -> Option<Self::Item>;
+
+          // methods with default implementations elided
+      }
+      ```
+
+      `next` returns `Some(item)` until the sequence is done, then `None`. That is the only method an implementor must write. Dozens of other methods (`map`, `filter`, `sum`...) have default implementations built on `next`.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let v1 = vec![1, 2, 3];
+          let mut v1_iter = v1.iter();
+
+          assert_eq!(v1_iter.next(), Some(&1));
+          assert_eq!(v1_iter.next(), Some(&2));
+          assert_eq!(v1_iter.next(), Some(&3));
+          assert_eq!(v1_iter.next(), None);
+          println!("done");
+      }
+    output: "done"
+    explain: "`v1_iter` must be `mut`: `next` changes the iterator's internal position. The `for` loop did not need that because it takes ownership of the iterator and makes it mutable behind the scenes."
+
+  - type: table
+    title: Three ways to iterate a collection
+    headers: ["Call", "Yields", "The collection afterwards", "`for` loop form"]
+    rows:
+      - ["`v.iter()`", "`&T`, shared references", "unchanged and usable", "`for x in &v`"]
+      - ["`v.iter_mut()`", "`&mut T`, to change elements in place", "usable, possibly modified", "`for x in &mut v`"]
+      - ["`v.into_iter()`", "`T`, owned values", "moved: gone", "`for x in v`"]
+
+  - type: text
+    title: Consuming adapters
+    md: |
+      Methods that call `next` until the end are **consuming adapters**: they use up the iterator and produce a final value.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let v = vec![3, 1, 4, 1, 5, 9, 2, 6];
+
+          let total: i32 = v.iter().sum();
+          let count = v.iter().count();
+          let biggest = v.iter().max();
+          let any_even = v.iter().any(|x| x % 2 == 0);
+          let all_small = v.iter().all(|&x| x < 10);
+          let first_big = v.iter().find(|&&x| x > 4);
+          let pos = v.iter().position(|&x| x == 9);
+          let product = v.iter().fold(1, |acc, x| acc * x);
+
+          println!("{total} {count} {biggest:?} {any_even} {all_small}");
+          println!("{first_big:?} {pos:?} {product}");
+      }
+    output: |
+      31 8 Some(9) true true
+      Some(5) Some(5) 6480
+    explain: "`fold` is the general one: it starts with an accumulator and combines each item into it; `sum` and `count` are special cases. Notice the patterns `|&x|` and `|&&x|`: `iter()` yields `&i32`, and `find` passes a reference to that, so destructuring removes the layers of `&`."
+
+  - type: text
+    title: Iterator adapters
+    md: |
+      **Iterator adapters** take an iterator and return a new one that changes the items somehow. Because iterators are lazy, adapters do nothing on their own; you need a consuming adapter at the end. The compiler warns you otherwise:
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let v1: Vec<i32> = vec![1, 2, 3];
+          v1.iter().map(|x| x + 1);
+      }
+  - type: code
+    lang: text
+    code: |
+      warning: unused `Map` that must be used
+       --> src/main.rs:3:5
+        |
+      3 |     v1.iter().map(|x| x + 1);
+        |     ^^^^^^^^^^^^^^^^^^^^^^^^
+        |
+        = note: iterators are lazy and do nothing unless consumed
+        = note: `#[warn(unused_must_use)]` (part of `#[warn(unused)]`) on by default
+      help: use `let _ = ...` to ignore the resulting value
+        |
+      3 |     let _ = v1.iter().map(|x| x + 1);
+        |     +++++++
+    explain: "Add `.collect()` (with a type, such as `Vec<_>`) to run the map and gather the results."
+
+  - type: table
+    title: Common adapters
+    headers: ["Adapter", "Does", "Example result"]
+    rows:
+      - ["`map(f)`", "transforms each item", "`[1,2,3]` → `[2,4,6]` with `|x| x * 2`"]
+      - ["`filter(p)`", "keeps items where `p` is true", "evens only"]
+      - ["`filter_map(f)`", "maps to `Option` and keeps the `Some`s", "parse strings, skip bad ones"]
+      - ["`enumerate()`", "pairs each item with its index", "`(0, a), (1, b)`"]
+      - ["`zip(other)`", "pairs items of two iterators", "`(a, 1), (b, 2)`"]
+      - ["`take(n)` / `skip(n)`", "first n / all but the first n", ""]
+      - ["`take_while(p)` / `skip_while(p)`", "while a condition holds", ""]
+      - ["`chain(other)`", "one iterator after another", ""]
+      - ["`rev()`", "backwards (for double-ended iterators)", ""]
+      - ["`flat_map(f)` / `flatten()`", "flattens nested sequences", "words of all lines"]
+      - ["`peekable()`", "lets you look at the next item without consuming it", "parsers"]
+      - ["`step_by(n)`", "every nth item", ""]
+      - ["`cloned()` / `copied()`", "turn `&T` into `T`", ""]
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let names = ["ada", "grace", "linus", "barbara"];
+          let years = [1815, 1906, 1969, 1939];
+
+          let upper: Vec<String> = names.iter().map(|n| n.to_uppercase()).collect();
+          println!("{upper:?}");
+
+          let long: Vec<&str> = names.iter().copied().filter(|n| n.len() > 4).collect();
+          println!("{long:?}");
+
+          for (i, (name, year)) in names.iter().zip(years).enumerate().skip(1).take(2) {
+              println!("{i}: {name} ({year})");
+          }
+
+          let numbers: Vec<i32> = "4, x, 8, 15, ?, 16"
+              .split(", ")
+              .filter_map(|s| s.parse().ok())
+              .collect();
+          println!("{numbers:?}");
+
+          let letters: String = names.iter().flat_map(|n| n.chars().take(1)).collect();
+          println!("{letters}");
+
+          let evens_squared: i32 = (1..=10).filter(|n| n % 2 == 0).map(|n| n * n).sum();
+          println!("{evens_squared}");
+      }
+    output: |
+      ["ADA", "GRACE", "LINUS", "BARBARA"]
+      ["grace", "linus", "barbara"]
+      1: grace (1906)
+      2: linus (1969)
+      [4, 8, 15, 16]
+      aglb
+      220
+    explain: "Read a chain top to bottom as a pipeline. `collect` can build a `Vec`, a `String`, a `HashMap` (from pairs) and more, decided by the type you ask for; this works through the `FromIterator` trait."
+
+  - type: stepper
+    title: "Laziness: who calls next?"
+    steps:
+      - title: Building the chain does nothing
+        md: "`(1..=4).map(f).filter(p)` creates nested structs: a `Filter` holding a `Map` holding a `Range`. No closure has run."
+        code: |
+          let it = (1..=4).map(|x| { println!("map {x}"); x * 10 }).filter(|x| x % 20 == 0);
+      - title: The consumer pulls the first item
+        md: "`collect` calls `next` on `Filter`, which calls `next` on `Map`, which calls `next` on the range. `1` flows up: `map 1` prints, `10` fails the filter, so `Filter` asks again."
+        code: |
+          map 1      // 10 rejected
+          map 2      // 20 kept → first item
+      - title: One item at a time, all the way through
+        md: "Each item goes through the whole pipeline before the next one starts. There are no intermediate vectors, which is why chains are cheap."
+        code: |
+          map 3      // 30 rejected
+          map 4      // 40 kept
+          // collected: [20, 40]
+      - title: Early exit is free
+        md: "With `.take(1)` instead of `collect`ing everything, the pipeline stops after `map 2`: items 3 and 4 are never computed."
+
+  - type: text
+    title: Closures that capture their environment
+    md: |
+      Adapters take closures, and closures can capture. *The Rust Programming Language* filters shoes by the size the customer wears:
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(PartialEq, Debug)]
+      struct Shoe {
+          size: u32,
+          style: String,
+      }
+
+      fn shoes_in_size(shoes: Vec<Shoe>, shoe_size: u32) -> Vec<Shoe> {
+          shoes.into_iter().filter(|s| s.size == shoe_size).collect()
+      }
+
+      fn main() {
+          let shoes = vec![
+              Shoe { size: 10, style: String::from("sneaker") },
+              Shoe { size: 13, style: String::from("sandal") },
+              Shoe { size: 10, style: String::from("boot") },
+          ];
+          println!("{:?}", shoes_in_size(shoes, 10));
+      }
+    output: "[Shoe { size: 10, style: \"sneaker\" }, Shoe { size: 10, style: \"boot\" }]"
+    explain: "The closure captures `shoe_size`. `into_iter` takes ownership of the vector, so the returned shoes are moved, not cloned."
+
+  - type: text
+    title: Your own iterator
+    md: |
+      Implement `Iterator` by writing `next`, and you get every adapter for free. *Programming Rust*'s advice: if your type is a collection, also implement `IntoIterator` (often by returning a standard iterator), so it works in `for` loops.
+
+  - type: code
+    lang: rust
+    code: |
+      struct Fibonacci {
+          curr: u64,
+          next: u64,
+      }
+
+      impl Iterator for Fibonacci {
+          type Item = u64;
+
+          fn next(&mut self) -> Option<u64> {
+              let new_next = self.curr.checked_add(self.next)?;
+              let result = self.curr;
+              self.curr = self.next;
+              self.next = new_next;
+              Some(result)
+          }
+      }
+
+      fn fibonacci() -> Fibonacci {
+          Fibonacci { curr: 0, next: 1 }
+      }
+
+      fn main() {
+          let first: Vec<u64> = fibonacci().take(10).collect();
+          println!("{first:?}");
+          let even_sum: u64 = fibonacci().take_while(|&x| x < 4_000_000).filter(|x| x % 2 == 0).sum();
+          println!("{even_sum}");
+          println!("{} terms fit in a u64", fibonacci().count());
+      }
+    output: |
+      [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
+      4613732
+      92 terms fit in a u64
+    explain: "The `?` on `checked_add` ends the sequence instead of overflowing: an infinite-looking iterator that stops when the numbers would not fit. `take_while` stops the second chain long before that."
+
+  - type: playground
+    id: ch13-play-chains
+    title: "Loops to chains"
+    lang: rust
+    md: |
+      Rewrite each loop in `main` as a single iterator chain. The output must not change. Try `filter`, `map`, `sum`, `max_by_key`, `enumerate` and `collect`.
+    task: "Keep the output the same (`[\"ALICE\", \"CAROL\"]`, `7`, `Some(\"carol\")`) with no `for` loops left."
+    code: |
+      fn main() {
+          let users = [("alice", 31, true), ("bob", 17, false), ("carol", 45, true), ("dave", 12, false)];
+
+          // names of active users, uppercased
+          let mut active = Vec::new();
+          for (name, _, is_active) in users {
+              if is_active {
+                  active.push(name.to_uppercase());
+              }
+          }
+          println!("{active:?}");
+
+          // total length of names of users under 18
+          let mut total = 0;
+          for (name, age, _) in users {
+              if age < 18 {
+                  total += name.len();
+              }
+          }
+          println!("{total}");
+
+          // name of the oldest user
+          let mut oldest: Option<(&str, u32)> = None;
+          for (name, age, _) in users {
+              match oldest {
+                  Some((_, a)) if a >= age => {}
+                  _ => oldest = Some((name, age)),
+              }
+          }
+          println!("{:?}", oldest.map(|(n, _)| n));
+      }
+    hints:
+      - "`users.iter().filter(|u| u.2).map(|u| u.0.to_uppercase()).collect::<Vec<_>>()`"
+      - "`users.iter().filter(|u| u.1 < 18).map(|u| u.0.len()).sum::<usize>()`"
+      - "`users.iter().max_by_key(|u| u.1).map(|u| u.0)`"
+
+  - type: exercise
+    id: ch13-ex-iterators
+    exercise_dir: ch13-iterators
+    title: "Iterator workout"
+    difficulty: hard
+    goal: "Solve data problems with iterator chains, and implement Iterator for your own type."
+    behavior: |
+      Write each function as an iterator chain (loops are allowed but the point is to practise adapters):
+      - `pub fn word_lengths(text: &str) -> Vec<(String, usize)>`: each whitespace-separated word, lowercased, with its length in characters.
+      - `pub fn top_n(scores: &[(String, u32)], n: usize) -> Vec<String>`: the names of the `n` highest scores, highest first; equal scores keep their original order.
+      - `pub fn running_total(values: &[i64]) -> Vec<i64>`: prefix sums (`[1, 2, 3]` gives `[1, 3, 6]`). Hint: `scan`.
+      - `pub fn parse_all(items: &[&str]) -> Result<Vec<i32>, std::num::ParseIntError>`: parse every item, stopping at the first error. Hint: `collect` into a `Result`.
+      - `pub struct Collatz { n: u64, done: bool }`, created by `pub fn collatz(start: u64) -> Collatz`, iterating the Collatz sequence from `start` down to and including 1 (n even: n/2, odd: 3n+1). `collatz(6)` yields 6, 3, 10, 5, 16, 8, 4, 2, 1.
+    examples:
+      - input: "running_total(&[1, 2, 3])"
+        output: "[1, 3, 6]"
+      - input: "parse_all(&[\"1\", \"x\"]).is_err()"
+        output: "true"
+      - input: "collatz(6).count()"
+        output: "9"
+    hints:
+      - "`text.split_whitespace().map(|w| { let w = w.to_lowercase(); let n = w.chars().count(); (w, n) }).collect()`"
+      - "`top_n`: collect references into a Vec, `sort_by(|a, b| b.1.cmp(&a.1))` (sort is stable), then `.iter().take(n).map(|s| s.0.clone()).collect()`."
+      - "`values.iter().scan(0, |acc, &x| { *acc += x; Some(*acc) }).collect()`"
+      - "`items.iter().map(|s| s.parse::<i32>()).collect()`: collecting an iterator of `Result`s into `Result<Vec<_>, _>` stops at the first `Err`."
+      - "Collatz `next`: if `done`, return `None`; remember the current `n`; if it is 1, set `done`; otherwise compute the next `n`. Return the remembered value."
+    rust:
+      starter: |
+        use std::num::ParseIntError;
+
+        pub fn word_lengths(text: &str) -> Vec<(String, usize)> {
+            todo!()
+        }
+
+        pub fn top_n(scores: &[(String, u32)], n: usize) -> Vec<String> {
+            todo!()
+        }
+
+        pub fn running_total(values: &[i64]) -> Vec<i64> {
+            todo!()
+        }
+
+        pub fn parse_all(items: &[&str]) -> Result<Vec<i32>, ParseIntError> {
+            todo!()
+        }
+
+        pub struct Collatz {
+            n: u64,
+            done: bool,
+        }
+
+        pub fn collatz(start: u64) -> Collatz {
+            Collatz { n: start, done: false }
+        }
+
+        // impl Iterator for Collatz { ... }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn lengths() {
+            assert_eq!(
+                word_lengths("Hello  Wörld rust"),
+                vec![("hello".to_string(), 5), ("wörld".to_string(), 5), ("rust".to_string(), 4)]
+            );
+            assert!(word_lengths("   ").is_empty());
+        }
+
+        #[test]
+        fn top_scores() {
+            let s: Vec<(String, u32)> = [("a", 5), ("b", 9), ("c", 7), ("d", 9)].iter().map(|(n, v)| (n.to_string(), *v)).collect();
+            assert_eq!(top_n(&s, 3), vec!["b", "d", "c"], "ties keep order");
+            assert_eq!(top_n(&s, 10).len(), 4);
+            assert!(top_n(&s, 0).is_empty());
+        }
+
+        #[test]
+        fn totals() {
+            assert_eq!(running_total(&[1, 2, 3]), vec![1, 3, 6]);
+            assert_eq!(running_total(&[5, -5, 2]), vec![5, 0, 2]);
+            assert!(running_total(&[]).is_empty());
+        }
+
+        #[test]
+        fn parsing() {
+            assert_eq!(parse_all(&["1", "-2", "30"]), Ok(vec![1, -2, 30]));
+            assert!(parse_all(&["1", "x", "3"]).is_err());
+            assert_eq!(parse_all(&[]), Ok(vec![]));
+        }
+
+        #[test]
+        fn collatz_sequence() {
+            assert_eq!(collatz(6).collect::<Vec<_>>(), vec![6, 3, 10, 5, 16, 8, 4, 2, 1]);
+            assert_eq!(collatz(1).collect::<Vec<_>>(), vec![1]);
+            assert_eq!(collatz(27).count(), 112);
+            assert_eq!(collatz(27).max(), Some(9232), "adapters come for free");
+        }
+      solution: |
+        use std::num::ParseIntError;
+
+        pub fn word_lengths(text: &str) -> Vec<(String, usize)> {
+            text.split_whitespace()
+                .map(|w| {
+                    let w = w.to_lowercase();
+                    let n = w.chars().count();
+                    (w, n)
+                })
+                .collect()
+        }
+
+        pub fn top_n(scores: &[(String, u32)], n: usize) -> Vec<String> {
+            let mut sorted: Vec<&(String, u32)> = scores.iter().collect();
+            sorted.sort_by(|a, b| b.1.cmp(&a.1));
+            sorted.iter().take(n).map(|s| s.0.clone()).collect()
+        }
+
+        pub fn running_total(values: &[i64]) -> Vec<i64> {
+            values
+                .iter()
+                .scan(0, |acc, &x| {
+                    *acc += x;
+                    Some(*acc)
+                })
+                .collect()
+        }
+
+        pub fn parse_all(items: &[&str]) -> Result<Vec<i32>, ParseIntError> {
+            items.iter().map(|s| s.parse::<i32>()).collect()
+        }
+
+        pub struct Collatz {
+            n: u64,
+            done: bool,
+        }
+
+        pub fn collatz(start: u64) -> Collatz {
+            Collatz { n: start, done: false }
+        }
+
+        impl Iterator for Collatz {
+            type Item = u64;
+
+            fn next(&mut self) -> Option<u64> {
+                if self.done {
+                    return None;
+                }
+                let current = self.n;
+                if current == 1 {
+                    self.done = true;
+                } else if current % 2 == 0 {
+                    self.n = current / 2;
+                } else {
+                    self.n = 3 * current + 1;
+                }
+                Some(current)
+            }
+        }
+    solution_explain: "`collect` into `Result<Vec<_>, _>` is a standard trick: it stops at the first error and returns it. `scan` is like `fold` but yields every intermediate state. `sort_by` is stable, so equal scores keep their input order, and sorting references avoids cloning names until the end."
+
+  - type: quiz
+    id: ch13-quiz-iterators
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What does `let it = v.iter().map(|x| x * 2);` do on its own?"
+        options: ["Doubles every element of v", "Nothing yet: iterators are lazy", "Creates a new vector", "Panics"]
+        answer: 1
+        explanation: "A consumer like collect or sum is needed."
+      - type: single
+        q: "After `for x in v { ... }` with `v: Vec<String>`, can you use `v`?"
+        options: ["Yes", "No, `for x in v` calls into_iter and moves v", "Only its length", "Only if x is not used"]
+        answer: 1
+        explanation: "Use `for x in &v` to borrow."
+      - type: single
+        q: "What is `(1..=4).map(|x| x * x).sum::<i32>()`?"
+        options: ["10", "30", "16", "24"]
+        answer: 1
+        explanation: "1 + 4 + 9 + 16."
+      - type: single
+        q: "What does `[\"a\", \"b\"].iter().zip([1, 2, 3])` yield?"
+        options: ["(\"a\", 1), (\"b\", 2)", "(\"a\", 1), (\"b\", 2), (None, 3)", "An error: lengths differ", "Nothing"]
+        answer: 0
+        explanation: "zip stops at the shorter one."
+      - type: single
+        q: "Which method must you implement for the Iterator trait?"
+        options: ["`iter`", "`next`", "`map`", "`collect`"]
+        answer: 1
+        explanation: "Everything else has a default."
+      - type: single
+        q: "What does `vec![\"1\", \"x\"].iter().map(|s| s.parse::<i32>()).collect::<Result<Vec<_>, _>>()` give?"
+        options: ["`Ok([1])`", "An `Err` with the parse error", "`[Ok(1), Err(...)]`", "A panic"]
+        answer: 1
+        explanation: "Collecting into Result stops at the first Err."
+
+  - type: summary
+    points:
+      - "Iterators are lazy; nothing happens until a consumer calls `next`."
+      - "`iter()` borrows, `iter_mut()` borrows mutably, `into_iter()` takes ownership."
+      - "Consumers (`sum`, `count`, `fold`, `collect`, `find`, `any`) produce a final value; adapters (`map`, `filter`, `zip`, `enumerate`, `take`...) produce new iterators."
+      - "`collect` builds whatever collection you ask for, including `Result<Vec<_>, _>`."
+      - "Implement `next` for your type and every adapter works on it."
+terms:
+  - term: iterator
+    def: "A value that yields a sequence of items through its next method."
+  - term: lazy
+    def: "Doing no work until the result is needed; iterator adapters run only when consumed."
+  - term: iterator adapter
+    def: "A method like map or filter that turns one iterator into another."
+  - term: consuming adapter
+    def: "A method like sum or collect that calls next until the end and produces a value."
+  - term: "collect"
+    def: "A consumer that builds a collection (Vec, String, HashMap, Result<Vec>...) from an iterator, chosen by the target type."

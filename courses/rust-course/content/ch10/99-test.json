@@ -1,0 +1,159 @@
+{
+  "title": "Chapter test: Generics, Traits and Lifetimes",
+  "kind": "test",
+  "summary": "Twelve questions on generics, traits, lifetimes and the standard traits. You need 70% to pass; you can retry and your best score is kept.",
+  "blocks": [
+    {
+      "type": "quiz",
+      "id": "ch10-test",
+      "pass_score": 0.7,
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which signature lets `largest` compare elements with `>`?",
+          "options": [
+            "`fn largest<T>(l: &[T]) -> &T`",
+            "`fn largest<T: PartialOrd>(l: &[T]) -> &T`",
+            "`fn largest<T: Display>(l: &[T]) -> &T`",
+            "`fn largest(l: &[impl]) -> &T`"
+          ],
+          "answer": 1,
+          "explanation": "`>` comes from PartialOrd."
+        },
+        {
+          "type": "single",
+          "q": "How fast is a generic function compared to a hand-written version for one type?",
+          "options": [
+            "Slower, because types are checked at run time",
+            "The same, because of monomorphization",
+            "Faster",
+            "It depends on the number of bounds"
+          ],
+          "answer": 1,
+          "explanation": "Each concrete use gets its own compiled copy."
+        },
+        {
+          "type": "single",
+          "q": "What does this print?",
+          "code": "trait Greet {\n    fn name(&self) -> String;\n    fn hello(&self) -> String { format!(\"Hello, {}!\", self.name()) }\n}\nstruct Bot;\nimpl Greet for Bot {\n    fn name(&self) -> String { String::from(\"Bot\") }\n}\nprintln!(\"{}\", Bot.hello());\n",
+          "lang": "rust",
+          "options": [
+            "Hello, !",
+            "Hello, Bot!",
+            "It does not compile: hello is not implemented",
+            "Bot"
+          ],
+          "answer": 1,
+          "explanation": "The default method calls the implemented `name`."
+        },
+        {
+          "type": "single",
+          "q": "Which of these can your crate write?",
+          "options": [
+            "`impl std::fmt::Display for Vec<u8>`",
+            "`impl std::fmt::Display for MyType`",
+            "`impl Iterator for String`",
+            "`impl Clone for i32`"
+          ],
+          "answer": 1,
+          "explanation": "The orphan rule: the trait or the type must be local."
+        },
+        {
+          "type": "single",
+          "q": "`fn make(flag: bool) -> impl Summary` returns a `Tweet` or an `Article` depending on `flag`. What happens?",
+          "options": [
+            "It works",
+            "Compile error: impl Trait must be one concrete type",
+            "It panics when flag is false",
+            "It returns a trait object automatically"
+          ],
+          "answer": 1,
+          "explanation": "Use `Box<dyn Summary>` for that (chapter 18)."
+        },
+        {
+          "type": "multi",
+          "q": "Which are blanket implementations from the standard library?",
+          "options": [
+            "`impl<T: Display> ToString for T`",
+            "`impl<T, U: From<T>> Into<U> for T`",
+            "`impl Display for i32`",
+            "`impl Add for f64`"
+          ],
+          "answer": [
+            0,
+            1
+          ],
+          "explanation": "The other two are for single concrete types."
+        },
+        {
+          "type": "single",
+          "q": "Why does `fn pick(a: &str, b: &str) -> &str` not compile?",
+          "options": [
+            "&str cannot be returned",
+            "The output's lifetime could come from a or b; the compiler cannot tell which",
+            "It needs 'static",
+            "Two references cannot be passed"
+          ],
+          "answer": 1,
+          "explanation": "Elision has no rule for two inputs without self."
+        },
+        {
+          "type": "single",
+          "q": "Given `fn longest<'a>(x: &'a str, y: &'a str) -> &'a str`, how long may the result be used?",
+          "options": [
+            "Until x is dropped",
+            "Until y is dropped",
+            "As long as both x and y are still valid",
+            "Forever"
+          ],
+          "answer": 2,
+          "explanation": "'a is the overlap of the two."
+        },
+        {
+          "type": "single",
+          "q": "Which method signature needs no explicit lifetimes, thanks to rule 3?",
+          "options": [
+            "`fn part(&self, other: &str) -> &str`",
+            "`fn part(a: &str, b: &str) -> &str`",
+            "`fn part() -> &str`",
+            "None of them"
+          ],
+          "answer": 0,
+          "explanation": "The output gets self's lifetime."
+        },
+        {
+          "type": "single",
+          "q": "What does `#[derive(PartialOrd)]` on `enum Size { Small, Large }` make `Size::Small < Size::Large`?",
+          "options": [
+            "true",
+            "false",
+            "A compile error",
+            "It depends on memory"
+          ],
+          "answer": 0,
+          "explanation": "Variants compare in declaration order."
+        },
+        {
+          "type": "single",
+          "q": "Which trait do you implement so `a * 2.0` works for your type `V`?",
+          "options": [
+            "`Mul<f64> for V`",
+            "`Mul<V> for f64`",
+            "`MulAssign for V`",
+            "`From<f64> for V`"
+          ],
+          "answer": 0,
+          "explanation": "The left operand's type implements `Mul<Right>`."
+        },
+        {
+          "type": "fill",
+          "q": "To convert in a way that can fail, implement the trait ___From.",
+          "answer": [
+            "Try"
+          ],
+          "explanation": "`TryFrom`, which also gives `try_into()`."
+        }
+      ]
+    }
+  ]
+}

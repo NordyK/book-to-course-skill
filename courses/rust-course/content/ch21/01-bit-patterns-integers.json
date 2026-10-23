@@ -1,0 +1,313 @@
+{
+  "title": "Bit patterns and the life of an integer",
+  "summary": "One bit pattern read as different types, reinterpreting bits with to_bits and transmute, integer ranges and overflow, two's complement, the checked, wrapping, saturating and overflowing families, bitwise operators and shifts, and endianness.",
+  "minutes": 35,
+  "source": {
+    "chapter": "ch21",
+    "sections": [
+      "RiA 5 Data in Depth",
+      "RiA 5.1 Bit Patterns and Types",
+      "RiA 5.2 Life of an integer",
+      "RiA 5.2.1 Understanding endianness",
+      "PR ch3 Integer Types",
+      "PR ch3 Checked, Wrapping, Saturating, and Overflowing Arithmetic"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "This chapter follows *Rust in Action*'s \"Data in Depth\": we open up the values you have been using and look at the bits. Knowing the representation explains overflow bugs, floating-point surprises and binary file formats, and it is the foundation for the low-level chapters that follow.\n\nThe first lesson is the most important: **a bit pattern has no meaning on its own. The type gives it meaning.** The same 16 bits are 50115 as a `u16` and -15421 as an `i16`:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let a: u16 = 50115;\n    let b: i16 = -15421;\n\n    println!(\"a: {:016b} {}\", a, a);\n    println!(\"b: {:016b} {}\", b, b);\n}\n",
+      "output": "a: 1100001111000011 50115\nb: 1100001111000011 -15421\n",
+      "explain": "`{:016b}` formats as binary, padded with zeros to 16 places. The CPU stores exactly the same bits; only the type tells Rust how to interpret them."
+    },
+    {
+      "type": "text",
+      "title": "Reinterpreting bits",
+      "md": "You can ask Rust to treat one type's bits as another's. *Rust in Action* uses `std::mem::transmute`, the least safe function in the language: it copies bits between any two types of the same size, with no checks at all. For floats, the standard library has safe methods that do the same thing: **`f32::to_bits`** and **`f32::from_bits`**.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let a: f32 = 42.42;\n\n    let bits: u32 = a.to_bits();\n    println!(\"{}\", bits);\n    println!(\"{:032b}\", bits);\n\n    let b = f32::from_bits(bits);\n    println!(\"{}\", b);\n\n    // what transmute does, for comparison\n    let same: u32 = unsafe { std::mem::transmute(a) };\n    println!(\"{}\", same == bits);\n}\n",
+      "output": "1110027796\n01000010001010011010111000010100\n42.42\ntrue\n"
+    },
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Text is bits too",
+      "md": "A \"text\" file is a binary file that follows an **encoding**: a consistent mapping from bit patterns to characters, such as UTF-8. The same bytes interpreted with a different encoding become garbage. That is why Rust's `String` guarantees valid UTF-8 and `Vec<u8>` does not."
+    },
+    {
+      "type": "text",
+      "title": "Ranges and overflow",
+      "md": "An integer type has a fixed number of bits, so a fixed range. A `u16` has 2^16 = 65,536 patterns: 0 to 65,535. What happens at 65,535 + 1? There is no 17th bit. In a **debug** build Rust **panics** (\"attempt to add with overflow\"). In a **release** build (`cargo build --release`) the check is removed and the value **wraps around** to 0. When the compiler can see the overflow at compile time, it refuses to build:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let (a, b) = (200, 200);\n    let c: u8 = a + b;\n    println!(\"200 + 200 = {}\", c);\n}\n",
+      "output": "error: this arithmetic operation will overflow\n --> src/main.rs:3:17\n  |\n3 |     let c: u8 = a + b;\n  |                 ^^^^^ attempt to compute `200_u8 + 200_u8`, which would overflow\n  |\n  = note: `#[deny(arithmetic_overflow)]` on by default\n",
+      "output_label": "Compiler output"
+    },
+    {
+      "type": "table",
+      "title": "Integer types and ranges",
+      "headers": [
+        "Type",
+        "Bits",
+        "Minimum",
+        "Maximum"
+      ],
+      "rows": [
+        [
+          "`u8` / `i8`",
+          "8",
+          "0 / -128",
+          "255 / 127"
+        ],
+        [
+          "`u16` / `i16`",
+          "16",
+          "0 / -32,768",
+          "65,535 / 32,767"
+        ],
+        [
+          "`u32` / `i32`",
+          "32",
+          "0 / -2,147,483,648",
+          "4,294,967,295 / 2,147,483,647"
+        ],
+        [
+          "`u64` / `i64`",
+          "64",
+          "0 / about -9.2 × 10^18",
+          "about 1.8 × 10^19 / 9.2 × 10^18"
+        ],
+        [
+          "`u128` / `i128`",
+          "128",
+          "0 / about -1.7 × 10^38",
+          "about 3.4 × 10^38 / 1.7 × 10^38"
+        ],
+        [
+          "`usize` / `isize`",
+          "pointer size (64 on most machines)",
+          "",
+          ""
+        ]
+      ]
+    },
+    {
+      "type": "stepper",
+      "title": "Two's complement: how i8 stores negative numbers",
+      "steps": [
+        {
+          "title": "The top bit has a negative weight",
+          "md": "In an `i8`, the bits are worth -128, 64, 32, 16, 8, 4, 2, 1. So `0111_1111` is 127 and `1000_0000` is -128."
+        },
+        {
+          "title": "Negation is invert and add one",
+          "md": "To get -5 from 5 (`0000_0101`): flip every bit (`1111_1010`) and add 1: `1111_1011`. Check: -128 + 64 + 32 + 16 + 8 + 2 + 1 = -5."
+        },
+        {
+          "title": "Addition needs no special case",
+          "md": "The CPU adds signed and unsigned numbers with the same circuit. `1111_1011` (-5) + `0000_0111` (7) = `1_0000_0010`; drop the carry and you get `0000_0010` = 2."
+        },
+        {
+          "title": "Casting keeps the bits",
+          "md": "`-5i8 as u8` is 251: the bits `1111_1011` are reinterpreted, not converted. `as` between integers of different sizes truncates or extends them."
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Choosing what overflow means",
+      "md": "When overflow is possible, say what should happen. *Programming Rust* describes four method families on every integer type:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let x: u8 = 250;\n\n    println!(\"{:?}\", x.checked_add(10));     // None on overflow\n    println!(\"{}\", x.wrapping_add(10));      // wraps modulo 256\n    println!(\"{}\", x.saturating_add(10));    // stops at the maximum\n    println!(\"{:?}\", x.overflowing_add(10)); // wrapped value and a flag\n\n    println!(\"{}\", (-5i8) as u8);\n    println!(\"{}\", 300i32 as u8);\n    println!(\"{}\", i8::MIN.wrapping_abs());\n    println!(\"{:?}\", i8::MIN.checked_abs());\n}\n",
+      "output": "None\n4\n255\n(4, true)\n251\n44\n-128\nNone\n",
+      "explain": "`i8::MIN.abs()` has no answer: +128 does not fit in an `i8`. Two's complement has one more negative number than positive ones."
+    },
+    {
+      "type": "text",
+      "title": "Bitwise operators and shifts",
+      "md": "`&` (and), `|` (or), `^` (xor), `!` (not) work bit by bit; `<<` and `>>` shift. Together they let you pack several small values into one integer, test single bits and build **masks**: `x & 0b1111` keeps the lowest four bits, `(x >> 4) & 0xF` gets the next four. On signed types, `>>` copies the sign bit in (arithmetic shift). `count_ones`, `leading_zeros` and `rotate_left` are handy too.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let flags: u8 = 0b0000_0000;\n    let read = 1 << 0;\n    let write = 1 << 1;\n    let exec = 1 << 2;\n\n    let perms = flags | read | write;\n    println!(\"{perms:08b} can write: {}\", perms & write != 0);\n    println!(\"{:08b} after removing write\", perms & !write);\n    println!(\"{:08b} toggled exec\", perms ^ exec);\n\n    let color: u32 = 0x00FF_8800;\n    let (r, g, b) = ((color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF);\n    println!(\"r={r} g={g} b={b}\");\n\n    println!(\"{} {} {}\", 0b1011u8.count_ones(), 1u32.leading_zeros(), -16i32 >> 2);\n}\n",
+      "output": "00000011 can write: true\n00000001 after removing write\n00000111 toggled exec\nr=255 g=136 b=0\n3 31 -4\n"
+    },
+    {
+      "type": "text",
+      "title": "Endianness",
+      "md": "A `u32` takes four bytes. In which **order** are they stored? **Little-endian** machines (x86, most ARM) put the least significant byte first; **big-endian** puts the most significant first, and is the convention for network protocols (\"network byte order\"). Within your program you never notice, but as soon as bytes go to a file or a socket, the order must be agreed. Rust makes it explicit with `to_le_bytes`, `to_be_bytes`, `from_le_bytes` and `from_be_bytes`.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let n: u32 = 0x1234_5678;\n    println!(\"{:02x?}\", n.to_le_bytes());\n    println!(\"{:02x?}\", n.to_be_bytes());\n    println!(\"{:02x?}\", n.to_ne_bytes() == n.to_le_bytes());\n\n    let from_net = u32::from_be_bytes([0x00, 0x00, 0x01, 0xbb]);\n    println!(\"port {from_net}\");\n}\n",
+      "output": "[78, 56, 34, 12]\n[12, 34, 56, 78]\ntrue\nport 443\n",
+      "explain": "`to_ne_bytes` uses the native order of the machine; this output comes from a little-endian computer."
+    },
+    {
+      "type": "playground",
+      "id": "ch21-play-bits",
+      "title": "Packing a date into 16 bits",
+      "lang": "rust",
+      "md": "The old FAT file system stores a date in a `u16`: bits 15–9 are the year minus 1980, bits 8–5 the month, bits 4–0 the day. Write `pack(y, m, d)` and `unpack(bits)` with shifts and masks.\n",
+      "task": "Print `0101101001110111` and `(2025, 3, 23)`.",
+      "code": "fn pack(year: u16, month: u16, day: u16) -> u16 {\n    0 // TODO\n}\n\nfn unpack(bits: u16) -> (u16, u16, u16) {\n    (0, 0, 0) // TODO\n}\n\nfn main() {\n    let p = pack(2025, 3, 23);\n    println!(\"{p:016b}\");\n    println!(\"{:?}\", unpack(p));\n}\n",
+      "expected_output": "0101101001110111\n(2025, 3, 23)\n",
+      "hints": [
+        "Shift each field to its position and combine with `|`: `((year - 1980) << 9) | (month << 5) | day`.",
+        "To read the month, shift right by 5 and keep 4 bits: `(bits >> 5) & 0b1111`."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch21-ex-bits",
+      "exercise_dir": "ch21-bits",
+      "title": "Bit manipulation toolkit",
+      "difficulty": "medium",
+      "goal": "Work directly with bit patterns: two's complement, overflow policies, masks and byte order.",
+      "behavior": "- `pub fn to_binary_i8(x: i8) -> String`: the 8-bit two's complement pattern, e.g. `-5` → `\"11111011\"`.\n- `pub fn negate_manually(x: i8) -> i8`: invert the bits and add one, with wrapping (so `i8::MIN` stays `i8::MIN`). Do not use unary `-`.\n- `pub fn add_policy(a: u8, b: u8, policy: &str) -> Option<u8>`: `\"checked\"` (None on overflow), `\"wrapping\"`, `\"saturating\"`; any other policy → `None`.\n- `pub fn set_bit(x: u32, n: u32) -> u32`, `pub fn clear_bit(x: u32, n: u32) -> u32`, `pub fn is_set(x: u32, n: u32) -> bool`.\n- `pub fn swap_endian(x: u32) -> u32` without `swap_bytes`: build it from shifts and masks.\n- `pub fn parse_be_u16s(bytes: &[u8]) -> Vec<u16>`: read pairs of bytes as big-endian `u16`s; ignore a trailing odd byte.\n",
+      "examples": [
+        {
+          "input": "to_binary_i8(-128)",
+          "output": "\"10000000\""
+        },
+        {
+          "input": "swap_endian(0x12345678)",
+          "output": "0x78563412"
+        }
+      ],
+      "hints": [
+        "`format!(\"{:08b}\", x as u8)` prints the bits of an `i8`.",
+        "`(!x).wrapping_add(1)` is two's complement negation.",
+        "`chunks_exact(2)` skips the odd byte; `u16::from_be_bytes([c[0], c[1]])`."
+      ],
+      "solution_explain": "`x as u8` keeps the bits and changes only the interpretation, which is exactly what printing the pattern needs. `swap_endian` isolates each byte with a mask and moves it to the mirrored position."
+    },
+    {
+      "type": "quiz",
+      "id": "ch21-quiz-ints",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "What decides whether 11000011_11000011 means 50115 or -15421?",
+          "options": [
+            "The CPU",
+            "The type",
+            "The operating system",
+            "The compiler flags"
+          ],
+          "answer": 1,
+          "explanation": "Bits have no meaning without a type."
+        },
+        {
+          "type": "single",
+          "q": "What does 255u8 + 1 do in a debug build?",
+          "options": [
+            "Gives 256",
+            "Wraps to 0",
+            "Panics with an overflow error",
+            "Gives 255"
+          ],
+          "answer": 2,
+          "explanation": "Release builds wrap instead."
+        },
+        {
+          "type": "single",
+          "q": "What is `-1i8 as u8`?",
+          "options": [
+            "1",
+            "-1",
+            "255",
+            "Compile error"
+          ],
+          "answer": 2,
+          "explanation": "All bits set."
+        },
+        {
+          "type": "single",
+          "q": "Which returns None on overflow?",
+          "options": [
+            "wrapping_add",
+            "checked_add",
+            "saturating_add",
+            "overflowing_add"
+          ],
+          "answer": 1,
+          "explanation": "saturating stops at the max; overflowing returns a flag."
+        },
+        {
+          "type": "single",
+          "q": "On a little-endian machine, how is 0x12345678 stored in memory?",
+          "options": [
+            "12 34 56 78",
+            "78 56 34 12",
+            "56 78 12 34",
+            "It depends on the type"
+          ],
+          "answer": 1,
+          "explanation": "Least significant byte first."
+        },
+        {
+          "type": "fill",
+          "q": "Which operator keeps only the bits that are set in a mask? (one symbol)",
+          "answer": [
+            "&"
+          ],
+          "explanation": "x & mask."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "A bit pattern means nothing without a type; to_bits/from_bits reinterpret safely, transmute unsafely.",
+        "Integers have fixed ranges: debug builds panic on overflow, release builds wrap.",
+        "Signed integers use two's complement: invert and add one to negate.",
+        "Pick an overflow policy with checked_, wrapping_, saturating_ or overflowing_ methods.",
+        "Masks and shifts pack and unpack fields; to_le_bytes/to_be_bytes fix the byte order."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "bit pattern",
+      "def": "The raw sequence of bits stored in memory, which a type interprets."
+    },
+    {
+      "term": "integer overflow",
+      "def": "A result outside the range of the integer type."
+    },
+    {
+      "term": "two's complement",
+      "def": "The encoding of signed integers in which the top bit has negative weight."
+    },
+    {
+      "term": "mask",
+      "def": "An integer used with & to keep or clear selected bits."
+    },
+    {
+      "term": "endianness",
+      "def": "The order in which the bytes of a multi-byte value are stored: little-endian or big-endian."
+    },
+    {
+      "term": "transmute",
+      "def": "std::mem::transmute, an unsafe function that reinterprets the bits of one type as another of the same size."
+    }
+  ]
+}

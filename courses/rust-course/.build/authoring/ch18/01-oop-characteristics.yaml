@@ -1,0 +1,176 @@
+title: "Characteristics of object-oriented languages"
+summary: "Objects as data plus behavior, encapsulation through privacy with the AveragedCollection example, why Rust has no inheritance, and the two things inheritance is used for: code reuse and polymorphism."
+minutes: 20
+source:
+  chapter: ch18
+  sections: ["TRPL 18 Object-Oriented Programming Features", "TRPL 18.1 Characteristics of Object-Oriented Languages", "TRPL 18.1 Objects Contain Data and Behavior", "TRPL 18.1 Encapsulation That Hides Implementation Details", "TRPL 18.1 Inheritance as a Type System and as Code Sharing", "PR ch11 Traits and Generics", "CR Day 2 Traits"]
+blocks:
+  - type: text
+    md: |
+      There is no single agreed definition of **object-oriented programming** (OOP). The features usually named are objects, encapsulation, inheritance and polymorphism. Rust supports some directly, some differently, and one not at all. Knowing which is which helps when you bring habits from Java, C# or Python.
+
+  - type: table
+    title: OOP features in Rust
+    headers: ["Feature", "In Rust", "How"]
+    rows:
+      - ["Objects: data plus behavior", "yes", "structs and enums with methods in `impl` blocks"]
+      - ["Encapsulation", "yes", "privacy: fields and functions are private unless `pub`"]
+      - ["Inheritance of data", "no", "use composition: a struct contains another"]
+      - ["Inheritance of behavior (code reuse)", "partly", "default methods in traits"]
+      - ["Polymorphism", "yes, two ways", "generics with trait bounds, and trait objects (`dyn Trait`)"]
+
+  - type: text
+    title: Encapsulation
+    md: |
+      Encapsulation means the details of how an object works are hidden from code using it; the only way to interact is its public API. *The Rust Programming Language* shows a collection that keeps a cached average. Its fields are private, so outside code cannot change the list without updating the average:
+
+  - type: code
+    lang: rust
+    code: |
+      pub struct AveragedCollection {
+          list: Vec<i32>,
+          average: f64,
+      }
+
+      impl AveragedCollection {
+          pub fn new() -> Self {
+              AveragedCollection { list: vec![], average: 0.0 }
+          }
+
+          pub fn add(&mut self, value: i32) {
+              self.list.push(value);
+              self.update_average();
+          }
+
+          pub fn remove(&mut self) -> Option<i32> {
+              let result = self.list.pop();
+              match result {
+                  Some(value) => {
+                      self.update_average();
+                      Some(value)
+                  }
+                  None => None,
+              }
+          }
+
+          pub fn average(&self) -> f64 {
+              self.average
+          }
+
+          fn update_average(&mut self) {
+              let total: i32 = self.list.iter().sum();
+              self.average = total as f64 / self.list.len() as f64;
+          }
+      }
+
+      fn main() {
+          let mut c = AveragedCollection::new();
+          c.add(3);
+          c.add(4);
+          c.add(8);
+          println!("average = {}", c.average());
+          c.remove();
+          println!("average = {}", c.average());
+      }
+    output: |
+      average = 5
+      average = 3.5
+    explain: "Because `list` is private, the implementation could later switch to a `HashSet` or keep a running sum instead of re-adding, and no caller would need to change. That freedom is the point of encapsulation."
+
+  - type: text
+    title: No inheritance, and what to use instead
+    md: |
+      Inheritance lets a type take on another type's data and behavior without redefining them. Rust has no way to define a struct that inherits a parent struct's fields and methods. It is a deliberate choice: inheritance often shares more than intended, couples subclasses tightly to their parents, and in many languages allows only one parent anyway.
+
+      Programmers reach for inheritance for two reasons, and Rust has an answer for each:
+
+      1. **Code reuse.** Write a method once, use it for many types. In Rust: **default methods** in a trait (chapter 10), which implementors get for free and may override. For data, use **composition**: put the shared struct inside the others as a field.
+      2. **Polymorphism.** Use a child type wherever the parent is expected. In Rust: **generics** with trait bounds (*bounded parametric polymorphism*), or **trait objects**, the next lesson.
+
+  - type: code
+    lang: rust
+    code: |
+      // composition: an Employee *has* a Person instead of *being* one
+      struct Person {
+          name: String,
+      }
+
+      struct Employee {
+          person: Person,
+          salary: u32,
+      }
+
+      trait Describe {
+          fn name(&self) -> &str;
+
+          // shared behavior via a default method
+          fn describe(&self) -> String {
+              format!("This is {}", self.name())
+          }
+      }
+
+      impl Describe for Person {
+          fn name(&self) -> &str {
+              &self.name
+          }
+      }
+
+      impl Describe for Employee {
+          fn name(&self) -> &str {
+              self.person.name() // delegate to the inner value
+          }
+
+          fn describe(&self) -> String {
+              format!("{} (salary {})", self.person.describe(), self.salary)
+          }
+      }
+
+      fn main() {
+          let p = Person { name: String::from("Ada") };
+          let e = Employee { person: Person { name: String::from("Grace") }, salary: 100 };
+          println!("{}", p.describe());
+          println!("{}", e.describe());
+      }
+    output: |
+      This is Ada
+      This is Grace (salary 100)
+
+  - type: quiz
+    id: ch18-quiz-oop
+    title: Check yourself
+    questions:
+      - type: single
+        q: "How does Rust provide encapsulation?"
+        options: ["Classes", "Privacy: items are private unless marked pub", "Inheritance", "Interfaces only"]
+        answer: 1
+        explanation: "Modules and pub control what is visible."
+      - type: truefalse
+        q: "A Rust struct can inherit the fields of another struct."
+        answer: false
+        explanation: "Use composition instead."
+      - type: single
+        q: "What gives Rust types shared behavior without inheritance?"
+        options: ["Macros only", "Default methods in traits", "Global functions", "Copying code"]
+        answer: 1
+        explanation: "Implementors get them for free and can override."
+      - type: multi
+        q: "Which give polymorphism in Rust?"
+        options: ["Generics with trait bounds", "Trait objects (dyn Trait)", "Struct inheritance", "Enums with variants"]
+        answer: [0, 1, 3]
+        explanation: "An enum is a closed set of alternatives, another form of polymorphism."
+
+  - type: summary
+    points:
+      - "Structs and enums with methods are objects in all but name."
+      - "Privacy gives encapsulation: hide fields, expose methods, change the inside freely."
+      - "No inheritance: use default trait methods for shared behavior and composition for shared data."
+      - "Polymorphism comes from generics, trait objects and enums."
+terms:
+  - term: encapsulation
+    def: "Hiding an object's implementation so code can use it only through its public API."
+  - term: inheritance
+    def: "A type taking on the data and behavior of a parent type; Rust does not have it for structs."
+  - term: composition
+    def: "Building a type by containing other types as fields, instead of inheriting from them."
+  - term: polymorphism
+    def: "Code that works with values of several different types."

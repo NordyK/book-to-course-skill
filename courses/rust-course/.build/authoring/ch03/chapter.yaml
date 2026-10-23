@@ -1,0 +1,8 @@
+title: Common Programming Concepts
+summary: "The building blocks every program uses: variables and constants, number and text types, tuples and arrays, functions, and decisions and loops."
+goals:
+  - Choose between immutable variables, mutable variables, shadowing and constants
+  - Pick the right number type and know what happens when a number overflows
+  - Group values with tuples and arrays
+  - Write functions with parameters and return values, and tell statements from expressions
+  - Control the flow of a program with if, loop, while and for

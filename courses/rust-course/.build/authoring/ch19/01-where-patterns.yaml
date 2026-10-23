@@ -1,0 +1,337 @@
+title: "Where patterns appear, and refutability"
+summary: "Patterns in match arms, let, if let, let...else, while let, for loops, function and closure parameters; exhaustiveness; refutable versus irrefutable patterns and the errors you get when you mix them up."
+minutes: 25
+source:
+  chapter: ch19
+  sections: ["TRPL 19 Patterns and Matching", "TRPL 19.1 All the Places Patterns Can Be Used", "TRPL 19.1 match Arms", "TRPL 19.1 let Statements", "TRPL 19.1 Conditional if let Expressions", "TRPL 19.1 while let Conditional Loops", "TRPL 19.1 for Loops", "TRPL 19.1 Function Parameters", "TRPL 19.2 Refutability: Whether a Pattern Might Fail to Match", "PR ch10 Patterns", "PR ch10 Where Patterns Are Allowed"]
+blocks:
+  - type: text
+    md: |
+      A **pattern** describes the shape of a value. Matching a value against a pattern does two things at once: it **tests** whether the value has that shape, and it **binds** names to the parts. You have used patterns since chapter 3, every time you wrote `let x = 5;`. This chapter collects everything about them in one place.
+
+      A pattern is built from:
+
+      - **literals**: `3`, `'a'`, `"hi"`, `true`
+      - **destructured** arrays, enums, structs and tuples: `Some(x)`, `Point { x, y }`, `(a, b)`
+      - **variables**: `x`, which match anything and bind it
+      - **wildcards and placeholders**: `_` and `..`
+
+  - type: table
+    title: Every place a pattern can appear
+    headers: ["Where", "Example", "Must be irrefutable?"]
+    rows:
+      - ["`match` arms", "`Some(n) => ...`", "no, but all arms together must be exhaustive"]
+      - ["`let`", "`let (x, y) = (1, 2);`", "yes"]
+      - ["`let ... else`", "`let Some(x) = opt else { return; };`", "no"]
+      - ["`if let`", "`if let Ok(n) = s.parse::<i32>() { ... }`", "no"]
+      - ["`while let`", "`while let Some(top) = stack.pop() { ... }`", "no"]
+      - ["`for` loops", "`for (i, c) in s.chars().enumerate()`", "yes"]
+      - ["function and closure parameters", "`fn f(&(x, y): &(i32, i32))`, `|(k, v)| ...`", "yes"]
+
+  - type: text
+    title: match arms
+    md: |
+      `match` must be **exhaustive**: every possible value must be covered by some arm. The last arm is often a catch-all: a variable (which binds the value) or `_` (which ignores it).
+
+  - type: code
+    lang: rust
+    code: |
+      enum Shape {
+          Circle(f64),
+          Square(f64),
+          Triangle(f64, f64),
+      }
+
+      fn area(s: &Shape) -> f64 {
+          match s {
+              Shape::Circle(r) => 3.14 * r * r,
+              Shape::Square(a) => a * a,
+          }
+      }
+
+      fn main() {}
+    output: |
+      error[E0004]: non-exhaustive patterns: `&Shape::Triangle(_, _)` not covered
+        --> src/main.rs:8:11
+         |
+       8 |     match s {
+         |           ^ pattern `&Shape::Triangle(_, _)` not covered
+         |
+      note: `Shape` defined here
+        --> src/main.rs:1:6
+         |
+       1 | enum Shape {
+         |      ^^^^^
+      ...
+       4 |     Triangle(f64, f64),
+         |     -------- not covered
+         = note: the matched value is of type `&Shape`
+      help: ensure that all possible cases are being handled by adding a match arm with a wildcard pattern or an explicit pattern as shown
+         |
+      10 ~         Shape::Square(a) => a * a,
+      11 ~         &Shape::Triangle(_, _) => todo!(),
+    output_label: Compiler output
+    explain: "The compiler names exactly which value is missing. Adding a `Triangle` arm, or a `_` arm, fixes it."
+
+  - type: text
+    title: if let, else if, and mixing conditions
+    md: |
+      `if let` is a `match` with one interesting arm. It can be chained with `else if`, `else if let` and `else`, and the conditions need not be related. The compiler does **not** check exhaustiveness here, which is both the convenience and the risk.
+
+      Variables bound by `if let` exist only inside its block. That is why `if let Ok(age) = age` can shadow `age` with the parsed number inside the block while `age` stays a `Result` outside.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let favorite_color: Option<&str> = None;
+          let is_tuesday = false;
+          let age: Result<u8, _> = "34".parse();
+
+          if let Some(color) = favorite_color {
+              println!("Using your favorite color, {color}, as the background");
+          } else if is_tuesday {
+              println!("Tuesday is green day!");
+          } else if let Ok(age) = age {
+              if age > 30 {
+                  println!("Using purple as the background color");
+              } else {
+                  println!("Using orange as the background color");
+              }
+          } else {
+              println!("Using blue as the background color");
+          }
+      }
+    output: "Using purple as the background color"
+
+  - type: text
+    title: while let, for and let
+    md: |
+      `while let` loops as long as the pattern keeps matching. A `for` loop's variable is a pattern too, so you can destructure each item. And `let` itself takes a pattern: `let (x, y, z) = (1, 2, 3);` breaks a tuple apart, as long as the number of elements matches.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let mut stack = vec![1, 2, 3];
+          while let Some(top) = stack.pop() {
+              println!("popped {top}");
+          }
+
+          let v = vec!['a', 'b', 'c'];
+          for (index, value) in v.iter().enumerate() {
+              println!("{value} is at index {index}");
+          }
+
+          let (x, y, z) = (1, 2, 3);
+          println!("{x} {y} {z}");
+      }
+    output: |
+      popped 3
+      popped 2
+      popped 1
+      a is at index 0
+      b is at index 1
+      c is at index 2
+      1 2 3
+
+  - type: text
+    title: Function and closure parameters
+    md: |
+      Parameters are patterns as well. A function can take a reference to a tuple and destructure it in the signature:
+
+  - type: code
+    lang: rust
+    code: |
+      fn print_coordinates(&(x, y): &(i32, i32)) {
+          println!("Current location: ({x}, {y})");
+      }
+
+      fn main() {
+          let point = (3, 5);
+          print_coordinates(&point);
+
+          let pairs = vec![("a", 1), ("b", 2)];
+          let total: i32 = pairs.iter().map(|&(_, n)| n).sum();
+          println!("total {total}");
+      }
+    output: |
+      Current location: (3, 5)
+      total 3
+    explain: "`&(x, y)` matches a reference to a tuple and binds the two `i32`s by copy. In the closure, `&(_, n)` does the same and ignores the name."
+
+  - type: stepper
+    title: Refutable or irrefutable?
+    steps:
+      - title: Irrefutable
+        md: "A pattern that matches **every** possible value of its type: `x`, `(a, b)` for a pair, `Point { x, y }`. `let`, `for` and parameters accept only these, because there is no sensible thing to do if the match fails."
+      - title: Refutable
+        md: "A pattern that can **fail** for some value: `Some(x)` fails on `None`, `3` fails on `4`, `Ok(n)` fails on `Err`. `if let`, `while let`, `let...else` and match arms exist to handle the failure."
+      - title: Refutable where irrefutable is required
+        md: "Writing `let Some(x) = opt;` is a hard error: what should happen when `opt` is `None`? The compiler suggests `let...else` or `if let`."
+        code: |
+          error[E0005]: refutable pattern in local binding
+      - title: Irrefutable where refutable is expected
+        md: "`if let x = 5 { ... }` always matches, so the `if` is pointless. That is only a **warning**: it compiles, but you probably meant something else."
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let some_option_value: Option<i32> = None;
+          let Some(x) = some_option_value;
+      }
+    output: |
+      error[E0005]: refutable pattern in local binding
+       --> src/main.rs:3:9
+        |
+      3 |     let Some(x) = some_option_value;
+        |         ^^^^^^^ pattern `None` not covered
+        |
+        = note: `let` bindings require an "irrefutable pattern", like a `struct` or an `enum` with only one variant
+        = note: for more information, visit https://doc.rust-lang.org/book/ch19-02-refutability.html
+        = note: the matched value is of type `Option<i32>`
+      help: you might want to use `let...else` to handle the variant that isn't matched
+        |
+      3 |     let Some(x) = some_option_value else { todo!() };
+        |                                     ++++++++++++++++
+    output_label: Compiler output
+
+  - type: code
+    lang: text
+    code: |
+      warning: irrefutable `if let` pattern
+       --> src/main.rs:2:8
+        |
+      2 |     if let x = 5 {
+        |        ^^^^^^^^^
+        |
+        = note: this pattern will always match, so the `if let` is useless
+        = help: consider replacing the `if let` with a `let`
+        = note: `#[warn(irrefutable_let_patterns)]` on by default
+    explain: "What `rustc` prints for `if let x = 5 { ... }`. Warnings do not stop the build."
+
+  - type: text
+    title: let...else
+    md: |
+      `let PATTERN = EXPR else { DIVERGE };` binds the variables in the **surrounding** scope when the pattern matches. When it does not, the `else` block runs, and it must leave the scope (`return`, `break`, `continue` or `panic!`). It keeps the "happy path" unindented:
+
+  - type: code
+    lang: rust
+    code: |
+      fn parse_pair(s: &str) -> Option<(i32, i32)> {
+          let Some((a, b)) = s.split_once(',') else {
+              return None;
+          };
+          let Ok(a) = a.trim().parse::<i32>() else {
+              return None;
+          };
+          let Ok(b) = b.trim().parse::<i32>() else {
+              return None;
+          };
+          Some((a, b))
+      }
+
+      fn main() {
+          println!("{:?}", parse_pair("3, 4"));
+          println!("{:?}", parse_pair("3; 4"));
+          println!("{:?}", parse_pair("3, x"));
+      }
+    output: |
+      Some((3, 4))
+      None
+      None
+
+  - type: playground
+    id: ch19-play-places
+    title: "Patterns everywhere"
+    lang: rust
+    md: |
+      The starter has a list of `(name, score)` pairs as strings like `"ana:12"`. Use patterns in four places: a `for` loop that destructures with `enumerate`, a `let...else` that skips malformed lines with `continue`, an `if let` that parses the score, and a closure parameter `|&(_, s)|` to sum the scores at the end.
+    task: "Print `0 ana 12`, `2 bob 7`, then `total 19` (the line `\"oops\"` and `\"cy:x\"` are skipped)."
+    code: |
+      fn main() {
+          let lines = ["ana:12", "oops", "bob:7", "cy:x"];
+          let mut scores: Vec<(&str, i32)> = Vec::new();
+
+          for line in lines.iter() {
+              // destructure (i, line) with enumerate, split with let...else, parse with if let
+              println!("{line}");
+          }
+
+          let total: i32 = 0; // sum with a closure pattern
+          println!("total {total}");
+      }
+    expected_output: |
+      0 ana 12
+      2 bob 7
+      total 19
+    solution_code: |
+      fn main() {
+          let lines = ["ana:12", "oops", "bob:7", "cy:x"];
+          let mut scores: Vec<(&str, i32)> = Vec::new();
+
+          for (i, line) in lines.iter().enumerate() {
+              let Some((name, score)) = line.split_once(':') else {
+                  continue;
+              };
+              if let Ok(score) = score.parse::<i32>() {
+                  println!("{i} {name} {score}");
+                  scores.push((name, score));
+              }
+          }
+
+          let total: i32 = scores.iter().map(|&(_, s)| s).sum();
+          println!("total {total}");
+      }
+    hints:
+      - "`for (i, line) in lines.iter().enumerate()`"
+      - "`let Some((name, score)) = line.split_once(':') else { continue; };`"
+
+  - type: quiz
+    id: ch19-quiz-where
+    title: Check yourself
+    questions:
+      - type: multi
+        q: "Which places require an irrefutable pattern?"
+        options: ["`let`", "`for` loops", "function parameters", "`if let`", "match arms"]
+        answer: [0, 1, 2]
+        explanation: "Those have nothing to do if the match fails."
+      - type: single
+        q: "What happens with `let Some(x) = opt;`?"
+        options: ["It compiles and panics on None", "Compile error E0005: refutable pattern", "A warning", "x becomes None"]
+        answer: 1
+        explanation: "Use let...else or if let."
+      - type: single
+        q: "What must the else block of `let ... else` do?"
+        options: ["Return a default value", "Diverge: return, break, continue or panic", "Nothing", "Bind the same variables"]
+        answer: 1
+        explanation: "Otherwise the variables would be unbound after it."
+      - type: truefalse
+        q: "The compiler checks if let / else if chains for exhaustiveness."
+        answer: false
+        explanation: "Only match is checked."
+      - type: single
+        q: "Which pattern is irrefutable for a value of type (i32, bool)?"
+        options: ["`(0, true)`", "`(n, _)`", "`(_, false)`", "`(1..=9, b)`"]
+        answer: 1
+        explanation: "It matches every pair."
+
+  - type: summary
+    points:
+      - "Patterns appear in match, let, let...else, if let, while let, for, and parameters."
+      - "match must be exhaustive; if let chains are not checked."
+      - "Irrefutable patterns match everything; let, for and parameters require them."
+      - "Refutable patterns can fail; use them where failure is handled."
+      - "let...else binds in the outer scope and requires a diverging else."
+terms:
+  - term: pattern
+    def: "A description of a value's shape that tests the value and binds names to its parts."
+  - term: irrefutable pattern
+    def: "A pattern that matches every possible value of its type."
+  - term: refutable pattern
+    def: "A pattern that can fail to match some value."
+  - term: exhaustive
+    def: "Covering every possible value, as a match must be."
+  - term: let...else
+    def: "A let with a refutable pattern and a diverging else block that runs when the pattern fails."

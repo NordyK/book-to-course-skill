@@ -1,0 +1,298 @@
+{
+  "title": "A CPU in software: code is data",
+  "summary": "Rust in Action's CHIP-8 style emulator built in steps: registers, opcodes and decoding with nibble masks, an add instruction with a carry flag, a fetch-decode-execute loop over memory, and a stack with CALL and RETURN to show that functions are bytes too.",
+  "minutes": 45,
+  "source": {
+    "chapter": "ch21",
+    "sections": [
+      "RiA 5.5 Implementing a CPU in Software to Establish that Functions are also Data",
+      "RiA 5.5.1 CPU 1: the Adder",
+      "RiA 5.5.2 First working emulator",
+      "RiA 5.5.3 CPU 2: the Multiplier",
+      "RiA 5.5.4 CPU 3: Adding functions",
+      "RiA 5.5.5 CPU 4: Adding the rest"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Instructions are numbers too. A program is a sequence of bytes in memory, and the CPU's job is a loop: **fetch** the next instruction, **decode** what it means, **execute** it. Because instructions are just data, one computer can **emulate** another in software.\n\n*Rust in Action* builds an emulator modelled on **CHIP-8**, a simple virtual machine from the 1970s. Its instructions are 16-bit **opcodes**, and its CPU has sixteen 8-bit registers, `V0` to `VF`.\n"
+    },
+    {
+      "type": "table",
+      "title": "The terms",
+      "headers": [
+        "Term",
+        "Meaning"
+      ],
+      "rows": [
+        [
+          "opcode",
+          "a number that encodes one instruction, here 16 bits such as `0x8014`"
+        ],
+        [
+          "register",
+          "a tiny, very fast storage slot inside the CPU; CHIP-8 has 16 of one byte each"
+        ],
+        [
+          "memory",
+          "a byte array; CHIP-8 has 4 KB (`0x1000` bytes)"
+        ],
+        [
+          "program counter",
+          "the address of the next instruction (`position_in_memory`)"
+        ],
+        [
+          "stack",
+          "where the return address is saved when a function is called"
+        ]
+      ]
+    },
+    {
+      "type": "stepper",
+      "title": "Decoding the opcode 0x8014",
+      "steps": [
+        {
+          "title": "Four nibbles",
+          "md": "A **nibble** is 4 bits, one hex digit. `0x8014` has the nibbles 8, 0, 1, 4."
+        },
+        {
+          "title": "The high nibble picks the group",
+          "md": "`c = (opcode & 0xF000) >> 12` is 8: arithmetic between two registers."
+        },
+        {
+          "title": "x and y are registers",
+          "md": "`x = (opcode & 0x0F00) >> 8` is 0 and `y = (opcode & 0x00F0) >> 4` is 1: registers V0 and V1."
+        },
+        {
+          "title": "The low nibble picks the operation",
+          "md": "`d = opcode & 0x000F` is 4: add. So `0x8014` means **V0 = V0 + V1**, setting VF to 1 if it overflowed."
+        },
+        {
+          "title": "Addresses use 12 bits",
+          "md": "Other opcodes treat the low three nibbles as a memory address: `nnn = opcode & 0x0FFF`. `0x2100` means **call the function at 0x100**."
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "The opcodes we implement",
+      "headers": [
+        "Opcode",
+        "Name",
+        "Effect"
+      ],
+      "rows": [
+        [
+          "`0x0000`",
+          "HALT",
+          "stop the CPU (our own addition; real CHIP-8 has no halt)"
+        ],
+        [
+          "`0x00EE`",
+          "RETURN",
+          "pop the return address from the stack and jump there"
+        ],
+        [
+          "`0x2nnn`",
+          "CALL nnn",
+          "push the current position, jump to nnn"
+        ],
+        [
+          "`0x8xy4`",
+          "ADD Vx, Vy",
+          "Vx += Vy; VF = 1 on overflow, else 0"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "title": "CPU 1: the adder",
+      "md": "The first CPU holds one opcode and two registers, and knows one instruction:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "struct CPU {\n    current_operation: u16,\n    registers: [u8; 2],\n}\n\nimpl CPU {\n    fn read_opcode(&self) -> u16 {\n        self.current_operation\n    }\n\n    fn run(&mut self) {\n        let opcode = self.read_opcode();\n\n        let c = ((opcode & 0xF000) >> 12) as u8;\n        let x = ((opcode & 0x0F00) >> 8) as u8;\n        let y = ((opcode & 0x00F0) >> 4) as u8;\n        let d = (opcode & 0x000F) as u8;\n\n        match (c, x, y, d) {\n            (0x8, _, _, 0x4) => self.add_xy(x, y),\n            _ => todo!(\"opcode {:04x}\", opcode),\n        }\n    }\n\n    fn add_xy(&mut self, x: u8, y: u8) {\n        self.registers[x as usize] += self.registers[y as usize];\n    }\n}\n\nfn main() {\n    let mut cpu = CPU { current_operation: 0, registers: [0; 2] };\n\n    cpu.current_operation = 0x8014;\n    cpu.registers[0] = 5;\n    cpu.registers[1] = 10;\n\n    cpu.run();\n\n    assert_eq!(cpu.registers[0], 15);\n    println!(\"5 + 10 = {}\", cpu.registers[0]);\n}\n",
+      "output": "5 + 10 = 15",
+      "explain": "Matching on the tuple of nibbles `(c, x, y, d)` makes the decoder read like the opcode table. `todo!` panics on anything we have not implemented yet."
+    },
+    {
+      "type": "text",
+      "title": "CPU 2: a loop over memory",
+      "md": "A real CPU runs many instructions. The program now lives in `memory`, and `position_in_memory` (the program counter) says where the next opcode starts. Each opcode is two bytes, stored **big-endian**: high byte first. The CPU reads both, joins them with a shift and `|`, advances by 2 and executes, until it meets `0x0000`. We also have all 16 registers, and VF becomes the **carry flag**:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "struct CPU {\n    registers: [u8; 16],\n    position_in_memory: usize,\n    memory: [u8; 0x1000],\n}\n\nimpl CPU {\n    fn read_opcode(&self) -> u16 {\n        let p = self.position_in_memory;\n        let op_byte1 = self.memory[p] as u16;\n        let op_byte2 = self.memory[p + 1] as u16;\n\n        op_byte1 << 8 | op_byte2\n    }\n\n    fn run(&mut self) {\n        loop {\n            let opcode = self.read_opcode();\n            self.position_in_memory += 2;\n\n            let c = ((opcode & 0xF000) >> 12) as u8;\n            let x = ((opcode & 0x0F00) >> 8) as u8;\n            let y = ((opcode & 0x00F0) >> 4) as u8;\n            let d = (opcode & 0x000F) as u8;\n\n            match (c, x, y, d) {\n                (0, 0, 0, 0) => return,\n                (0x8, _, _, 0x4) => self.add_xy(x, y),\n                _ => todo!(\"opcode {:04x}\", opcode),\n            }\n        }\n    }\n\n    fn add_xy(&mut self, x: u8, y: u8) {\n        let arg1 = self.registers[x as usize];\n        let arg2 = self.registers[y as usize];\n\n        let (val, overflow) = arg1.overflowing_add(arg2);\n        self.registers[x as usize] = val;\n\n        if overflow {\n            self.registers[0xF] = 1;\n        } else {\n            self.registers[0xF] = 0;\n        }\n    }\n}\n\nfn main() {\n    let mut cpu = CPU { registers: [0; 16], memory: [0; 4096], position_in_memory: 0 };\n\n    cpu.registers[0] = 5;\n    cpu.registers[1] = 10;\n    cpu.registers[2] = 10;\n    cpu.registers[3] = 10;\n\n    let mem = &mut cpu.memory;\n    mem[0] = 0x80; mem[1] = 0x14; // V0 += V1\n    mem[2] = 0x80; mem[3] = 0x24; // V0 += V2\n    mem[4] = 0x80; mem[5] = 0x34; // V0 += V3\n\n    cpu.run();\n\n    assert_eq!(cpu.registers[0], 35);\n    println!(\"5 + 10 + 10 + 10 = {}\", cpu.registers[0]);\n}\n",
+      "output": "5 + 10 + 10 + 10 = 35",
+      "explain": "Memory after the program is all zeros, so the fourth fetch reads `0x0000` and the loop returns. `overflowing_add` is the lesson-one method that returns the wrapped value plus a flag."
+    },
+    {
+      "type": "text",
+      "title": "CPU 3: functions are data",
+      "md": "A **function** is a sequence of instructions somewhere in memory, ending with RETURN. Calling it needs two things:\n\n- **CALL nnn** saves where we are (the address of the next instruction) on the **stack** and jumps to `nnn`;\n- **RETURN** takes that address back off the stack and jumps to it.\n\nThe stack is an array plus a `stack_pointer` that counts how many addresses are stored. Too many nested calls overflow it: the famous **stack overflow**.\n"
+    },
+    {
+      "type": "svg",
+      "caption": "Memory during the program: main at 0x000 calls add_twice at 0x100 twice",
+      "svg": "<svg viewBox=\"0 0 640 210\" xmlns=\"http://www.w3.org/2000/svg\" font-family=\"monospace\" font-size=\"13\" fill=\"none\" stroke=\"currentColor\">\n  <text x=\"20\" y=\"20\" fill=\"currentColor\" stroke=\"none\">0x000 main</text>\n  <rect x=\"20\" y=\"30\" width=\"200\" height=\"28\"/><text x=\"30\" y=\"49\" fill=\"currentColor\" stroke=\"none\">21 00  CALL 0x100</text>\n  <rect x=\"20\" y=\"58\" width=\"200\" height=\"28\"/><text x=\"30\" y=\"77\" fill=\"currentColor\" stroke=\"none\">21 00  CALL 0x100</text>\n  <rect x=\"20\" y=\"86\" width=\"200\" height=\"28\"/><text x=\"30\" y=\"105\" fill=\"currentColor\" stroke=\"none\">00 00  HALT</text>\n  <text x=\"400\" y=\"20\" fill=\"currentColor\" stroke=\"none\">0x100 add_twice</text>\n  <rect x=\"400\" y=\"30\" width=\"220\" height=\"28\"/><text x=\"410\" y=\"49\" fill=\"currentColor\" stroke=\"none\">80 14  ADD V0, V1</text>\n  <rect x=\"400\" y=\"58\" width=\"220\" height=\"28\"/><text x=\"410\" y=\"77\" fill=\"currentColor\" stroke=\"none\">80 14  ADD V0, V1</text>\n  <rect x=\"400\" y=\"86\" width=\"220\" height=\"28\"/><text x=\"410\" y=\"105\" fill=\"currentColor\" stroke=\"none\">00 EE  RETURN</text>\n  <path d=\"M220 44 L400 44\" stroke-dasharray=\"5 4\"/><path d=\"M392 40 L400 44 L392 48\"/>\n  <path d=\"M400 100 C330 150 280 150 220 72\" stroke-dasharray=\"5 4\"/><path d=\"M222 82 L220 72 L228 78\"/>\n  <text x=\"250\" y=\"36\" fill=\"currentColor\" stroke=\"none\">call</text>\n  <text x=\"260\" y=\"160\" fill=\"currentColor\" stroke=\"none\">return to 0x002</text>\n  <rect x=\"20\" y=\"150\" width=\"140\" height=\"28\" stroke-dasharray=\"4 3\"/><text x=\"30\" y=\"169\" fill=\"currentColor\" stroke=\"none\">stack: [0x002]</text>\n</svg>\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "struct CPU {\n    registers: [u8; 16],\n    position_in_memory: usize,\n    memory: [u8; 4096],\n    stack: [u16; 16],\n    stack_pointer: usize,\n}\n\nimpl CPU {\n    fn read_opcode(&self) -> u16 {\n        let p = self.position_in_memory;\n        let op_byte1 = self.memory[p] as u16;\n        let op_byte2 = self.memory[p + 1] as u16;\n\n        op_byte1 << 8 | op_byte2\n    }\n\n    fn run(&mut self) {\n        loop {\n            let opcode = self.read_opcode();\n            self.position_in_memory += 2;\n\n            let c = ((opcode & 0xF000) >> 12) as u8;\n            let x = ((opcode & 0x0F00) >> 8) as u8;\n            let y = ((opcode & 0x00F0) >> 4) as u8;\n            let d = (opcode & 0x000F) as u8;\n\n            let nnn = opcode & 0x0FFF;\n\n            match (c, x, y, d) {\n                (0, 0, 0, 0) => return,\n                (0, 0, 0xE, 0xE) => self.ret(),\n                (0x2, _, _, _) => self.call(nnn),\n                (0x8, _, _, 0x4) => self.add_xy(x, y),\n                _ => todo!(\"opcode {:04x}\", opcode),\n            }\n        }\n    }\n\n    fn call(&mut self, addr: u16) {\n        let sp = self.stack_pointer;\n        let stack = &mut self.stack;\n\n        if sp >= stack.len() {\n            panic!(\"Stack overflow!\")\n        }\n\n        stack[sp] = self.position_in_memory as u16;\n        self.stack_pointer += 1;\n        self.position_in_memory = addr as usize;\n    }\n\n    fn ret(&mut self) {\n        if self.stack_pointer == 0 {\n            panic!(\"Stack underflow\");\n        }\n\n        self.stack_pointer -= 1;\n        let call_addr = self.stack[self.stack_pointer];\n        self.position_in_memory = call_addr as usize;\n    }\n\n    fn add_xy(&mut self, x: u8, y: u8) {\n        let arg1 = self.registers[x as usize];\n        let arg2 = self.registers[y as usize];\n\n        let (val, overflow_detected) = arg1.overflowing_add(arg2);\n        self.registers[x as usize] = val;\n\n        if overflow_detected {\n            self.registers[0xF] = 1;\n        } else {\n            self.registers[0xF] = 0;\n        }\n    }\n}\n\nfn main() {\n    let mut cpu = CPU {\n        registers: [0; 16],\n        memory: [0; 4096],\n        position_in_memory: 0,\n        stack: [0; 16],\n        stack_pointer: 0,\n    };\n\n    cpu.registers[0] = 5;\n    cpu.registers[1] = 10;\n\n    let mem = &mut cpu.memory;\n    mem[0x000] = 0x21; mem[0x001] = 0x00; // CALL 0x100\n    mem[0x002] = 0x21; mem[0x003] = 0x00; // CALL 0x100\n    mem[0x004] = 0x00; mem[0x005] = 0x00; // HALT\n\n    let add_twice: [u8; 6] = [\n        0x80, 0x14, // ADD V0, V1\n        0x80, 0x14, // ADD V0, V1\n        0x00, 0xEE, // RETURN\n    ];\n    mem[0x100..0x106].copy_from_slice(&add_twice);\n\n    cpu.run();\n\n    assert_eq!(cpu.registers[0], 45);\n    println!(\"5 + (10 * 2) + (10 * 2) = {}\", cpu.registers[0]);\n}\n",
+      "output": "5 + (10 * 2) + (10 * 2) = 45",
+      "explain": "`add_twice` is literally an array of six bytes copied into memory. That is the point *Rust in Action* makes: there is no difference between \"code\" and \"data\" except how the CPU uses them."
+    },
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "CPU 4: the rest",
+      "md": "A full CHIP-8 adds about 35 opcodes: load a constant (`6xkk`), add a constant (`7xkk`), jump (`1nnn`), skip if equal (`3xkk`), subtract (`8xy5`), bitwise operations, drawing to a 64×32 screen and reading a keypad. Each one is another arm in the `match`. The exercise adds the ones you need to write loops."
+    },
+    {
+      "type": "playground",
+      "id": "ch21-play-cpu",
+      "title": "Write a program in machine code",
+      "lang": "rust",
+      "md": "The emulator here already supports HALT, CALL, RETURN and ADD. Without changing the CPU, write **bytes into memory** so that V0 ends up as 5 × 4 = 20. Registers: V0 = 0, V1 = 5. Hint: one function that adds V1 to V0 twice, called twice.\n",
+      "task": "Print `V0 = 20`.",
+      "code": "struct CPU {\n    registers: [u8; 16],\n    pc: usize,\n    memory: [u8; 4096],\n    stack: [u16; 16],\n    sp: usize,\n}\n\nimpl CPU {\n    fn run(&mut self) {\n        loop {\n            let op = (self.memory[self.pc] as u16) << 8 | self.memory[self.pc + 1] as u16;\n            self.pc += 2;\n            let (c, x, y, d) = ((op >> 12) as u8, ((op >> 8) & 0xF) as usize, ((op >> 4) & 0xF) as usize, (op & 0xF) as u8);\n            match (c, x, y, d) {\n                (0, 0, 0, 0) => return,\n                (0, 0, 0xE, 0xE) => {\n                    self.sp -= 1;\n                    self.pc = self.stack[self.sp] as usize;\n                }\n                (0x2, _, _, _) => {\n                    self.stack[self.sp] = self.pc as u16;\n                    self.sp += 1;\n                    self.pc = (op & 0x0FFF) as usize;\n                }\n                (0x8, _, _, 0x4) => {\n                    let (v, o) = self.registers[x].overflowing_add(self.registers[y]);\n                    self.registers[x] = v;\n                    self.registers[0xF] = o as u8;\n                }\n                _ => panic!(\"unknown opcode {op:04x}\"),\n            }\n        }\n    }\n}\n\nfn main() {\n    let mut cpu = CPU { registers: [0; 16], pc: 0, memory: [0; 4096], stack: [0; 16], sp: 0 };\n    cpu.registers[1] = 5;\n\n    let program: &[u8] = &[\n        0x00, 0x00, // HALT (replace this)\n    ];\n    cpu.memory[..program.len()].copy_from_slice(program);\n\n    let function: &[u8] = &[\n        0x00, 0xEE, // RETURN\n    ];\n    cpu.memory[0x200..0x200 + function.len()].copy_from_slice(function);\n\n    cpu.run();\n    println!(\"V0 = {}\", cpu.registers[0]);\n}\n",
+      "expected_output": "V0 = 20",
+      "hints": [
+        "CALL 0x200 is the opcode `0x2200`, stored as the bytes `0x22, 0x00`.",
+        "ADD V0, V1 is `0x8014`: bytes `0x80, 0x14`."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch21-ex-cpu",
+      "exercise_dir": "ch21-cpu",
+      "title": "CPU 4: loops and conditions",
+      "difficulty": "hard",
+      "goal": "Extend the emulator with constants, jumps, conditional skips and subtraction, then use them to run loops written in machine code.",
+      "behavior": "`pub struct Cpu { pub registers: [u8; 16], pub pc: usize, pub memory: [u8; 4096], stack: [u16; 16], sp: usize, pub steps: usize }` with `Cpu::new()`, `pub fn load(&mut self, addr: usize, program: &[u8])` and `pub fn run(&mut self)`. Each executed instruction increments `steps`. Support:\n- `0000` HALT; `00EE` RETURN; `1nnn` JUMP to nnn; `2nnn` CALL nnn\n- `3xkk` skip the next instruction if Vx == kk; `4xkk` skip if Vx != kk\n- `6xkk` Vx = kk; `7xkk` Vx = Vx + kk (wrapping, VF unchanged)\n- `8xy0` Vx = Vy; `8xy4` Vx += Vy with VF = carry; `8xy5` Vx -= Vy with VF = 1 if **no** borrow (Vx >= Vy), else 0\n- any other opcode: `panic!(\"unknown opcode {:04x}\")`; stack overflow and underflow panic too.\nAlso `pub fn multiply_program(a: u8, b: u8) -> Vec<u8>`: machine code (loaded at 0) that leaves `a * b` (wrapping) in V0, using a loop with a counter.\n",
+      "examples": [
+        {
+          "input": "load [0x60, 0x07, 0x70, 0x03, 0x00, 0x00] and run",
+          "output": "V0 = 10"
+        },
+        {
+          "input": "multiply_program(6, 7), run",
+          "output": "V0 = 42"
+        }
+      ],
+      "hints": [
+        "Skipping means `self.pc += 2` (one more instruction).",
+        "Note the order in `8xy4`/`8xy5`: compute the result and the flag first, write Vx, then VF, so that x = F still leaves the flag in VF.",
+        "Multiply: V0 = 0, V1 = a, V2 = b; loop: `3200` (skip if V2 == 0 → next instruction is a jump to the halt), ..., `8014`, `72FF` (V2 - 1 by adding 255), `1nnn` back to the loop start."
+      ],
+      "solution_explain": "Decoding the nibbles once and matching on `(c, d)` with guards for the two fixed opcodes keeps every instruction to a line or two. The multiply loop has no \"jump if zero\", so it builds one: `3200` skips the jump into the body when the counter is zero, landing on HALT. Subtracting 1 is adding 255 with wrap-around, two's complement at work."
+    },
+    {
+      "type": "quiz",
+      "id": "ch21-quiz-cpu",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "What does the opcode 0x8124 do?",
+          "options": [
+            "V8 += V1",
+            "V1 += V2, VF = carry",
+            "Call 0x124",
+            "V1 = 0x24"
+          ],
+          "answer": 1,
+          "explanation": "8 = arithmetic, x = 1, y = 2, d = 4 = add."
+        },
+        {
+          "type": "single",
+          "q": "How do you get the x nibble of a 16-bit opcode?",
+          "options": [
+            "opcode >> 12",
+            "(opcode & 0x0F00) >> 8",
+            "opcode & 0x000F",
+            "opcode << 8"
+          ],
+          "answer": 1,
+          "explanation": "Mask, then shift."
+        },
+        {
+          "type": "single",
+          "q": "What does CALL push onto the stack?",
+          "options": [
+            "The function's address",
+            "The address of the instruction after the CALL",
+            "The registers",
+            "Nothing"
+          ],
+          "answer": 1,
+          "explanation": "That is where RETURN continues."
+        },
+        {
+          "type": "single",
+          "q": "Memory bytes 0x21 0x00 are read as which opcode?",
+          "options": [
+            "0x0021",
+            "0x2100",
+            "0x2001",
+            "0x0012"
+          ],
+          "answer": 1,
+          "explanation": "High byte first: big-endian."
+        },
+        {
+          "type": "single",
+          "q": "What happens when a function calls itself with no end in our emulator?",
+          "options": [
+            "It loops forever",
+            "The stack fills up and the emulator panics with stack overflow",
+            "It returns 0",
+            "The registers overflow"
+          ],
+          "answer": 1,
+          "explanation": "16 return addresses fit."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "A CPU loops: fetch an opcode, decode its nibbles, execute.",
+        "Masks and shifts split a 16-bit opcode into fields; matching on a tuple of them reads like the instruction table.",
+        "Registers hold working values; VF acts as the carry flag.",
+        "CALL pushes the return address on a stack and RETURN pops it; too many nested calls overflow the stack.",
+        "Functions are bytes in memory: code is data."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "opcode",
+      "def": "A number that encodes one machine instruction."
+    },
+    {
+      "term": "register",
+      "def": "A small, fast storage location inside a CPU."
+    },
+    {
+      "term": "program counter",
+      "def": "The register holding the address of the next instruction."
+    },
+    {
+      "term": "nibble",
+      "def": "Four bits, one hexadecimal digit."
+    },
+    {
+      "term": "emulator",
+      "def": "Software that imitates another computer so its programs can run."
+    },
+    {
+      "term": "carry flag",
+      "def": "A bit set when an addition overflows, VF in CHIP-8."
+    }
+  ]
+}

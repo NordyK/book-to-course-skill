@@ -1,0 +1,58 @@
+title: "Chapter test: Networking and Time"
+kind: test
+summary: Ten questions on HTTP and TCP, error types, MAC addresses, state machines and timekeeping. You need 70% to pass; you can retry and your best score is kept.
+blocks:
+  - type: quiz
+    id: ch23-test
+    pass_score: 0.7
+    questions:
+      - type: single
+        q: "Which separates HTTP/1.x header lines?"
+        options: ["\\n only", "\\r\\n", "NUL", "A length prefix"]
+        answer: 1
+        explanation: "And an empty \\r\\n line ends the headers."
+      - type: single
+        q: "Which std type accepts incoming TCP connections?"
+        options: ["TcpStream", "TcpListener", "UdpSocket", "SocketAddr"]
+        answer: 1
+        explanation: "accept() returns a TcpStream per client."
+      - type: single
+        q: "What does `\"localhost:80\".to_socket_addrs()` do?"
+        options: ["Opens a connection", "Resolves the name to socket addresses through the OS", "Starts a server", "Parses only IP literals"]
+        answer: 1
+        explanation: "connect uses it internally."
+      - type: single
+        q: "Why set a read timeout on a UdpSocket?"
+        options: ["UDP is slow", "A lost datagram would make recv_from wait forever", "It is required", "To enable TLS"]
+        answer: 1
+        explanation: "UDP does not retransmit."
+      - type: single
+        q: "What lets `?` convert a ParseIntError into your own error type?"
+        options: ["impl Display", "impl From<ParseIntError> for MyError", "#[derive(Debug)]", "Box<dyn Error>"]
+        answer: 1
+        explanation: "? calls From::from."
+      - type: single
+        q: "A MAC address starts with 0x02. What kind is it?"
+        options: ["Universal unicast", "Locally administered unicast", "Multicast", "Broadcast"]
+        answer: 1
+        explanation: "Bit 1 set, bit 0 clear."
+      - type: single
+        q: "Which clock is monotonic?"
+        options: ["SystemTime", "Instant", "The wall clock", "UTC"]
+        answer: 1
+        explanation: "Use it for durations."
+      - type: single
+        q: "Which Unix timestamp is 1970-01-02T00:00:00Z?"
+        options: ["1", "3600", "86400", "31536000"]
+        answer: 2
+        explanation: "60 × 60 × 24."
+      - type: single
+        q: "NTP measured T1 = 0, T2 = 10, T3 = 12, T4 = 6. What is the delay?"
+        options: ["6", "4", "2", "8"]
+        answer: 1
+        explanation: "(6 - 0) - (12 - 10) = 4."
+      - type: single
+        q: "Why do NTP clients weight servers by 1/delay²?"
+        options: ["Closer servers are always right", "High-delay measurements are noisier, so they should count less", "To round results", "It is required by UDP"]
+        answer: 1
+        explanation: "Slow connections are penalized hard."

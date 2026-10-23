@@ -1,0 +1,8 @@
+title: "Error Handling"
+summary: "Two kinds of errors: bugs that should stop the program (panic!) and failures a program should expect and handle (Result). Matching, unwrap and expect, the ? operator, your own error types, and deciding which to use."
+goals:
+  - Explain what a panic does, read a backtrace, and decide when panicking is right
+  - Handle Result<T, E> with match, unwrap_or_else, map_err and friends
+  - Propagate errors with the ? operator, including from main
+  - Define an error enum, implement Display and From for it, and use Box<dyn Error>
+  - Use types to make invalid values impossible, as in the Guess example

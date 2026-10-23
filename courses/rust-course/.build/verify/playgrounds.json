@@ -1,0 +1,334 @@
+{
+ "ch01-play-bounds": {
+  "solution_code": null,
+  "starter_ok": "panic"
+ },
+ "ch01-play-hello": {
+  "solution_code": "fn main() {\n    println!(\"Hello, Rustacean!\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch01-play-three-greetings": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch02-play-compare": {
+  "solution_code": "use std::cmp::Ordering;\n\nfn main() {\n    let secret_number: u32 = 38;\n    let typed = String::from(\"38\\n\");\n\n    let guess: u32 = typed.trim().parse().expect(\"Please type a number!\");\n    println!(\"You guessed: {guess}\");\n\n    match guess.cmp(&secret_number) {\n        Ordering::Less => println!(\"Too small!\"),\n        Ordering::Greater => println!(\"Too big!\"),\n        Ordering::Equal => println!(\"You win!\"),\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch02-play-loop": {
+  "solution_code": "use std::cmp::Ordering;\n\nfn main() {\n    let secret_number: u32 = 61;\n    let inputs = [\"oops\", \"10\", \"80\", \"61\", \"99\"];\n\n    for typed in inputs {\n        let guess: u32 = match typed.trim().parse() {\n            Ok(num) => num,\n            Err(_) => {\n                println!(\"Please type a number!\");\n                continue;\n            }\n        };\n\n        println!(\"You guessed: {guess}\");\n\n        match guess.cmp(&secret_number) {\n            Ordering::Less => println!(\"Too small!\"),\n            Ordering::Greater => println!(\"Too big!\"),\n            Ordering::Equal => {\n                println!(\"You win!\");\n                break;\n            }\n        }\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch02-play-mutable": {
+  "solution_code": "fn main() {\n    let mut count = 1;\n    count = 2;\n    println!(\"{count}\");\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch02-play-newline": {
+  "solution_code": "fn main() {\n    let mut guess = String::new();\n    guess.push_str(\"42\\n\");\n\n    println!(\"{:?}\", guess);\n    println!(\"[{}]\", guess.trim());\n}\n",
+  "starter_ok": "run"
+ },
+ "ch02-play-parse-fail": {
+  "solution_code": null,
+  "starter_ok": "panic"
+ },
+ "ch02-play-placeholders": {
+  "solution_code": "fn main() {\n    let x = 5;\n    let y = 10;\n\n    println!(\"x = {x} and y = {y}\");\n    println!(\"{} + {} = {}\", x, y, x + y);\n}\n",
+  "starter_ok": "run"
+ },
+ "ch03-play-bounds": {
+  "solution_code": null,
+  "starter_ok": "panic"
+ },
+ "ch03-play-break-value": {
+  "solution_code": "fn main() {\n    let mut n = 0;\n    let first = loop {\n        n += 1;\n        if n * n > 500 {\n            break n * n;\n        }\n    };\n    println!(\"first square over 500: {first}\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch03-play-celsius": {
+  "solution_code": "fn to_fahrenheit(c: f64) -> f64 {\n    c * 9.0 / 5.0 + 32.0\n}\n\nfn main() {\n    for c in [100.0, -40.0] {\n        println!(\"{c}°C is {}°F\", to_fahrenheit(c));\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch03-play-chars": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch03-play-const": {
+  "solution_code": "const SECONDS_PER_MINUTE: u32 = 60;\nconst MINUTES_PER_HOUR: u32 = 60;\n\nfn main() {\n    let minutes: u32 = 5;\n    let seconds = minutes * SECONDS_PER_MINUTE;\n    println!(\"{minutes} minutes = {seconds} seconds\");\n    let hours: u32 = 2;\n    let seconds = hours * MINUTES_PER_HOUR * SECONDS_PER_MINUTE;\n    println!(\"{hours} hours = {seconds} seconds\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch03-play-fizzbuzz": {
+  "solution_code": "fn main() {\n    for n in 1..=15 {\n        if n % 15 == 0 {\n            println!(\"FizzBuzz\");\n        } else if n % 3 == 0 {\n            println!(\"Fizz\");\n        } else if n % 5 == 0 {\n            println!(\"Buzz\");\n        } else {\n            println!(\"{n}\");\n        }\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch03-play-overflow": {
+  "solution_code": null,
+  "starter_ok": "panic"
+ },
+ "ch03-play-semicolon": {
+  "solution_code": "fn area(width: u32, height: u32) -> u32 {\n    width * height\n}\n\nfn main() {\n    println!(\"area: {}\", area(3, 4));\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch03-play-shadow": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch03-play-tuple": {
+  "solution_code": "fn divide(a: u32, b: u32) -> (u32, u32) {\n    (a / b, a % b)\n}\n\nfn main() {\n    let (q, r) = divide(17, 5);\n    println!(\"17 / 5 = {q} remainder {r}\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch04-play-borrow-fix": {
+  "solution_code": "fn check_status(sat: &String) -> &'static str {\n    if sat.is_empty() { \"unknown\" } else { \"ok\" }\n}\n\nfn log_contact(sat: &mut String) {\n    sat.push_str(\" (contacted)\");\n}\n\nfn main() {\n    let mut sat_a = String::from(\"sat-a\");\n    println!(\"{sat_a}: {}\", check_status(&sat_a));\n    println!(\"{sat_a}: {}\", check_status(&sat_a));\n    log_contact(&mut sat_a);\n    println!(\"{sat_a}\");\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch04-play-borrow-order": {
+  "solution_code": "fn main() {\n    let mut s = String::from(\"hello\");\n    let first = &s[0..1];\n    println!(\"first: {first}\");\n    s.push('!');\n    println!(\"{s}\");\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch04-play-cubesat": {
+  "solution_code": "fn check_status(sat: String) -> (String, &'static str) {\n    let status = if sat.is_empty() { \"unknown\" } else { \"ok\" };\n    (sat, status)\n}\n\nfn main() {\n    let sat_a = String::from(\"sat-a\");\n    let (sat_a, status) = check_status(sat_a);\n    println!(\"{sat_a}: {status}\");\n    let (sat_a, status) = check_status(sat_a);\n    println!(\"{sat_a}: {status}\");\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch04-play-last-word": {
+  "solution_code": "fn last_word(s: &str) -> &str {\n    match s.rfind(' ') {\n        Some(i) => &s[i + 1..],\n        None => s,\n    }\n}\n\nfn main() {\n    println!(\"{}\", last_word(\"hello world\"));\n    println!(\"{}\", last_word(\"Ferris\"));\n    let owned = String::from(\"Ferris the crab\");\n    println!(\"{}\", last_word(&owned));\n}\n",
+  "starter_ok": "run"
+ },
+ "ch05-play-counter": {
+  "solution_code": "struct Counter {\n    count: u32,\n}\n\nimpl Counter {\n    fn new() -> Self {\n        Self { count: 0 }\n    }\n\n    fn increment(&mut self) {\n        self.count += 1;\n    }\n\n    fn add(&mut self, n: u32) {\n        self.count += n;\n    }\n\n    fn get(&self) -> u32 {\n        self.count\n    }\n}\n\nfn main() {\n    let mut c = Counter::new();\n    c.increment();\n    c.add(2);\n    println!(\"count: {}\", c.get());\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch05-play-rect": {
+  "solution_code": "#[derive(Debug)]\nstruct Rectangle {\n    width: u32,\n    height: u32,\n}\n\nfn area(r: &Rectangle) -> u32 {\n    r.width * r.height\n}\n\nfn perimeter(r: &Rectangle) -> u32 {\n    2 * (r.width + r.height)\n}\n\nfn is_square(r: &Rectangle) -> bool {\n    r.width == r.height\n}\n\nfn main() {\n    let shapes = [Rectangle { width: 30, height: 50 }, Rectangle { width: 20, height: 20 }];\n    for r in &shapes {\n        println!(\"{r:?}: area {}, perimeter {}, square {}\", area(r), perimeter(r), is_square(r));\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch05-play-update": {
+  "solution_code": "struct User {\n    username: String,\n    sign_in_count: u64,\n}\n\nfn main() {\n    let user1 = User { username: String::from(\"ferris\"), sign_in_count: 2 };\n    let user2 = User { username: String::from(\"other\"), ..user1 };\n    println!(\"{} ({} sign-ins)\", user1.username, user1.sign_in_count);\n    println!(\"{} ({} sign-ins)\", user2.username, user2.sign_in_count);\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch06-play-let-else": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch06-play-shapes": {
+  "solution_code": "enum Shape {\n    Circle(f64),\n    Rectangle { width: f64, height: f64 },\n}\n\nimpl Shape {\n    fn describe(&self) -> String {\n        match self {\n            Shape::Circle(r) => format!(\"circle with radius {r}\"),\n            Shape::Rectangle { width, height } => format!(\"rectangle {width} x {height}\"),\n        }\n    }\n}\n\nfn main() {\n    let shapes = [Shape::Circle(1.0), Shape::Rectangle { width: 2.0, height: 3.5 }];\n    for s in &shapes {\n        println!(\"{}\", s.describe());\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch06-play-traffic": {
+  "solution_code": "#[derive(Debug, Clone, Copy)]\nenum Light {\n    Red,\n    Yellow,\n    Green,\n}\n\nimpl Light {\n    fn next(self) -> Light {\n        match self {\n            Light::Red => Light::Green,\n            Light::Green => Light::Yellow,\n            Light::Yellow => Light::Red,\n        }\n    }\n\n    fn wait_seconds(self) -> u32 {\n        match self {\n            Light::Red => 30,\n            Light::Yellow => 5,\n            Light::Green => 45,\n        }\n    }\n}\n\nfn main() {\n    let mut light = Light::Red;\n    for _ in 0..4 {\n        println!(\"{light:?} {}s\", light.wait_seconds());\n        light = light.next();\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch07-play-privacy": {
+  "solution_code": "mod sensors {\n    pub struct Reading {\n        pub id: u32,\n        celsius: f64,\n    }\n\n    impl Reading {\n        pub fn new(id: u32, raw: f64) -> Reading {\n            Reading { id, celsius: calibrate(raw) }\n        }\n\n        pub fn celsius(&self) -> f64 {\n            self.celsius\n        }\n    }\n\n    fn calibrate(raw: f64) -> f64 {\n        raw - 0.5\n    }\n}\n\nfn main() {\n    let r = sensors::Reading::new(7, 22.0);\n    println!(\"sensor {}: {}°C\", r.id, r.celsius());\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch07-play-use": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch08-play-group": {
+  "solution_code": "use std::collections::BTreeMap;\n\nfn main() {\n    let names = [\"ada\", \"grace\", \"alan\", \"linus\"];\n    let mut groups: BTreeMap<char, Vec<&str>> = BTreeMap::new();\n    for name in names {\n        let letter = name.chars().next().unwrap();\n        groups.entry(letter).or_default().push(name);\n    }\n    println!(\"{groups:?}\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch08-play-strings": {
+  "solution_code": "fn initials(name: &str) -> String {\n    let mut out = String::new();\n    for word in name.split_whitespace() {\n        if let Some(c) = word.chars().next() {\n            out.push_str(&c.to_uppercase().to_string());\n            out.push('.');\n        }\n    }\n    out\n}\n\nfn reverse(s: &str) -> String {\n    s.chars().rev().collect()\n}\n\nfn main() {\n    println!(\"{}\", initials(\"ada lovelace\"));\n    println!(\"{}\", initials(\"grace murray hopper\"));\n    println!(\"{}\", reverse(\"bêté\"));\n}\n",
+  "starter_ok": "run"
+ },
+ "ch08-play-vec": {
+  "solution_code": "fn main() {\n    let mut grades = vec![76, 95, 63, 88, 70];\n    let total: i32 = grades.iter().sum();\n    let average = total as f64 / grades.len() as f64;\n    let best = grades.iter().max().unwrap();\n    println!(\"{} scores, average {average:.1}, best {best}\", grades.len());\n    grades.sort();\n    grades.reverse();\n    println!(\"{grades:?}\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch09-play-panic": {
+  "solution_code": null,
+  "starter_ok": "panic"
+ },
+ "ch09-play-question": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch09-play-try-new": {
+  "solution_code": "struct Percent(u8);\n\nimpl Percent {\n    fn try_new(value: u8) -> Result<Percent, String> {\n        if value > 100 {\n            return Err(format!(\"{value} is more than 100\"));\n        }\n        Ok(Percent(value))\n    }\n}\n\nfn main() {\n    for v in [42, 120] {\n        match Percent::try_new(v) {\n            Ok(p) => println!(\"ok: {}%\", p.0),\n            Err(e) => println!(\"error: {e}\"),\n        }\n    }\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch10-play-generic-stack": {
+  "solution_code": "struct Stack<T> {\n    items: Vec<T>,\n}\n\nimpl<T> Stack<T> {\n    fn new() -> Self {\n        Stack { items: Vec::new() }\n    }\n    fn push(&mut self, item: T) {\n        self.items.push(item);\n    }\n    fn len(&self) -> usize {\n        self.items.len()\n    }\n    fn peek(&self) -> Option<&T> {\n        self.items.last()\n    }\n}\n\nfn main() {\n    let mut nums = Stack::new();\n    nums.push(1);\n    nums.push(3);\n    println!(\"{:?}\", nums.peek());\n\n    let mut words = Stack::new();\n    words.push(\"a\");\n    words.push(\"b\");\n    println!(\"{:?}\", words.peek());\n    println!(\"{}\", words.len());\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch10-play-lifetimes": {
+  "solution_code": "fn pick_first<'a>(a: &'a str, b: &str) -> &'a str {\n    println!(\"ignoring {}\", b.len());\n    a\n}\n\nfn longer<'a>(a: &'a str, b: &'a str) -> &'a str {\n    if b.len() > a.len() { b } else { a }\n}\n\nfn main() {\n    let keep = String::from(\"apple\");\n    let chosen;\n    {\n        let temp = String::from(\"kiwi\");\n        chosen = pick_first(&keep, &temp);\n    }\n    println!(\"{chosen}\");\n    println!(\"{}\", longer(\"pear\", \"banana\"));\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch10-play-trait": {
+  "solution_code": "struct Circle { r: f64 }\nstruct Rect { w: f64, h: f64 }\n\ntrait Area {\n    fn area(&self) -> f64;\n\n    fn describe(&self) -> String {\n        format!(\"area = {:.2}\", self.area())\n    }\n}\n\nimpl Area for Circle {\n    fn area(&self) -> f64 {\n        std::f64::consts::PI * self.r * self.r\n    }\n}\n\nimpl Area for Rect {\n    fn area(&self) -> f64 {\n        self.w * self.h\n    }\n}\n\nfn total_area<T: Area>(shapes: &[T]) -> f64 {\n    let mut total = 0.0;\n    for s in shapes {\n        total += s.area();\n    }\n    total\n}\n\nfn main() {\n    println!(\"{}\", Circle { r: 1.0 }.describe());\n    println!(\"{}\", Rect { w: 2.0, h: 3.0 }.describe());\n    let rects = [Rect { w: 2.0, h: 3.0 }, Rect { w: 1.0, h: 6.0 }];\n    println!(\"{:.2}\", total_area(&rects));\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch11-play-asserts": {
+  "solution_code": "/// The middle value of a sorted copy; the mean of the two middle values for an even length.\nfn median(values: &[f64]) -> Option<f64> {\n    if values.is_empty() {\n        return None;\n    }\n    let mut v = values.to_vec();\n    v.sort_by(|a, b| a.partial_cmp(b).unwrap());\n    let mid = v.len() / 2;\n    if v.len() % 2 == 0 {\n        Some((v[mid - 1] + v[mid]) / 2.0)\n    } else {\n        Some(v[mid])\n    }\n}\n\nfn main() {\n    assert_eq!(median(&[]), None);\n    assert_eq!(median(&[3.0, 1.0, 2.0]), Some(2.0));\n    assert_eq!(median(&[4.0, 1.0, 3.0, 2.0]), Some(2.5), \"even length\");\n    println!(\"ok\");\n}\n",
+  "starter_ok": "panic"
+ },
+ "ch12-play-args": {
+  "solution_code": "fn parse_args(args: &[String]) -> Result<(String, String), String> {\n    if args.len() < 3 {\n        return Err(String::from(\"not enough arguments\"));\n    }\n    let query = args[1].clone();\n    let file_path = args[2].clone();\n    Ok((query, file_path))\n}\n\nfn main() {\n    let runs = [\n        vec![\"minigrep\", \"frog\", \"poem.txt\"],\n        vec![\"minigrep\", \"frog\"],\n        vec![\"minigrep\"],\n    ];\n    for run in runs {\n        let args: Vec<String> = run.iter().map(|s| s.to_string()).collect();\n        match parse_args(&args) {\n            Ok((q, f)) => println!(\"ok: query={q} file={f}\"),\n            Err(e) => println!(\"error: {e}\"),\n        }\n    }\n}\n",
+  "starter_ok": "panic"
+ },
+ "ch12-play-config": {
+  "solution_code": "struct Config {\n    query: String,\n    file_path: String,\n    ignore_case: bool,\n}\n\nimpl Config {\n    fn build(args: &[String]) -> Result<Config, String> {\n        if args.len() < 3 {\n            return Err(String::from(\"not enough arguments\"));\n        }\n        if args.len() > 4 {\n            return Err(String::from(\"too many arguments\"));\n        }\n        let query = args[1].clone();\n        let file_path = args[2].clone();\n        let ignore_case = match args.get(3).map(|s| s.as_str()) {\n            None => false,\n            Some(\"--ignore-case\") => true,\n            Some(other) => return Err(format!(\"unknown option: {other}\")),\n        };\n        Ok(Config { query, file_path, ignore_case })\n    }\n}\n\nfn main() {\n    let runs = [\n        vec![\"minigrep\", \"frog\", \"poem.txt\"],\n        vec![\"minigrep\", \"frog\", \"poem.txt\", \"--ignore-case\"],\n        vec![\"minigrep\", \"frog\", \"poem.txt\", \"-x\"],\n        vec![\"minigrep\", \"frog\", \"poem.txt\", \"--ignore-case\", \"more\"],\n    ];\n    for run in runs {\n        let args: Vec<String> = run.iter().map(|s| s.to_string()).collect();\n        match Config::build(&args) {\n            Ok(c) => println!(\"{}/{}/{}\", c.query, c.file_path, c.ignore_case),\n            Err(e) => println!(\"error: {e}\"),\n        }\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch12-play-search-numbers": {
+  "solution_code": "fn search_numbered<'a>(query: &str, contents: &'a str) -> Vec<(usize, &'a str)> {\n    let mut results = Vec::new();\n    for (i, line) in contents.lines().enumerate() {\n        if line.contains(query) {\n            results.push((i + 1, line));\n        }\n    }\n    results\n}\n\nfn main() {\n    let contents = \"Rust:\\nsafe, fast, productive.\\nPick three.\\nTrust me.\";\n    assert_eq!(search_numbered(\"duct\", contents), vec![(2, \"safe, fast, productive.\")]);\n    assert_eq!(search_numbered(\"ust\", contents), vec![(1, \"Rust:\"), (4, \"Trust me.\")]);\n    assert_eq!(search_numbered(\"zzz\", contents), vec![]);\n    for (n, line) in search_numbered(\"duct\", contents) {\n        println!(\"{n}: {line}\");\n    }\n}\n",
+  "starter_ok": "panic"
+ },
+ "ch13-play-build-iter": {
+  "solution_code": "struct Config {\n    query: String,\n    file_path: String,\n}\n\nimpl Config {\n    fn build(mut args: impl Iterator<Item = String>) -> Result<Config, &'static str> {\n        args.next();\n        let query = args.next().ok_or(\"Didn't get a query string\")?;\n        let file_path = args.next().ok_or(\"Didn't get a file path\")?;\n        Ok(Config { query, file_path })\n    }\n}\n\nfn main() {\n    let runs = [vec![\"mg\", \"frog\", \"poem.txt\"], vec![\"mg\", \"frog\"], vec![\"mg\"]];\n    for run in runs {\n        let args: Vec<String> = run.iter().map(|s| s.to_string()).collect();\n        match Config::build(args.into_iter()) {\n            Ok(c) => println!(\"{} in {}\", c.query, c.file_path),\n            Err(e) => println!(\"error: {e}\"),\n        }\n    }\n}\n",
+  "starter_ok": "panic"
+ },
+ "ch13-play-chains": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch13-play-closures": {
+  "solution_code": "fn apply_discounts<F: Fn(f64) -> f64>(prices: &[f64], rule: F) -> Vec<f64> {\n    let mut out = Vec::new();\n    for &p in prices {\n        out.push(rule(p));\n    }\n    out\n}\n\nfn main() {\n    let prices = [50.0, 120.0, 200.0];\n    let coupon = 15.0;\n\n    let bulk = |p: f64| if p > 100.0 { p * 0.9 } else { p };\n    let fixed = |p: f64| (p - coupon).max(0.0);\n\n    println!(\"{:?}\", apply_discounts(&prices, bulk));\n    println!(\"{:?}\", apply_discounts(&prices, fixed));\n}\n",
+  "starter_ok": "run"
+ },
+ "ch14-play-reexport": {
+  "solution_code": "mod shapes {\n    pub use self::kinds::Circle;\n    pub use self::math::area;\n\n    pub mod kinds {\n        pub struct Circle {\n            pub r: f64,\n        }\n    }\n\n    pub mod math {\n        use super::kinds::Circle;\n\n        pub fn area(c: &Circle) -> f64 {\n            std::f64::consts::PI * c.r * c.r\n        }\n    }\n}\n\nfn main() {\n    let c = shapes::Circle { r: 5.0 };\n    println!(\"{:.2}\", shapes::area(&c));\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch15-play-drop-order": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch15-play-shared-account": {
+  "solution_code": "use std::cell::RefCell;\nuse std::rc::Rc;\n\nstruct Account {\n    balance: i64,\n}\n\nstruct Card {\n    account: Rc<RefCell<Account>>,\n}\n\nimpl Card {\n    fn pay(&self, amount: i64) {\n        self.account.borrow_mut().balance -= amount;\n    }\n}\n\nfn main() {\n    let account = Rc::new(RefCell::new(Account { balance: 100 }));\n    let debit = Card { account: Rc::clone(&account) };\n    let credit = Card { account: Rc::clone(&account) };\n    debit.pay(20);\n    credit.pay(10);\n    println!(\"balance after payments: {}\", account.borrow().balance);\n    println!(\"owners: {}\", Rc::strong_count(&account));\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch15-play-tree": {
+  "solution_code": "#[derive(Debug)]\nstruct Node {\n    value: i32,\n    left: Option<Box<Node>>,\n    right: Option<Box<Node>>,\n}\n\nfn insert(slot: &mut Option<Box<Node>>, value: i32) {\n    match slot {\n        None => *slot = Some(Box::new(Node { value, left: None, right: None })),\n        Some(node) => {\n            if value < node.value {\n                insert(&mut node.left, value);\n            } else {\n                insert(&mut node.right, value);\n            }\n        }\n    }\n}\n\nfn count(slot: &Option<Box<Node>>) -> usize {\n    match slot {\n        None => 0,\n        Some(node) => 1 + count(&node.left) + count(&node.right),\n    }\n}\n\nfn in_order(slot: &Option<Box<Node>>, out: &mut Vec<i32>) {\n    if let Some(node) = slot {\n        in_order(&node.left, out);\n        out.push(node.value);\n        in_order(&node.right, out);\n    }\n}\n\nfn main() {\n    let mut root = None;\n    for v in [7, 3, 9, 1, 4] {\n        insert(&mut root, v);\n    }\n    println!(\"{} nodes\", count(&root));\n    let mut values = Vec::new();\n    in_order(&root, &mut values);\n    println!(\"in order: {values:?}\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch15-play-weak": {
+  "solution_code": "use std::rc::{Rc, Weak};\n\nstruct Observer {\n    name: String,\n}\n\nstruct Subject {\n    observers: Vec<Weak<Observer>>,\n}\n\nimpl Subject {\n    fn notify(&mut self, msg: &str) {\n        self.observers.retain(|w| match w.upgrade() {\n            Some(o) => {\n                println!(\"{} got: {msg}\", o.name);\n                true\n            }\n            None => false,\n        });\n    }\n}\n\nfn main() {\n    let a = Rc::new(Observer { name: String::from(\"a\") });\n    let b = Rc::new(Observer { name: String::from(\"b\") });\n    let mut s = Subject { observers: vec![Rc::downgrade(&a), Rc::downgrade(&b)] };\n    s.notify(\"hello\");\n    drop(b);\n    s.notify(\"again\");\n    println!(\"{} observers left\", s.observers.len());\n}\n",
+  "starter_ok": "run"
+ },
+ "ch16-play-bank": {
+  "solution_code": "use std::sync::{Arc, Mutex};\nuse std::thread;\n\nfn main() {\n    let balance = Arc::new(Mutex::new(0i64));\n    let mut handles = Vec::new();\n    for _ in 0..4 {\n        let balance = Arc::clone(&balance);\n        handles.push(thread::spawn(move || {\n            for _ in 0..250 {\n                *balance.lock().unwrap() += 1;\n            }\n        }));\n    }\n    for h in handles {\n        h.join().unwrap();\n    }\n    println!(\"balance = {}\", balance.lock().unwrap());\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch16-play-pipeline": {
+  "solution_code": "use std::sync::mpsc;\nuse std::thread;\n\nfn main() {\n    let (tx1, rx1) = mpsc::channel();\n    let (tx2, rx2) = mpsc::channel::<u32>();\n\n    thread::spawn(move || {\n        for n in 1..=10u32 {\n            let _ = tx1.send(n); // ignore the error if stage 2 is gone\n        }\n    });\n\n    thread::spawn(move || {\n        for n in rx1 {\n            if n % 2 == 0 {\n                tx2.send(n * n).unwrap();\n            }\n        }\n    });\n\n    let total: u32 = rx2.iter().sum();\n    println!(\"sum of even squares: {total}\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch16-play-send": {
+  "solution_code": "use std::sync::Arc;\nuse std::sync::atomic::{AtomicU32, Ordering};\nuse std::thread;\n\nstruct Job {\n    name: String,\n    runs: Arc<AtomicU32>,\n}\n\nfn main() {\n    let job = Job { name: String::from(\"resize\"), runs: Arc::new(AtomicU32::new(0)) };\n    let handle = thread::spawn(move || {\n        job.runs.fetch_add(1, Ordering::Relaxed);\n        job.runs.fetch_add(1, Ordering::Relaxed);\n        format!(\"job {} ran {} times\", job.name, job.runs.load(Ordering::Relaxed))\n    });\n    println!(\"{}\", handle.join().unwrap());\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch16-play-threads": {
+  "solution_code": "use std::thread;\n\nfn main() {\n    let docs = vec![\n        String::from(\"the quick brown fox\"),\n        String::from(\"jumps over\"),\n        String::from(\"the lazy dog and keeps running far\"),\n    ];\n\n    let mut handles = Vec::new();\n    for doc in docs {\n        handles.push(thread::spawn(move || doc.split_whitespace().count()));\n    }\n\n    let mut total = 0;\n    for h in handles {\n        total += h.join().unwrap();\n    }\n    println!(\"total words: {total}\");\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch17-play-block-on": {
+  "solution_code": "use std::future::Future;\nuse std::pin::{Pin, pin};\nuse std::sync::Arc;\nuse std::task::{Context, Poll, Wake, Waker};\nuse std::thread::{self, Thread};\n\nstruct ThreadWaker(Thread);\nimpl Wake for ThreadWaker {\n    fn wake(self: Arc<Self>) {\n        self.0.unpark();\n    }\n}\n\nfn block_on<F: Future>(fut: F) -> (F::Output, u32) {\n    let mut fut = pin!(fut);\n    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));\n    let mut cx = Context::from_waker(&waker);\n    let mut polls = 0;\n    loop {\n        polls += 1;\n        match fut.as_mut().poll(&mut cx) {\n            Poll::Ready(v) => return (v, polls),\n            Poll::Pending => thread::park(),\n        }\n    }\n}\n\nstruct YieldOnce(bool);\nimpl Future for YieldOnce {\n    type Output = ();\n    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {\n        if self.0 {\n            Poll::Ready(())\n        } else {\n            self.0 = true;\n            cx.waker().wake_by_ref();\n            Poll::Pending\n        }\n    }\n}\n\nfn main() {\n    let (value, polls) = block_on(async {\n        YieldOnce(false).await;\n        YieldOnce(false).await;\n        YieldOnce(false).await;\n        42\n    });\n    println!(\"value = {value} after {polls} polls\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch17-play-join-all": {
+  "solution_code": "use std::future::{Future, poll_fn};\nuse std::pin::{Pin, pin};\nuse std::sync::{Arc, Mutex};\nuse std::task::{Context, Poll, Wake, Waker};\nuse std::thread::{self, Thread};\nuse std::time::{Duration, Instant};\n\nasync fn work(id: u32) -> u32 {\n    sleep(Duration::from_millis(200)).await;\n    id\n}\n\nasync fn join_all<F: Future>(futures: Vec<F>) -> Vec<F::Output> {\n    let mut futs: Vec<Pin<Box<F>>> = futures.into_iter().map(Box::pin).collect();\n    let mut outs: Vec<Option<F::Output>> = futs.iter().map(|_| None).collect();\n    poll_fn(move |cx| {\n        for (f, out) in futs.iter_mut().zip(outs.iter_mut()) {\n            if out.is_none() {\n                if let Poll::Ready(v) = f.as_mut().poll(cx) {\n                    *out = Some(v);\n                }\n            }\n        }\n        if outs.iter().all(|o| o.is_some()) {\n            Poll::Ready(outs.iter_mut().map(|o| o.take().unwrap()).collect())\n        } else {\n            Poll::Pending\n        }\n    })\n    .await\n}\n\nfn main() {\n    let start = Instant::now();\n    let results = block_on(join_all(vec![work(1), work(2), work(3)]));\n    println!(\"{results:?}\");\n    println!(\"concurrent: {}\", start.elapsed().as_millis() < 450);\n}\n\n// ---- the tiny runtime from the lesson ----\n\nstruct ThreadWaker(Thread);\nimpl Wake for ThreadWaker {\n    fn wake(self: Arc<Self>) {\n        self.0.unpark();\n    }\n}\n\nfn block_on<F: Future>(fut: F) -> F::Output {\n    let mut fut = pin!(fut);\n    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));\n    let mut cx = Context::from_waker(&waker);\n    loop {\n        match fut.as_mut().poll(&mut cx) {\n            Poll::Ready(v) => return v,\n            Poll::Pending => thread::park(),\n        }\n    }\n}\n\nstruct Sleep {\n    state: Arc<Mutex<(bool, Option<Waker>)>>,\n}\n\nfn sleep(d: Duration) -> Sleep {\n    let state = Arc::new(Mutex::new((false, None::<Waker>)));\n    let timer = Arc::clone(&state);\n    thread::spawn(move || {\n        thread::sleep(d);\n        let mut s = timer.lock().unwrap();\n        s.0 = true;\n        if let Some(w) = s.1.take() {\n            w.wake();\n        }\n    });\n    Sleep { state }\n}\n\nimpl Future for Sleep {\n    type Output = ();\n    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {\n        let mut s = self.state.lock().unwrap();\n        if s.0 {\n            Poll::Ready(())\n        } else {\n            s.1 = Some(cx.waker().clone());\n            Poll::Pending\n        }\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch17-play-ticker": {
+  "solution_code": "use std::future::{Future, poll_fn};\nuse std::pin::{Pin, pin};\nuse std::sync::Arc;\nuse std::task::{Context, Poll, Wake, Waker};\nuse std::thread::{self, Thread};\n\nstruct Ticks {\n    current: u32,\n    limit: u32,\n}\n\nimpl Ticks {\n    fn poll_next(&mut self, _cx: &mut Context<'_>) -> Poll<Option<u32>> {\n        if self.current >= self.limit {\n            Poll::Ready(None)\n        } else {\n            self.current += 1;\n            Poll::Ready(Some(self.current))\n        }\n    }\n}\n\nasync fn next(s: &mut Ticks) -> Option<u32> {\n    poll_fn(|cx| s.poll_next(cx)).await\n}\n\nfn main() {\n    let total = block_on(async {\n        let mut ticks = Ticks { current: 0, limit: 3 };\n        let mut sum = 0;\n        while let Some(n) = next(&mut ticks).await {\n            println!(\"got {n}\");\n            sum += n;\n        }\n        sum\n    });\n    println!(\"sum = {total}\");\n}\n\nstruct ThreadWaker(Thread);\nimpl Wake for ThreadWaker {\n    fn wake(self: Arc<Self>) {\n        self.0.unpark();\n    }\n}\nfn block_on<F: Future>(fut: F) -> F::Output {\n    let mut fut = pin!(fut);\n    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));\n    let mut cx = Context::from_waker(&waker);\n    loop {\n        match fut.as_mut().poll(&mut cx) {\n            Poll::Ready(v) => return v,\n            Poll::Pending => thread::park(),\n        }\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch18-play-plugins": {
+  "solution_code": "trait Plugin {\n    fn name(&self) -> String;\n    fn run(&self, input: i64) -> i64;\n}\n\nstruct Double;\nstruct AddN(i64);\n\nimpl Plugin for Double {\n    fn name(&self) -> String {\n        String::from(\"double\")\n    }\n    fn run(&self, input: i64) -> i64 {\n        input * 2\n    }\n}\n\nimpl Plugin for AddN {\n    fn name(&self) -> String {\n        format!(\"add {}\", self.0)\n    }\n    fn run(&self, input: i64) -> i64 {\n        input + self.0\n    }\n}\n\nfn main() {\n    let plugins: Vec<Box<dyn Plugin>> = vec![Box::new(Double), Box::new(AddN(7)), Box::new(Double)];\n    let mut value = 5;\n    for p in &plugins {\n        let next = p.run(value);\n        println!(\"{}: {value} -> {next}\", p.name());\n        value = next;\n    }\n    println!(\"{value}\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch18-play-typestate": {
+  "solution_code": "struct Closed;\nstruct Open;\nstruct Locked {\n    code: u32,\n}\n\nimpl Closed {\n    fn open(self) -> Open {\n        Open\n    }\n    fn lock(self, code: u32) -> Locked {\n        Locked { code }\n    }\n}\n\nimpl Open {\n    fn close(self) -> Closed {\n        Closed\n    }\n}\n\nimpl Locked {\n    fn unlock(self, code: u32) -> Result<Closed, Locked> {\n        if code == self.code { Ok(Closed) } else { Err(self) }\n    }\n}\n\nfn main() {\n    let door = Closed;\n    let door = door.open();\n    println!(\"opened\");\n    let door = door.close();\n    println!(\"closed\");\n    let door = door.lock(1234);\n    println!(\"locked\");\n    let door = match door.unlock(1111) {\n        Ok(d) => d,\n        Err(still_locked) => {\n            println!(\"wrong code\");\n            still_locked.unlock(1234).ok().unwrap()\n        }\n    };\n    println!(\"unlocked\");\n    let _ = door;\n    // Open.lock(1); // does not compile\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch19-play-commands": {
+  "solution_code": "fn run(line: &str) -> String {\n    let words: Vec<&str> = line.split_whitespace().collect();\n    match words.as_slice() {\n        [\"go\", dir @ (\"north\" | \"south\" | \"east\" | \"west\")] => format!(\"going {dir}\"),\n        [\"take\", item] => format!(\"taking {item}\"),\n        [\"drop\", \"all\"] => String::from(\"dropping everything\"),\n        [\"wait\", n] if matches!(n.parse::<u32>(), Ok(1..=9)) => format!(\"waiting {n} turns\"),\n        _ => format!(\"unknown: {line}\"),\n    }\n}\n\nfn main() {\n    for line in [\"go north\", \"take lamp\", \"drop all\", \"wait 3\", \"wait 30\", \"dance\"] {\n        println!(\"{}\", run(line));\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch19-play-places": {
+  "solution_code": "fn main() {\n    let lines = [\"ana:12\", \"oops\", \"bob:7\", \"cy:x\"];\n    let mut scores: Vec<(&str, i32)> = Vec::new();\n\n    for (i, line) in lines.iter().enumerate() {\n        let Some((name, score)) = line.split_once(':') else {\n            continue;\n        };\n        if let Ok(score) = score.parse::<i32>() {\n            println!(\"{i} {name} {score}\");\n            scores.push((name, score));\n        }\n    }\n\n    let total: i32 = scores.iter().map(|&(_, s)| s).sum();\n    println!(\"total {total}\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch20-play-calculator": {
+  "solution_code": "use std::collections::HashMap;\n\nfn main() {\n    let mut ops: HashMap<&str, fn(f64, f64) -> f64> = HashMap::new();\n    ops.insert(\"+\", |a, b| a + b);\n    ops.insert(\"-\", |a, b| a - b);\n    ops.insert(\"*\", |a, b| a * b);\n    ops.insert(\"/\", |a, b| a / b);\n    ops.insert(\"pow\", f64::powf);\n\n    for (a, op, b) in [(2.0, \"+\", 3.0), (2.0, \"pow\", 10.0), (9.0, \"/\", 2.0), (1.0, \"%\", 2.0)] {\n        match ops.get(op) {\n            Some(f) => println!(\"{a} {op} {b} = {}\", f(a, b)),\n            None => println!(\"{a} {op} {b}: unknown op\"),\n        }\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch20-play-macro": {
+  "solution_code": "use std::collections::HashMap;\n\nmacro_rules! hashmap {\n    ($($k:expr => $v:expr),* $(,)?) => {{\n        let mut map = HashMap::new();\n        $(\n            map.insert($k, $v);\n        )*\n        map\n    }};\n}\n\nfn main() {\n    let m: HashMap<&str, i32> = hashmap! { \"a\" => 1, \"b\" => 2, \"c\" => 3, };\n    let empty: HashMap<&str, i32> = hashmap! {};\n    let mut pairs: Vec<_> = m.into_iter().collect();\n    pairs.sort();\n    println!(\"{pairs:?}\");\n    println!(\"{}\", empty.len());\n}\n",
+  "starter_ok": "run"
+ },
+ "ch20-play-money": {
+  "solution_code": "use std::fmt;\nuse std::iter::Sum;\nuse std::ops::{Add, Mul};\n\n#[derive(Debug, Copy, Clone, PartialEq)]\nstruct Cents(i64);\n\nimpl Add for Cents {\n    type Output = Cents;\n    fn add(self, other: Cents) -> Cents {\n        Cents(self.0 + other.0)\n    }\n}\n\nimpl Mul<i64> for Cents {\n    type Output = Cents;\n    fn mul(self, k: i64) -> Cents {\n        Cents(self.0 * k)\n    }\n}\n\nimpl Sum for Cents {\n    fn sum<I: Iterator<Item = Cents>>(iter: I) -> Cents {\n        iter.fold(Cents(0), |a, b| a + b)\n    }\n}\n\nimpl fmt::Display for Cents {\n    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {\n        let sign = if self.0 < 0 { \"-\" } else { \"\" };\n        let abs = self.0.abs();\n        write!(f, \"{sign}€{}.{:02}\", abs / 100, abs % 100)\n    }\n}\n\nfn main() {\n    let price = Cents(617);\n    println!(\"{}\", price * 2);\n    println!(\"{}\", [Cents(250), Cents(500)].iter().copied().sum::<Cents>());\n    println!(\"{}\", Cents(-50));\n}\n",
+  "starter_ok": "run"
+ },
+ "ch20-play-swap": {
+  "solution_code": "fn swap_ends(v: &mut [i32]) {\n    if v.is_empty() {\n        return;\n    }\n    let len = v.len();\n    let p = v.as_mut_ptr();\n    // SAFETY: v is non-empty, so p and p.add(len - 1) are both in bounds; ptr::swap allows them to be equal\n    unsafe {\n        std::ptr::swap(p, p.add(len - 1));\n    }\n}\n\nfn main() {\n    let mut a = [1, 2, 3, 4, 5];\n    let mut b = [7];\n    let mut c: [i32; 0] = [];\n    swap_ends(&mut a);\n    swap_ends(&mut b);\n    swap_ends(&mut c);\n    println!(\"{a:?}\");\n    println!(\"{b:?}\");\n    println!(\"{c:?}\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch21-play-bits": {
+  "solution_code": "fn pack(year: u16, month: u16, day: u16) -> u16 {\n    ((year - 1980) << 9) | (month << 5) | day\n}\n\nfn unpack(bits: u16) -> (u16, u16, u16) {\n    ((bits >> 9) + 1980, (bits >> 5) & 0b1111, bits & 0b1_1111)\n}\n\nfn main() {\n    let p = pack(2025, 3, 23);\n    println!(\"{p:016b}\");\n    println!(\"{:?}\", unpack(p));\n}\n",
+  "starter_ok": "run"
+ },
+ "ch21-play-cpu": {
+  "solution_code": "struct CPU {\n    registers: [u8; 16],\n    pc: usize,\n    memory: [u8; 4096],\n    stack: [u16; 16],\n    sp: usize,\n}\n\nimpl CPU {\n    fn run(&mut self) {\n        loop {\n            let op = (self.memory[self.pc] as u16) << 8 | self.memory[self.pc + 1] as u16;\n            self.pc += 2;\n            let (c, x, y, d) = ((op >> 12) as u8, ((op >> 8) & 0xF) as usize, ((op >> 4) & 0xF) as usize, (op & 0xF) as u8);\n            match (c, x, y, d) {\n                (0, 0, 0, 0) => return,\n                (0, 0, 0xE, 0xE) => {\n                    self.sp -= 1;\n                    self.pc = self.stack[self.sp] as usize;\n                }\n                (0x2, _, _, _) => {\n                    self.stack[self.sp] = self.pc as u16;\n                    self.sp += 1;\n                    self.pc = (op & 0x0FFF) as usize;\n                }\n                (0x8, _, _, 0x4) => {\n                    let (v, o) = self.registers[x].overflowing_add(self.registers[y]);\n                    self.registers[x] = v;\n                    self.registers[0xF] = o as u8;\n                }\n                _ => panic!(\"unknown opcode {op:04x}\"),\n            }\n        }\n    }\n}\n\nfn main() {\n    let mut cpu = CPU { registers: [0; 16], pc: 0, memory: [0; 4096], stack: [0; 16], sp: 0 };\n    cpu.registers[1] = 5;\n\n    let program: &[u8] = &[\n        0x22, 0x00, // CALL 0x200\n        0x22, 0x00, // CALL 0x200\n        0x00, 0x00, // HALT\n    ];\n    cpu.memory[..program.len()].copy_from_slice(program);\n\n    let function: &[u8] = &[\n        0x80, 0x14, // ADD V0, V1\n        0x80, 0x14, // ADD V0, V1\n        0x00, 0xEE, // RETURN\n    ];\n    cpu.memory[0x200..0x200 + function.len()].copy_from_slice(function);\n\n    cpu.run();\n    println!(\"V0 = {}\", cpu.registers[0]);\n}\n",
+  "starter_ok": "run"
+ },
+ "ch21-play-float": {
+  "solution_code": "fn make_f32(sign: u32, exponent: i32, fraction: u32) -> f32 {\n    let biased = (exponent + 127) as u32;\n    f32::from_bits((sign << 31) | (biased << 23) | fraction)\n}\n\nfn main() {\n    println!(\"{}\", make_f32(0, 5, 0b01010011010111000010100));\n    println!(\"{}\", make_f32(1, -1, 1 << 22));\n    println!(\"{}\", make_f32(0, 0, 0));\n}\n",
+  "starter_ok": "run"
+ },
+ "ch21-play-q7": {
+  "solution_code": "use std::ops::{Add, Mul};\n\n#[derive(Debug, Clone, Copy, PartialEq, Eq)]\nstruct Q7(i8);\n\nimpl From<f64> for Q7 {\n    fn from(n: f64) -> Self {\n        if n >= 1.0 { Q7(127) } else if n <= -1.0 { Q7(-128) } else { Q7((n * 128.0) as i8) }\n    }\n}\n\nimpl From<Q7> for f64 {\n    fn from(n: Q7) -> f64 {\n        n.0 as f64 / 128.0\n    }\n}\n\nimpl Add for Q7 {\n    type Output = Q7;\n    fn add(self, other: Q7) -> Q7 {\n        Q7(self.0.saturating_add(other.0))\n    }\n}\n\nimpl Mul for Q7 {\n    type Output = Q7;\n    fn mul(self, other: Q7) -> Q7 {\n        Q7(((self.0 as i16 * other.0 as i16) >> 7) as i8)\n    }\n}\n\nfn main() {\n    let half = Q7::from(0.5);\n    let quarter = Q7::from(0.25);\n    let three_q = Q7::from(0.75);\n    println!(\"{}\", f64::from(half + quarter));\n    println!(\"{}\", f64::from(three_q + three_q));\n    println!(\"{}\", f64::from(half * half));\n}\n",
+  "starter_ok": "run"
+ },
+ "ch22-play-kv": {
+  "solution_code": "use std::collections::HashMap;\n\nstruct Log {\n    entries: Vec<(String, Option<String>)>,\n    index: HashMap<String, usize>,\n}\n\nimpl Log {\n    fn set(&mut self, k: &str, v: &str) {\n        self.entries.push((k.to_string(), Some(v.to_string())));\n        self.index.insert(k.to_string(), self.entries.len() - 1);\n    }\n    fn del(&mut self, k: &str) {\n        self.entries.push((k.to_string(), None));\n        self.index.insert(k.to_string(), self.entries.len() - 1);\n    }\n    fn get(&self, k: &str) -> Option<&str> {\n        let pos = *self.index.get(k)?;\n        self.entries[pos].1.as_deref()\n    }\n    fn compact(&mut self) {\n        let mut entries = Vec::new();\n        let mut index = HashMap::new();\n        for (k, &pos) in &self.index {\n            if let Some(v) = &self.entries[pos].1 {\n                entries.push((k.clone(), Some(v.clone())));\n                index.insert(k.clone(), entries.len() - 1);\n            }\n        }\n        self.entries = entries;\n        self.index = index;\n    }\n}\n\nfn main() {\n    let mut log = Log { entries: vec![], index: HashMap::new() };\n    log.set(\"a\", \"1\");\n    log.set(\"b\", \"2\");\n    log.set(\"a\", \"3\");\n    log.del(\"b\");\n    println!(\"{:?} {:?} {}\", log.get(\"a\"), log.get(\"b\"), log.entries.len());\n    log.compact();\n    println!(\"{:?} {}\", log.get(\"a\"), log.entries.len());\n}\n",
+  "starter_ok": "run"
+ },
+ "ch22-play-record": {
+  "solution_code": "use std::io::{Cursor, Read};\n\nfn encode(items: &[&str]) -> Vec<u8> {\n    let mut out = Vec::new();\n    for s in items {\n        out.extend_from_slice(&(s.len() as u16).to_be_bytes());\n        out.extend_from_slice(s.as_bytes());\n    }\n    out\n}\n\nfn decode(bytes: &[u8]) -> Vec<String> {\n    let mut r = Cursor::new(bytes);\n    let mut items = Vec::new();\n    let mut len = [0u8; 2];\n    while r.read_exact(&mut len).is_ok() {\n        let mut buf = vec![0u8; u16::from_be_bytes(len) as usize];\n        r.read_exact(&mut buf).expect(\"truncated string\");\n        items.push(String::from_utf8(buf).expect(\"not UTF-8\"));\n    }\n    items\n}\n\nfn main() {\n    let bytes = encode(&[\"hi\", \"world\"]);\n    println!(\"{bytes:?}\");\n    println!(\"{:?}\", decode(&bytes));\n}\n",
+  "starter_ok": "run"
+ },
+ "ch22-play-wc": {
+  "solution_code": "use std::io::{self, BufRead};\n\nfn wc<R: BufRead>(mut input: R) -> io::Result<(usize, usize, usize)> {\n    let (mut lines, mut words, mut bytes) = (0, 0, 0);\n    let mut line = String::new();\n    loop {\n        line.clear();\n        let n = input.read_line(&mut line)?;\n        if n == 0 {\n            break;\n        }\n        bytes += n;\n        if line.ends_with('\\n') {\n            lines += 1;\n        }\n        words += line.split_whitespace().count();\n    }\n    Ok((lines, words, bytes))\n}\n\nfn main() -> io::Result<()> {\n    let text = \"the quick brown\\nfox jumps\\nover it\\n\";\n    println!(\"{:?}\", wc(text.as_bytes())?);\n    println!(\"{:?}\", wc(io::Cursor::new(\"\"))?);\n    Ok(())\n}\n",
+  "starter_ok": "run"
+ },
+ "ch23-play-echo": {
+  "solution_code": "use std::io::{BufRead, BufReader, Write};\nuse std::net::{Shutdown, TcpListener, TcpStream};\nuse std::thread;\n\nfn main() -> std::io::Result<()> {\n    let listener = TcpListener::bind(\"127.0.0.1:0\")?;\n    let addr = listener.local_addr()?;\n\n    let server = thread::spawn(move || -> std::io::Result<()> {\n        let (stream, _) = listener.accept()?;\n        let mut writer = stream.try_clone()?;\n        for line in BufReader::new(stream).lines() {\n            writeln!(writer, \"{}\", line?.to_uppercase())?;\n        }\n        Ok(())\n    });\n\n    let mut client = TcpStream::connect(addr)?;\n    client.write_all(b\"hello\\nrust\\nbye\\n\")?;\n    client.shutdown(Shutdown::Write)?;\n    for line in BufReader::new(client).lines() {\n        println!(\"{}\", line?);\n    }\n    server.join().unwrap()\n}\n",
+  "starter_ok": "run"
+ },
+ "ch23-play-error": {
+  "solution_code": "use std::fmt;\nuse std::num::ParseIntError;\n\n#[derive(Debug)]\nenum TargetError {\n    MissingPort,\n    BadPort(ParseIntError),\n    EmptyHost,\n}\n\nimpl fmt::Display for TargetError {\n    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n        match self {\n            TargetError::MissingPort => write!(f, \"missing :port\"),\n            TargetError::BadPort(e) => write!(f, \"bad port: {e}\"),\n            TargetError::EmptyHost => write!(f, \"empty host\"),\n        }\n    }\n}\n\nimpl From<ParseIntError> for TargetError {\n    fn from(e: ParseIntError) -> Self {\n        TargetError::BadPort(e)\n    }\n}\n\nfn parse_target(s: &str) -> Result<(String, u16), TargetError> {\n    let (host, port) = s.rsplit_once(':').ok_or(TargetError::MissingPort)?;\n    if host.is_empty() {\n        return Err(TargetError::EmptyHost);\n    }\n    let port: u16 = port.parse()?;\n    Ok((host.to_string(), port))\n}\n\nfn main() {\n    println!(\"{:?}\", parse_target(\"example.com:443\"));\n    for bad in [\"example.com\", \"example.com:https\", \":80\"] {\n        match parse_target(bad) {\n            Ok(t) => println!(\"unexpected {t:?}\"),\n            Err(e) => println!(\"{e}\"),\n        }\n    }\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch23-play-time": {
+  "solution_code": "use std::time::Duration;\n\nfn ago(d: Duration) -> String {\n    let s = d.as_secs();\n    let (n, unit) = match s {\n        0..=59 => return String::from(\"just now\"),\n        60..=3599 => (s / 60, \"minute\"),\n        3600..=86_399 => (s / 3600, \"hour\"),\n        _ => (s / 86_400, \"day\"),\n    };\n    format!(\"{n} {unit}{} ago\", if n == 1 { \"\" } else { \"s\" })\n}\n\nfn main() {\n    for secs in [30, 61, 45 * 60, 2 * 3600 + 5, 86_400 + 1, 30 * 86_400] {\n        println!(\"{}\", ago(Duration::from_secs(secs)));\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch24-play-qsort": {
+  "solution_code": "use std::ffi::{CStr, c_char, c_int, c_void};\n\nunsafe extern \"C\" {\n    fn qsort(base: *mut c_void, n: usize, size: usize, cmp: extern \"C\" fn(*const c_void, *const c_void) -> c_int);\n    fn strcmp(a: *const c_char, b: *const c_char) -> c_int;\n}\n\nextern \"C\" fn compare(a: *const c_void, b: *const c_void) -> c_int {\n    // SAFETY: qsort passes pointers to elements of `ptrs`, which hold valid C strings.\n    unsafe {\n        let a = *(a as *const *const c_char);\n        let b = *(b as *const *const c_char);\n        strcmp(a, b)\n    }\n}\n\nfn main() {\n    let words: [&CStr; 5] = [c\"pear\", c\"apple\", c\"fig\", c\"banana\", c\"cherry\"];\n    let mut ptrs: Vec<*const c_char> = words.iter().map(|w| w.as_ptr()).collect();\n    unsafe { qsort(ptrs.as_mut_ptr().cast(), ptrs.len(), size_of::<*const c_char>(), compare) };\n    for p in ptrs {\n        println!(\"{}\", unsafe { CStr::from_ptr(p) }.to_str().unwrap());\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch24-play-signal": {
+  "solution_code": "use std::ffi::c_int;\nuse std::sync::atomic::{AtomicBool, Ordering};\n\nconst SIGINT: c_int = 2;\n\nunsafe extern \"C\" {\n    fn signal(sig: c_int, handler: extern \"C\" fn(c_int)) -> usize;\n    fn raise(sig: c_int) -> c_int;\n}\n\nstatic STOP: AtomicBool = AtomicBool::new(false);\n\nextern \"C\" fn on_interrupt(_sig: c_int) {\n    STOP.store(true, Ordering::SeqCst);\n}\n\nfn main() {\n    unsafe { signal(SIGINT, on_interrupt) };\n\n    for job in 1..=6 {\n        println!(\"job {job} done\");\n        if job == 3 {\n            unsafe { raise(SIGINT) }; // pretend the user pressed Ctrl-C\n        }\n        if STOP.load(Ordering::SeqCst) {\n            break;\n        }\n    }\n    println!(\"cleaning up and exiting\");\n}\n",
+  "starter_ok": "panic"
+ },
+ "ch24-play-vga": {
+  "solution_code": "const W: usize = 12;\nconst H: usize = 3;\n\nstruct Screen {\n    cells: [u16; W * H],\n    row: usize,\n    col: usize,\n    attr: u8,\n}\n\nimpl Screen {\n    fn newline(&mut self) {\n        self.row += 1;\n        self.col = 0;\n    }\n\n    fn write_byte(&mut self, b: u8) {\n        if b == b'\\n' {\n            self.newline();\n            return;\n        }\n        if self.col == W {\n            self.newline();\n        }\n        self.cells[self.row * W + self.col] = (self.attr as u16) << 8 | b as u16;\n        self.col += 1;\n    }\n\n    fn show(&self) {\n        for r in 0..H {\n            let line: String = self.cells[r * W..(r + 1) * W]\n                .iter()\n                .map(|&c| match (c & 0xff) as u8 {\n                    0 => '.',\n                    b if b < 0x20 => '?',\n                    b => b as char,\n                })\n                .collect();\n            println!(\"|{line}|\");\n        }\n    }\n}\n\nfn main() {\n    let mut s = Screen { cells: [0; W * H], row: 0, col: 0, attr: 0x0b };\n    for &b in b\"hello\\nkernel world\" {\n        s.write_byte(b);\n    }\n    s.show();\n    println!(\"attribute {:#04x}\", s.cells[0] >> 8);\n}\n",
+  "starter_ok": "run"
+ },
+ "ch25-play-drop": {
+  "solution_code": "use std::sync::atomic::{AtomicUsize, Ordering};\nuse std::sync::{Arc, Mutex, mpsc};\nuse std::thread;\nuse std::time::Duration;\n\ntype Job = Box<dyn FnOnce() + Send + 'static>;\n\nstruct ThreadPool {\n    workers: Vec<thread::JoinHandle<()>>,\n    sender: Option<mpsc::Sender<Job>>,\n}\n\nimpl ThreadPool {\n    fn new(size: usize) -> ThreadPool {\n        let (sender, receiver) = mpsc::channel::<Job>();\n        let receiver = Arc::new(Mutex::new(receiver));\n        let workers = (0..size)\n            .map(|_| {\n                let receiver = Arc::clone(&receiver);\n                thread::spawn(move || loop {\n                    let message = receiver.lock().unwrap().recv();\n                    match message {\n                        Ok(job) => job(),\n                        Err(_) => break,\n                    }\n                })\n            })\n            .collect();\n        ThreadPool { workers, sender: Some(sender) }\n    }\n\n    fn execute(&self, f: impl FnOnce() + Send + 'static) {\n        self.sender.as_ref().unwrap().send(Box::new(f)).unwrap();\n    }\n}\n\nimpl Drop for ThreadPool {\n    fn drop(&mut self) {\n        drop(self.sender.take());\n        for worker in self.workers.drain(..) {\n            worker.join().unwrap();\n        }\n    }\n}\n\nfn main() {\n    let done = Arc::new(AtomicUsize::new(0));\n    {\n        let pool = ThreadPool::new(2);\n        for _ in 0..5 {\n            let done = Arc::clone(&done);\n            pool.execute(move || {\n                thread::sleep(Duration::from_millis(40));\n                done.fetch_add(1, Ordering::SeqCst);\n            });\n        }\n    }\n    println!(\"finished {} of 5 jobs\", done.load(Ordering::SeqCst));\n}\n",
+  "starter_ok": "run"
+ },
+ "ch25-play-routes": {
+  "solution_code": "fn respond(request_line: &str) -> String {\n    let (status, body) = match request_line {\n        \"GET / HTTP/1.1\" => (\"200 OK\", \"<h1>Hello!</h1>\"),\n        \"GET /about HTTP/1.1\" => (\"200 OK\", \"<h1>About</h1>\"),\n        _ => (\"404 NOT FOUND\", \"not found\"),\n    };\n    format!(\"HTTP/1.1 {status}\\r\\nContent-Length: {}\\r\\n\\r\\n{body}\", body.len())\n}\n\nfn main() {\n    for line in [\"GET / HTTP/1.1\", \"GET /about HTTP/1.1\", \"GET /nope HTTP/1.1\"] {\n        let response = respond(line);\n        let status = response.lines().next().unwrap().trim_start_matches(\"HTTP/1.1 \");\n        let length = response.split(\"\\r\\n\\r\\n\").nth(1).unwrap().len();\n        println!(\"{status} {length}\");\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch25-play-whilelet": {
+  "solution_code": "use std::sync::{Arc, Mutex, mpsc};\nuse std::thread;\nuse std::time::{Duration, Instant};\n\ntype Job = Box<dyn FnOnce() + Send + 'static>;\n\nfn spawn_worker(receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> thread::JoinHandle<()> {\n    thread::spawn(move || loop {\n        // the guard is a temporary of this statement, so it is dropped here\n        let message = receiver.lock().unwrap().recv();\n        match message {\n            Ok(job) => job(),\n            Err(_) => break,\n        }\n    })\n}\n\nfn main() {\n    let (sender, receiver) = mpsc::channel::<Job>();\n    let receiver = Arc::new(Mutex::new(receiver));\n    let workers: Vec<_> = (0..4).map(|_| spawn_worker(Arc::clone(&receiver))).collect();\n\n    let start = Instant::now();\n    for _ in 0..4 {\n        sender.send(Box::new(|| thread::sleep(Duration::from_millis(200)))).unwrap();\n    }\n    drop(sender);\n    for w in workers {\n        w.join().unwrap();\n    }\n    let fast = start.elapsed() < Duration::from_millis(500);\n    println!(\"4 jobs of 200 ms took less than 500 ms: {fast}\");\n}\n",
+  "starter_ok": "run"
+ }
+}

@@ -1,0 +1,40 @@
+id: rust-from-first-program
+title: "Rust: From First Program to Systems Programming"
+subtitle: One course built from five Rust books, from your first println! to threads, async and a web server
+description: |
+  You will learn Rust step by step: read a short explanation, run the example in the page, change it, then prove it with a quiz or an exercise checked by real tests. Nothing is assumed: every term is explained the first time it appears.
+
+  The course merges *The Rust Programming Language* (2024 edition), *Programming Rust*, *Rust in Action* and *Comprehensive Rust* into one path, with each topic taught once.
+ui_lang: en
+language: en
+level: beginner
+source:
+  title: "The Rust Programming Language (2024 ed.); Programming Rust, 2nd ed.; Rust in Action; Comprehensive Rust"
+  author: "Klabnik, Nichols, Krycho; Blandy, Orendorff, Tindall; McNamara; Geisler et al."
+  file: merged
+roadmap:
+  - {id: ch01, title: "Getting Started with Rust"}
+  - {id: ch02, title: "Your First Program: a Guessing Game"}
+  - {id: ch03, title: "Common Programming Concepts"}
+  - {id: ch04, title: "Ownership, Borrowing and Slices"}
+  - {id: ch05, title: "Structs: Grouping Related Data"}
+  - {id: ch06, title: "Enums and Pattern Matching"}
+  - {id: ch07, title: "Packages, Crates and Modules"}
+  - {id: ch08, title: "Common Collections and Text"}
+  - {id: ch09, title: "Error Handling"}
+  - {id: ch10, title: "Generics, Traits and Lifetimes"}
+  - {id: ch11, title: "Writing Automated Tests"}
+  - {id: ch12, title: "Project: a Command-Line Search Tool"}
+  - {id: ch13, title: "Closures and Iterators"}
+  - {id: ch14, title: "Cargo and Crates.io"}
+  - {id: ch15, title: "Smart Pointers"}
+  - {id: ch16, title: "Fearless Concurrency"}
+  - {id: ch17, title: "Async Programming"}
+  - {id: ch18, title: "Trait Objects and OOP in Rust"}
+  - {id: ch19, title: "Patterns in Depth"}
+  - {id: ch20, title: "Advanced Features: Unsafe, Advanced Traits and Types, Macros"}
+  - {id: ch21, title: "Data in Depth: Bits, Integers and Floats"}
+  - {id: ch22, title: "Files, Storage and I/O"}
+  - {id: ch23, title: "Networking and Time"}
+  - {id: ch24, title: "Going Low-Level: FFI, Kernels and Signals"}
+  - {id: ch25, title: "Final Project: a Multithreaded Web Server"}

@@ -1,0 +1,8 @@
+title: "Ownership, Borrowing and Slices"
+summary: "The idea that makes Rust different: every value has one owner, and other code can borrow it under rules the compiler checks. No garbage collector, no manual free, no dangling pointers."
+goals:
+  - Explain where values live (stack or heap) and why that matters
+  - Predict when a value is moved, copied or dropped
+  - Lend values with shared (&) and mutable (&mut) references, and follow the borrowing rules
+  - Read and fix the borrow checker's most common errors
+  - Use string slices and array slices to refer to part of a collection

@@ -1,0 +1,213 @@
+title: "Test-driven development: the search function"
+summary: "The test-driven development loop, writing a failing test for search, why the signature needs a lifetime, making the test pass with lines and contains, and wiring search into run."
+minutes: 30
+source:
+  chapter: ch12
+  sections: ["TRPL 12.4 Adding Functionality with Test-Driven Development", "TRPL 12.4 Writing a Failing Test", "TRPL 12.4 Writing Code to Pass the Test", "TRPL 12.4 Iterating Through Lines with the lines Method", "TRPL 12.4 Searching Each Line for the Query", "TRPL 12.4 Storing Matching Lines", "TRPL 12.4 Using the search Function in the run Function"]
+blocks:
+  - type: text
+    md: |
+      With the logic in `lib.rs`, it can be tested. Write the search itself using **test-driven development** (TDD), a loop of four steps:
+
+      1. Write a test that fails, and run it to make sure it fails **for the reason you expect**.
+      2. Write or change just enough code to make the new test pass.
+      3. Refactor the code you just added, and check the tests still pass.
+      4. Repeat.
+
+      TDD is one of many ways to write software, but it keeps test coverage high and makes you design the function's interface from the caller's side first.
+
+  - type: text
+    title: "1. A failing test"
+    md: |
+      The test says what `search` should do: given a query and some text, return the lines containing the query.
+
+  - type: code
+    lang: rust
+    file: src/lib.rs
+    code: |
+      pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+          unimplemented!();
+      }
+
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          #[test]
+          fn one_result() {
+              let query = "duct";
+              let contents = "\
+      Rust:
+      safe, fast, productive.
+      Pick three.";
+
+              assert_eq!(vec!["safe, fast, productive."], search(query, contents));
+          }
+      }
+    explain: "The backslash after the opening quote tells Rust not to put a newline at the start of the literal. `unimplemented!()` (like `todo!()`) panics, so the test compiles and fails."
+
+  - type: callout
+    kind: key
+    title: Why the lifetime 'a?
+    md: "`search` returns slices of `contents`, not of `query`. The signature says exactly that: the returned `&'a str` values live as long as `contents`. Without the annotation, Rust cannot tell which argument the result borrows from (chapter 10, error E0106). With it, a caller may drop `query` and keep the results."
+
+  - type: code
+    lang: bash
+    code: |
+      $ cargo test
+      running 1 test
+      test tests::one_result ... FAILED
+
+      failures:
+
+      ---- tests::one_result stdout ----
+
+      thread 'tests::one_result' panicked at src/lib.rs:2:5:
+      not implemented
+    explain: "It fails, and for the expected reason. Step 1 done."
+
+  - type: text
+    title: "2. Make it pass"
+    md: |
+      The function needs to go through each line, check whether it contains the query, and collect those that do. `str` has a method for each step: **`lines()`** iterates over lines (handling `\n` and `\r\n`), and **`contains()`** checks for a substring.
+
+  - type: code
+    lang: rust
+    code: |
+      pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+          let mut results = Vec::new();
+
+          for line in contents.lines() {
+              if line.contains(query) {
+                  results.push(line);
+              }
+          }
+
+          results
+      }
+
+      fn main() {
+          let contents = "\
+      Rust:
+      safe, fast, productive.
+      Pick three.";
+          assert_eq!(vec!["safe, fast, productive."], search("duct", contents));
+          println!("{:?}", search("e", contents));
+      }
+    output: "[\"safe, fast, productive.\", \"Pick three.\"]"
+    explain: "The test passes. Step 3 (refactor) comes in chapter 13, where iterator adapters shorten this to one expression."
+
+  - type: text
+    title: Using search in run
+    md: |
+      Finally, `run` prints each matching line instead of the whole file:
+
+      ```rust
+      pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
+          let contents = fs::read_to_string(config.file_path)?;
+
+          for line in search(&config.query, &contents) {
+              println!("{line}");
+          }
+
+          Ok(())
+      }
+      ```
+
+  - type: code
+    lang: bash
+    code: |
+      $ cargo run -- frog poem.txt
+      How public, like a frog
+
+      $ cargo run -- body poem.txt
+      I'm nobody! Who are you?
+      Are you nobody, too?
+      How dreary to be somebody!
+
+      $ cargo run -- monomorphization poem.txt
+      $
+    explain: "One match, several matches, and no matches. minigrep works."
+
+  - type: playground
+    id: ch12-play-search-numbers
+    title: "TDD: line numbers"
+    lang: rust
+    md: |
+      Real grep can print line numbers (`grep -n`). The assertions in `main` describe `search_numbered`, which returns `(line_number, line)` pairs, counting from 1. They fail now; make them pass. Hint: `enumerate()` yields `(index, item)` pairs.
+    task: "Make the assertions pass so the program prints `2: safe, fast, productive.`"
+    code: |
+      fn search_numbered<'a>(query: &str, contents: &'a str) -> Vec<(usize, &'a str)> {
+          Vec::new()
+      }
+
+      fn main() {
+          let contents = "Rust:\nsafe, fast, productive.\nPick three.\nTrust me.";
+          assert_eq!(search_numbered("duct", contents), vec![(2, "safe, fast, productive.")]);
+          assert_eq!(search_numbered("ust", contents), vec![(1, "Rust:"), (4, "Trust me.")]);
+          assert_eq!(search_numbered("zzz", contents), vec![]);
+          for (n, line) in search_numbered("duct", contents) {
+              println!("{n}: {line}");
+          }
+      }
+    starter_ok: panic
+    expected_output: "2: safe, fast, productive."
+    solution_code: |
+      fn search_numbered<'a>(query: &str, contents: &'a str) -> Vec<(usize, &'a str)> {
+          let mut results = Vec::new();
+          for (i, line) in contents.lines().enumerate() {
+              if line.contains(query) {
+                  results.push((i + 1, line));
+              }
+          }
+          results
+      }
+
+      fn main() {
+          let contents = "Rust:\nsafe, fast, productive.\nPick three.\nTrust me.";
+          assert_eq!(search_numbered("duct", contents), vec![(2, "safe, fast, productive.")]);
+          assert_eq!(search_numbered("ust", contents), vec![(1, "Rust:"), (4, "Trust me.")]);
+          assert_eq!(search_numbered("zzz", contents), vec![]);
+          for (n, line) in search_numbered("duct", contents) {
+              println!("{n}: {line}");
+          }
+      }
+    hints:
+      - "`for (i, line) in contents.lines().enumerate()`"
+      - "`enumerate` counts from 0; push `(i + 1, line)`."
+
+  - type: quiz
+    id: ch12-quiz-tdd
+    title: Check yourself
+    questions:
+      - type: order
+        q: "Put the TDD loop in order."
+        items: ["Write a test that fails for the expected reason", "Write just enough code to make it pass", "Refactor while keeping the tests green", "Repeat with the next test"]
+        explanation: "Red, green, refactor."
+      - type: single
+        q: "In `fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str>`, the results borrow from..."
+        options: ["query", "contents", "both", "neither; they are owned"]
+        answer: 1
+        explanation: "Each result is a line of contents."
+      - type: single
+        q: "Why run the new test before writing the code?"
+        options: ["To make it faster", "To check it fails, and fails for the reason you expect, so it really tests something", "Cargo requires it", "To generate the code"]
+        answer: 1
+        explanation: "A test that never failed may not test anything."
+      - type: single
+        q: "What does `\"a\\nb\\r\\nc\".lines().count()` return?"
+        options: ["2", "3", "4", "5"]
+        answer: 1
+        explanation: "`lines` handles both `\\n` and `\\r\\n`."
+
+  - type: summary
+    points:
+      - "TDD: failing test, minimal code to pass, refactor, repeat."
+      - "`search` returns slices of `contents`, so its signature ties the result to `contents` with `'a`."
+      - "`lines()` and `contains()` do the work; results go into a `Vec<&str>`."
+      - "`run` calls `search` and prints the matches."
+terms:
+  - term: test-driven development
+    def: "Writing a failing test first, then the code to make it pass, then refactoring."
+  - term: "lines()"
+    def: "A str method returning an iterator over the lines of a string, without the line endings."

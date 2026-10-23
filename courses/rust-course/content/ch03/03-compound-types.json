@@ -1,0 +1,225 @@
+{
+  "title": "Tuples and arrays",
+  "summary": "Group several values into one: tuples hold values of different types, arrays hold a fixed number of values of one type.",
+  "minutes": 22,
+  "source": {
+    "chapter": "ch03",
+    "sections": [
+      "TRPL 3.2 Compound Types",
+      "TRPL 3.2 The Tuple Type",
+      "TRPL 3.2 The Array Type",
+      "PR ch3 Tuples",
+      "PR ch3 Arrays",
+      "CR Tuples and Arrays"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Scalars hold one value. **Compound types** hold several. Rust has two built in: the **tuple**, a small group of values that can have different types, and the **array**, a fixed-length row of values that all have the same type. Both have a size known when the program is compiled, so they live directly on the stack and cost nothing extra to create.\n"
+    },
+    {
+      "type": "text",
+      "title": "Tuples",
+      "md": "A tuple is written as values in parentheses, separated by commas. Its type is the list of its element types. Use one to keep together values that belong together but are not the same kind of thing: a name and an age, a coordinate, or a function's two results.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "title": "Making a tuple and reading it back",
+      "code": "fn main() {\n    let person: (&str, u32, f64) = (\"Ada\", 36, 1.65);\n\n    // 1. destructuring: one name per element\n    let (name, age, height) = person;\n    println!(\"{name} is {age}, {height} m tall\");\n\n    // 2. by position, starting at 0\n    println!(\"first: {}, last: {}\", person.0, person.2);\n}\n",
+      "output": "Ada is 36, 1.65 m tall\nfirst: Ada, last: 1.65\n",
+      "explain": "`let (name, age, height) = person;` is a **pattern**: it splits the tuple into three variables in one step. `person.0` reaches in by position. Positions are fixed when you compile, so `person.3` is a compile error, not a crash."
+    },
+    {
+      "type": "callout",
+      "kind": "note",
+      "title": "The empty tuple ()",
+      "md": "A tuple with no elements, `()`, is called **unit**. It means \"no meaningful value\". A function that returns nothing, like `main`, actually returns `()`, and you will see `()` in compiler messages often."
+    },
+    {
+      "type": "playground",
+      "id": "ch03-play-tuple",
+      "title": "Return two results at once",
+      "lang": "rust",
+      "md": "`divide` should return both the quotient and the remainder as a tuple. Fill in the return value (use `/` and `%`), then destructure the result in `main` so it prints `17 / 5 = 3 remainder 2`.\n",
+      "code": "fn divide(a: u32, b: u32) -> (u32, u32) {\n    (0, 0) // replace with the quotient and the remainder\n}\n\nfn main() {\n    let result = divide(17, 5);\n    println!(\"17 / 5 = {} remainder {}\", result.0, result.1);\n}\n",
+      "expected_output": "17 / 5 = 3 remainder 2",
+      "hints": [
+        "The tuple is `(a / b, a % b)`.",
+        "In `main`: `let (q, r) = divide(17, 5);` then print `{q}` and `{r}`."
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Arrays",
+      "md": "An array holds a **fixed number** of values of **one type**. The type is written `[T; N]`: the element type and the length. The length is part of the type, so `[i32; 3]` and `[i32; 4]` are different types, and an array can never grow or shrink. When you need a list that grows, you will use `Vec` (chapter 8), which is the more common choice in everyday code.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let months = [\"Jan\", \"Feb\", \"Mar\", \"Apr\", \"May\", \"Jun\",\n                  \"Jul\", \"Aug\", \"Sep\", \"Oct\", \"Nov\", \"Dec\"];\n    let zeros = [0; 5];            // [0, 0, 0, 0, 0]: value; count\n    let scores: [u8; 3] = [90, 72, 85];\n\n    println!(\"{} months, the first is {}\", months.len(), months[0]);\n    println!(\"{zeros:?}\");\n    let mut total = 0u32;\n    for s in scores {\n        total += s as u32;\n    }\n    println!(\"total score: {total}\");\n}\n",
+      "output": "12 months, the first is Jan\n[0, 0, 0, 0, 0]\ntotal score: 247\n",
+      "explain": "`[0; 5]` repeats a value. `{zeros:?}` uses **debug formatting**, which can print a whole array. `for s in scores` visits each element in order; the next lesson covers loops properly."
+    },
+    {
+      "type": "text",
+      "title": "Indexing, and what happens past the end",
+      "md": "Elements are numbered from `0`, so the last element of an array of length `n` is at `n - 1`. The index must be a `usize`.\n\nWhat if the index is too big? In C this reads whatever memory happens to sit after the array, a classic source of security holes. Rust checks every index: if the compiler can see the mistake it refuses to compile, and if the index is only known at run time the program **panics** with `index out of bounds` instead of reading memory it does not own.\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch03-play-bounds",
+      "title": "Read past the end",
+      "lang": "rust",
+      "md": "The index comes from parsing text, so the compiler cannot check it ahead of time. Run it and read the panic message. Then change `\"7\"` to `\"2\"` and run again. Finally, replace `days[index]` with `days.get(index)` and print it with `{:?}`: instead of a panic you get `None` for a bad index.\n",
+      "code": "fn main() {\n    let days = [\"Mon\", \"Tue\", \"Wed\", \"Thu\", \"Fri\"];\n    let index: usize = \"7\".parse().unwrap();\n    let day = days[index];\n    println!(\"day {index} is {day}\");\n}\n",
+      "expect_panic": true,
+      "hints": [
+        "The panic message names the length (5) and the index (7).",
+        "`println!(\"{:?}\", days.get(index));` prints `Some(\"Wed\")` for 2 and `None` for 7."
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Arrays of arrays",
+      "md": "An element can itself be an array, which gives a grid. `[[0; 3]; 2]` is two rows of three zeros, and `grid[1][2]` is row 1, column 2.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let mut board = [['.'; 3]; 3];\n    board[1][1] = 'X';\n    board[0][2] = 'O';\n    for row in board {\n        let line: String = row.iter().collect();\n        println!(\"{line}\");\n    }\n}\n",
+      "output": "..O\n.X.\n...\n",
+      "explain": "`row.iter().collect()` turns three `char`s into a `String`. Iterators get their own chapter later; for now, read it as \"join these characters\"."
+    },
+    {
+      "type": "exercise",
+      "id": "ch03-ex-compound",
+      "exercise_dir": "ch03-tuples-arrays",
+      "title": "Statistics on a week of temperatures",
+      "difficulty": "easy",
+      "goal": "Use tuples and arrays together: take a fixed week of readings and return results as tuples.",
+      "behavior": "- `pub fn min_max(temps: [i32; 7]) -> (i32, i32)`: the lowest and the highest reading, in that order.\n- `pub fn warmest_day(temps: [i32; 7]) -> usize`: the index (0 = Monday) of the highest reading. If several days tie, return the first one.\n- `pub fn swap(pair: (String, i32)) -> (i32, String)`: the same two values in the other order.\n",
+      "examples": [
+        {
+          "input": "min_max([3, -2, 7, 7, 0, 1, 5])",
+          "output": "(-2, 7)"
+        },
+        {
+          "input": "warmest_day([3, -2, 7, 7, 0, 1, 5])",
+          "output": "2"
+        },
+        {
+          "input": "swap((String::from(\"Oslo\"), 4))",
+          "output": "(4, \"Oslo\")"
+        }
+      ],
+      "hints": [
+        "Start `min` and `max` at `temps[0]`, then go through every reading with `for t in temps` and update them.",
+        "For `warmest_day`, keep the best index in a `let mut best = 0;` and loop over `0..7`, comparing `temps[i]` with `temps[best]`. Use `>` (not `>=`) so ties keep the first day.",
+        "`swap` is one line: destructure with `let (name, n) = pair;` and return `(n, name)`."
+      ],
+      "solution_explain": "Starting both `min` and `max` at the first reading avoids picking a magic starting value that could be wrong for all-negative weeks. Comparing with `>` rather than `>=` is what keeps the first of several equal days."
+    },
+    {
+      "type": "quiz",
+      "id": "ch03-quiz-compound",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which is the type of `(\"Ada\", 36)`?",
+          "options": [
+            "`[&str; 2]`",
+            "`(&str, i32)`",
+            "`(String, u32)`",
+            "`tuple`"
+          ],
+          "answer": 1,
+          "explanation": "A tuple's type lists each element's type. `36` defaults to `i32`, and a string literal is a `&str`."
+        },
+        {
+          "type": "single",
+          "q": "`let a = [1, 2, 3];` What is the type of `a`?",
+          "options": [
+            "`[i32]`",
+            "`[i32; 3]`",
+            "`Vec<i32>`",
+            "`(i32, i32, i32)`"
+          ],
+          "answer": 1,
+          "explanation": "The length is part of an array's type: `[i32; 3]`."
+        },
+        {
+          "type": "single",
+          "q": "`let a = [10, 20, 30];` and an index read from the user is 3. What happens at `a[index]`?",
+          "options": [
+            "It returns 0",
+            "It returns whatever is in memory after the array",
+            "The program panics with index out of bounds",
+            "It returns 30"
+          ],
+          "answer": 2,
+          "explanation": "Rust checks every index at run time and panics rather than reading memory it does not own."
+        },
+        {
+          "type": "fill",
+          "q": "Complete the line so it makes an array of eight zeros: `let z = [0; ___];`",
+          "answer": [
+            "8"
+          ],
+          "explanation": "`[value; count]` repeats the value."
+        },
+        {
+          "type": "truefalse",
+          "q": "You can push a new element onto an array to make it longer.",
+          "answer": false,
+          "explanation": "An array's length is fixed and part of its type. `Vec` is the growable list."
+        },
+        {
+          "type": "single",
+          "q": "What does this print?",
+          "code": "let t = (1, (2, 3), 4);\nprintln!(\"{}\", (t.1).0 + t.2);\n",
+          "lang": "rust",
+          "options": [
+            "3",
+            "5",
+            "6",
+            "It does not compile"
+          ],
+          "answer": 2,
+          "explanation": "`t.1` is the inner tuple `(2, 3)`, its `.0` is 2, and `t.2` is 4: 2 + 4 = 6."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "A tuple groups a fixed number of values of possibly different types: `(\"Ada\", 36)` has type `(&str, i32)`.",
+        "Read a tuple by destructuring, `let (a, b) = t;`, or by position, `t.0`.",
+        "`()` is the unit type: the value of things that return nothing.",
+        "An array `[T; N]` holds N values of one type; its length is fixed and part of its type.",
+        "`[v; n]` repeats a value; `a.len()` is the length; indexes start at 0 and are `usize`.",
+        "Out-of-bounds indexing panics instead of reading memory; `a.get(i)` returns `None` instead of panicking."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "tuple",
+      "def": "A fixed-size group of values that may have different types, like (\"Ada\", 36)."
+    },
+    {
+      "term": "destructuring",
+      "def": "Splitting a compound value into separate variables with a pattern, like let (a, b) = pair;"
+    },
+    {
+      "term": "unit",
+      "def": "The empty tuple (), the value of expressions and functions that produce nothing useful."
+    },
+    {
+      "term": "array",
+      "def": "A fixed-length sequence of values of one type, written [T; N]."
+    }
+  ]
+}

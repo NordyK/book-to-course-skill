@@ -1,0 +1,242 @@
+{
+  "title": "Advanced types, functions and closures",
+  "summary": "Newtypes for type safety, type aliases, the never type !, dynamically sized types and ?Sized, function pointers versus closure traits, enum constructors as functions, and returning closures with impl Fn and Box<dyn Fn>.",
+  "minutes": 35,
+  "source": {
+    "chapter": "ch20",
+    "sections": [
+      "TRPL 20.3 Advanced Types",
+      "TRPL 20.3 Type Safety and Abstraction with the Newtype Pattern",
+      "TRPL 20.3 Type Synonyms and Type Aliases",
+      "TRPL 20.3 The Never Type That Never Returns",
+      "TRPL 20.3 Dynamically Sized Types and the Sized Trait",
+      "TRPL 20.4 Advanced Functions and Closures",
+      "TRPL 20.4 Function Pointers",
+      "TRPL 20.4 Returning Closures",
+      "PR ch14 Function and Closure Types"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "title": "Newtypes for type safety",
+      "md": "Besides the orphan rule, newtypes help in two more ways. They make units and IDs **distinct types**: a function taking `Millimeters` cannot be given `Meters`, and a `UserId(u64)` cannot be passed where an `OrderId(u64)` is expected. And they **hide** an implementation: `People(HashMap<i32, String>)` exposes only the methods you write, so the inner type can change later.\n"
+    },
+    {
+      "type": "text",
+      "title": "Type aliases",
+      "md": "`type Kilometers = i32;` creates an **alias**: another name for the same type. Unlike a newtype, there is no type checking between them; a `Kilometers` and an `i32` mix freely. Aliases are for shortening long types:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::fmt;\n\ntype Thunk = Box<dyn Fn() + Send + 'static>;\n\n// the pattern std::io uses: io::Result<T> = Result<T, io::Error>\ntype Result<T> = std::result::Result<T, fmt::Error>;\n\nfn returns_long_type() -> Thunk {\n    Box::new(|| println!(\"hi\"))\n}\n\nfn write_twice(s: &str) -> Result<String> {\n    let mut out = String::new();\n    fmt::write(&mut out, format_args!(\"{s}{s}\"))?;\n    Ok(out)\n}\n\nfn main() {\n    type Kilometers = i32;\n    let x: i32 = 5;\n    let y: Kilometers = 5;\n    println!(\"x + y = {}\", x + y);\n\n    let f: Thunk = returns_long_type();\n    f();\n    println!(\"{:?}\", write_twice(\"ab\"));\n}\n",
+      "output": "x + y = 10\nhi\nOk(\"abab\")\n"
+    },
+    {
+      "type": "text",
+      "title": "The never type",
+      "md": "**`!`**, the **never type**, is the type of expressions that never produce a value: `panic!()`, `continue`, `break`, `return`, `loop {}` without `break`, and `std::process::exit`. A function returning `!` is a **diverging function**.\n\n`!` can be coerced into **any** type. That is why match arms with different \"types\" work:\n\n```rust\nlet guess: u32 = match guess.trim().parse() {\n    Ok(num) => num,\n    Err(_) => continue,   // type !, fits where u32 is expected\n};\n```\n\n`Option::unwrap` relies on the same rule: its `None` arm calls `panic!`, which has type `!`, so the whole match has type `T`.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn fail(msg: &str) -> ! {\n    eprintln!(\"fatal: {msg}\");\n    std::process::exit(0)\n}\n\nfn main() {\n    let inputs = [\"3\", \"x\", \"4\"];\n    let mut total = 0;\n    for s in inputs {\n        let n: u32 = match s.parse() {\n            Ok(n) => n,\n            Err(_) => continue,\n        };\n        total += n;\n    }\n    println!(\"total {total}\");\n\n    let config: Option<&str> = Some(\"debug\");\n    let level = match config {\n        Some(l) => l,\n        None => fail(\"no config\"),\n    };\n    println!(\"level {level}\");\n}\n",
+      "output": "total 7\nlevel debug\n"
+    },
+    {
+      "type": "text",
+      "title": "Dynamically sized types and Sized",
+      "md": "Rust must know the size of every value at compile time. A few types do not have one: **dynamically sized types** (DSTs), such as `str` (any number of bytes), `[T]` and `dyn Trait`. You can never have a value of these types directly, only behind a pointer that also stores the size: `&str` and `&[T]` hold a length, `&dyn Trait` and `Box<dyn Trait>` hold a vtable (chapter 18).\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let s1: str = \"Hello there!\";\n}\n",
+      "output": "error[E0308]: mismatched types\n --> src/main.rs:2:19\n  |\n2 |     let s1: str = \"Hello there!\";\n  |             ---   ^^^^^^^^^^^^^^ expected `str`, found `&str`\n  |             |\n  |             expected due to this\n\nerror[E0277]: the size for values of type `str` cannot be known at compilation time\n --> src/main.rs:2:9\n  |\n2 |     let s1: str = \"Hello there!\";\n  |         ^^ doesn't have a size known at compile-time\n  |\n  = help: the trait `Sized` is not implemented for `str`\n  = note: all local variables must have a statically known size\nhelp: consider borrowing here\n  |\n2 |     let s1: &str = \"Hello there!\";\n  |             +\n",
+      "output_label": "Compiler output"
+    },
+    {
+      "type": "text",
+      "md": "The **`Sized`** trait marks types whose size is known. Every generic parameter gets an implicit `T: Sized` bound. To accept DSTs too, relax it with **`?Sized`** (\"maybe sized\") and use `T` only behind a pointer:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::fmt::Debug;\n\nfn show<T: Debug + ?Sized>(t: &T) {\n    println!(\"{t:?}\");\n}\n\nfn main() {\n    show(&5);\n    show(\"a str is a DST\");      // T = str\n    show(&[1, 2, 3][..]);         // T = [i32]\n}\n",
+      "output": "5\n\"a str is a DST\"\n[1, 2, 3]\n"
+    },
+    {
+      "type": "text",
+      "title": "Function pointers",
+      "md": "A function can be passed where a function is expected, as a value of type **`fn`** (lowercase), the **function pointer** type: `fn(i32) -> i32`. Unlike the closure traits `Fn`, `FnMut`, `FnOnce` (which are traits), `fn` is a concrete type. Function pointers implement all three closure traits, so a function can go anywhere a closure can. The reverse is not true: a closure that captures variables is not an `fn`.\n\nUse `fn` when interfacing with C (which has function pointers but no closures), or when you want a simple concrete type; otherwise prefer generics over `Fn` to accept both.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn add_one(x: i32) -> i32 {\n    x + 1\n}\n\nfn do_twice(f: fn(i32) -> i32, arg: i32) -> i32 {\n    f(arg) + f(arg)\n}\n\n#[derive(Debug)]\nenum Status {\n    Value(u32),\n}\n\nfn main() {\n    println!(\"The answer is: {}\", do_twice(add_one, 5));\n\n    let list_of_numbers = vec![1, 2, 3];\n    let strings: Vec<String> = list_of_numbers.iter().map(ToString::to_string).collect();\n    println!(\"{strings:?}\");\n\n    // a tuple-struct or enum-variant name is a function too\n    let statuses: Vec<Status> = (0u32..3).map(Status::Value).collect();\n    println!(\"{statuses:?}\");\n\n    let ops: [(&str, fn(i32, i32) -> i32); 2] = [(\"add\", |a, b| a + b), (\"max\", i32::max)];\n    for (name, op) in ops {\n        println!(\"{name}: {}\", op(3, 7));\n    }\n}\n",
+      "output": "The answer is: 12\n[\"1\", \"2\", \"3\"]\n[Value(0), Value(1), Value(2)]\nadd: 10\nmax: 7\n",
+      "explain": "A closure that captures nothing, like `|a, b| a + b`, coerces to an `fn` pointer."
+    },
+    {
+      "type": "text",
+      "title": "Returning closures",
+      "md": "Every closure has its own unique, unnameable type. To return one, use **`impl Fn(...)`**: \"some type implementing this trait\". But `impl Trait` stands for **one** concrete type, so two functions returning `impl Fn(i32) -> i32` return **different** types, and they cannot go into the same `Vec`:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn returns_closure() -> impl Fn(i32) -> i32 {\n    |x| x + 1\n}\n\nfn returns_initialized_closure(init: i32) -> impl Fn(i32) -> i32 {\n    move |x| x + init\n}\n\nfn main() {\n    let handlers = vec![returns_closure(), returns_initialized_closure(123)];\n    for handler in handlers {\n        let output = handler(5);\n        println!(\"{output}\");\n    }\n}\n",
+      "output": "error[E0308]: mismatched types\n  --> src/main.rs:10:44\n   |\n 1 | fn returns_closure() -> impl Fn(i32) -> i32 {\n   |                         ------------------- the expected opaque type\n...\n 5 | fn returns_initialized_closure(init: i32) -> impl Fn(i32) -> i32 {\n   |                                              ------------------- the found opaque type\n...\n10 |     let handlers = vec![returns_closure(), returns_initialized_closure(123)];\n   |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected opaque type, found a different opaque type\n   |\n   = note: expected opaque type `impl Fn(i32) -> i32`\n              found opaque type `impl Fn(i32) -> i32`\n   = note: distinct uses of `impl Trait` result in different opaque types\n",
+      "output_label": "Compiler output"
+    },
+    {
+      "type": "text",
+      "md": "The fix is a trait object, `Box<dyn Fn(i32) -> i32>`: one type for all of them, with dynamic dispatch. A function that must return **different** closures on different branches needs a box for the same reason.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn returns_closure() -> Box<dyn Fn(i32) -> i32> {\n    Box::new(|x| x + 1)\n}\n\nfn returns_initialized_closure(init: i32) -> Box<dyn Fn(i32) -> i32> {\n    Box::new(move |x| x + init)\n}\n\nfn make_op(name: &str) -> Box<dyn Fn(i32) -> i32> {\n    match name {\n        \"double\" => Box::new(|x| x * 2),\n        \"square\" => Box::new(|x| x * x),\n        _ => Box::new(|x| x),\n    }\n}\n\nfn compose<A, B, C>(f: impl Fn(A) -> B, g: impl Fn(B) -> C) -> impl Fn(A) -> C {\n    move |x| g(f(x))\n}\n\nfn main() {\n    let handlers = vec![returns_closure(), returns_initialized_closure(123)];\n    for handler in handlers {\n        println!(\"{}\", handler(5));\n    }\n\n    let pipeline = compose(make_op(\"double\"), make_op(\"square\"));\n    println!(\"{}\", pipeline(3));\n}\n",
+      "output": "6\n128\n36\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch20-play-calculator",
+      "title": "A table of operations",
+      "lang": "rust",
+      "md": "Build a `HashMap<&str, fn(f64, f64) -> f64>` mapping `\"+\"`, `\"-\"`, `\"*\"`, `\"/\"` and `\"pow\"` to functions (closures without captures and methods like `f64::powf` both work). Then evaluate each `(a, op, b)` triple, printing `unknown op` for missing ones.\n",
+      "task": "Print `2 + 3 = 5`, `2 pow 10 = 1024`, `9 / 2 = 4.5`, `1 % 2: unknown op`.",
+      "code": "use std::collections::HashMap;\n\nfn main() {\n    let mut ops: HashMap<&str, fn(f64, f64) -> f64> = HashMap::new();\n    // ops.insert(\"+\", ...);\n\n    for (a, op, b) in [(2.0, \"+\", 3.0), (2.0, \"pow\", 10.0), (9.0, \"/\", 2.0), (1.0, \"%\", 2.0)] {\n        match ops.get(op) {\n            Some(f) => println!(\"{a} {op} {b} = {}\", f(a, b)),\n            None => println!(\"{a} {op} {b}: unknown op\"),\n        }\n    }\n}\n",
+      "expected_output": "2 + 3 = 5\n2 pow 10 = 1024\n9 / 2 = 4.5\n1 % 2: unknown op\n",
+      "hints": [
+        "`ops.insert(\"+\", |a, b| a + b);` a non-capturing closure coerces to `fn(f64, f64) -> f64`.",
+        "`f64::powf` already has the right signature."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch20-ex-fns",
+      "exercise_dir": "ch20-fns",
+      "title": "Functions as values",
+      "difficulty": "medium",
+      "goal": "Accept function pointers, return closures with impl Fn and Box<dyn Fn>, and use ?Sized and the never type.",
+      "behavior": "- `pub fn apply_n(f: fn(i64) -> i64, n: usize, x: i64) -> i64`: apply `f` to `x`, `n` times.\n- `pub fn make_adder(k: i64) -> impl Fn(i64) -> i64`.\n- `pub fn make_counter() -> impl FnMut() -> u32`: each call returns 1, 2, 3, ...\n- `pub fn pipeline(steps: &[&str]) -> Box<dyn Fn(i64) -> i64>`: build one function from step names `\"inc\"` (+1), `\"double\"` (*2), `\"neg\"` (negate), applied left to right; unknown names are skipped; an empty list is the identity.\n- `pub fn longest_len<T: AsRef<str> + ?Sized>(items: &[&T]) -> usize`: the length of the longest item, working for `&[&str]` and `&[&String]`.\n- `pub fn parse_or_exit(s: &str) -> i64`: parse, or `panic!(\"bad number: {s}\")`. Use a `match` where the error arm has type `!`.\n",
+      "examples": [
+        {
+          "input": "apply_n(|x| x * 3, 3, 1)",
+          "output": "27"
+        },
+        {
+          "input": "pipeline(&[\"inc\", \"double\"])(5)",
+          "output": "12"
+        }
+      ],
+      "hints": [
+        "`make_counter` needs `let mut n = 0; move || { n += 1; n }`.",
+        "`pipeline`: start with `let mut f: Box<dyn Fn(i64) -> i64> = Box::new(|x| x);` and for each step wrap it: `f = Box::new(move |x| prev(x) * 2)` where `prev` is the old `f` moved into the closure.",
+        "`items.iter().map(|s| (*s).as_ref().len()).max().unwrap_or(0)`."
+      ],
+      "solution_explain": "`apply_n` takes an `fn`, so non-capturing closures and functions like `i64::abs` both fit. `pipeline` must return different closure types from one place, so it boxes them; each new box owns the previous one. `?Sized` lets `T` be `str` itself."
+    },
+    {
+      "type": "quiz",
+      "id": "ch20-quiz-types",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "What is the difference between `type Km = i32;` and `struct Km(i32);`?",
+          "options": [
+            "None",
+            "The alias is the same type as i32; the newtype is a distinct type",
+            "The newtype is slower",
+            "The alias is a distinct type"
+          ],
+          "answer": 1,
+          "explanation": "Aliases give no type safety."
+        },
+        {
+          "type": "single",
+          "q": "Why can `Err(_) => continue` appear in a match whose other arm is a u32?",
+          "options": [
+            "continue returns 0",
+            "continue has type !, which coerces to any type",
+            "match arms may differ",
+            "It is a special case for loops"
+          ],
+          "answer": 1,
+          "explanation": "The never type."
+        },
+        {
+          "type": "single",
+          "q": "Which is a dynamically sized type?",
+          "options": [
+            "&str",
+            "str",
+            "String",
+            "Box<str>"
+          ],
+          "answer": 1,
+          "explanation": "The others are pointers or owned buffers with known size."
+        },
+        {
+          "type": "single",
+          "q": "Can a closure that captures a variable be passed as `fn(i32) -> i32`?",
+          "options": [
+            "Yes",
+            "No; only non-capturing closures coerce to fn pointers",
+            "Only with move",
+            "Only in unsafe"
+          ],
+          "answer": 1,
+          "explanation": "Capturing closures carry data."
+        },
+        {
+          "type": "single",
+          "q": "Why can't two functions returning `impl Fn(i32) -> i32` share a Vec?",
+          "options": [
+            "impl Trait is not allowed in Vec",
+            "Each stands for a different concrete type",
+            "Closures cannot be stored",
+            "They can"
+          ],
+          "answer": 1,
+          "explanation": "Use Box<dyn Fn(i32) -> i32>."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Newtypes create distinct types; type aliases only rename.",
+        "`!` is the type of diverging expressions and coerces to any type.",
+        "DSTs (`str`, `[T]`, `dyn Trait`) live behind pointers; `?Sized` accepts them in generics.",
+        "`fn` is a concrete function pointer type and implements all closure traits.",
+        "Return closures with `impl Fn` for one type, `Box<dyn Fn>` for several."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "type alias",
+      "def": "Another name for an existing type, declared with type Name = Type;."
+    },
+    {
+      "term": "never type",
+      "def": "!, the type of expressions that never produce a value, like panic! or continue."
+    },
+    {
+      "term": "dynamically sized type",
+      "def": "A type whose size is known only at run time, such as str, [T] or dyn Trait."
+    },
+    {
+      "term": "?Sized",
+      "def": "A bound that relaxes the default Sized requirement on a generic parameter."
+    },
+    {
+      "term": "function pointer",
+      "def": "A value of type fn(...) -> ... pointing to a function or non-capturing closure."
+    }
+  ]
+}

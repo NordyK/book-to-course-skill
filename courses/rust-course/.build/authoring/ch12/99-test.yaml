@@ -1,0 +1,56 @@
+title: "Chapter test: a Command-Line Search Tool"
+kind: test
+summary: Ten questions on the minigrep project. You need 70% to pass; you can retry and your best score is kept.
+blocks:
+  - type: quiz
+    id: ch12-test
+    pass_score: 0.7
+    questions:
+      - type: single
+        q: "Which function gives the command-line arguments?"
+        options: ["`std::io::args()`", "`std::env::args()`", "`std::process::args()`", "`main(args)`"]
+        answer: 1
+        explanation: "It returns an iterator of Strings."
+      - type: single
+        q: "Running `minigrep` with no arguments used to show `index out of bounds`. What replaced it?"
+        options: ["A bigger vector", "Config::build returning Err, printed by main before process::exit(1)", "A panic with a better message", "Default arguments"]
+        answer: 1
+        explanation: "Errors for users, not panics."
+      - type: single
+        q: "Why put minigrep's logic in `lib.rs`?"
+        options: ["main.rs cannot contain functions", "So it can be tested; main cannot be", "lib.rs compiles faster", "Cargo requires it"]
+        answer: 1
+        explanation: "Separation of concerns for binary projects."
+      - type: single
+        q: "What does `if let Err(e) = run(config) { ... }` express?"
+        options: ["Only handle the failure; on success there is nothing to unwrap", "Ignore errors", "Loop until success", "Panic on error"]
+        answer: 0
+        explanation: "run returns Result<(), ...>."
+      - type: single
+        q: "What does `?` do inside `run` when the file cannot be read?"
+        options: ["Panics", "Returns the io::Error, converted into Box<dyn Error>", "Retries", "Returns an empty string"]
+        answer: 1
+        explanation: "Any error converts into the boxed trait object."
+      - type: single
+        q: "Which signature is right for search?"
+        options: ["`fn search(query: &str, contents: &str) -> Vec<&str>`", "`fn search<'a>(query: &'a str, contents: &str) -> Vec<&'a str>`", "`fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str>`", "`fn search(query: String, contents: String) -> Vec<String>`"]
+        answer: 2
+        explanation: "The results borrow from contents. The last one works too, but copies everything."
+      - type: single
+        q: "In TDD, what should happen when you run a newly written test before writing the code?"
+        options: ["It passes", "It fails, for the reason you expect", "It does not compile, and you move on", "Nothing"]
+        answer: 1
+        explanation: "Red before green."
+      - type: single
+        q: "A user runs `minigrep to poem.txt > out.txt` and the file does not exist. Where should the error message go?"
+        options: ["Into out.txt", "To stderr, so it appears on screen", "Nowhere", "To a log file"]
+        answer: 1
+        explanation: "Use eprintln!."
+      - type: fill
+        q: "Complete: `let ignore_case = env::var(\"IGNORE_CASE\").______();`"
+        answer: ["is_ok"]
+        explanation: "true when the variable is set."
+      - type: truefalse
+        q: "`line.to_lowercase().contains(&query)` returns the lowercased line when it matches."
+        answer: false
+        explanation: "It returns a bool; the original line is what gets pushed."

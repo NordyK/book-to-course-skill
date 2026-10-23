@@ -1,0 +1,151 @@
+{
+  "title": "Packages and crates",
+  "summary": "What a crate is, binary versus library crates, the crate root, what a package contains, and how Cargo finds your crates by convention.",
+  "minutes": 14,
+  "source": {
+    "chapter": "ch07",
+    "sections": [
+      "TRPL 7.1 Packages and Crates",
+      "PR ch8 Crates",
+      "PR ch8 Editions",
+      "PR ch8 Build Profiles",
+      "CR Day 4 Modules"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "So far every program has fit in one file. Real projects grow to thousands of lines, and some are split into many projects that depend on each other. Rust's **module system** is how you organize that code: what goes where, what other code can see, and how names are found. It has four layers:\n\n- **Packages**: a Cargo feature for building, testing and sharing crates.\n- **Crates**: a tree of modules that compiles to one library or executable.\n- **Modules** and **use**: organize code inside a crate and control privacy.\n- **Paths**: the way to name an item, such as a struct, function or module.\n\nThis lesson covers the first two. The rest of the chapter covers modules and paths.\n"
+    },
+    {
+      "type": "text",
+      "title": "Crates",
+      "md": "A **crate** is the smallest amount of code the Rust compiler considers at a time. Even `rustc main.rs` on a single file compiles a crate. A crate comes in one of two forms:\n\n- A **binary crate** compiles to a program you can run. It must have a `main` function. Everything you have written so far is a binary crate.\n- A **library crate** has no `main` and does not compile to a program. It defines functionality meant to be shared with other projects. The `rand` crate from chapter 2 is a library crate, and so are the exercises in this course: the tests are the code that uses them.\n\nWhen Rust programmers say \"crate\" they usually mean a library crate, and \"crate\" is used interchangeably with \"library\".\n\nThe **crate root** is the source file the compiler starts from. It forms the root module of the crate, and every other module hangs from it.\n"
+    },
+    {
+      "type": "text",
+      "title": "Packages",
+      "md": "A **package** is a bundle of one or more crates with a `Cargo.toml` that describes how to build them. A package can contain any number of binary crates, but **at most one** library crate. It must contain at least one crate of either kind.\n\nCargo finds crates by convention, so `Cargo.toml` does not need to list them:\n"
+    },
+    {
+      "type": "table",
+      "title": "Where Cargo looks",
+      "headers": [
+        "File",
+        "Crate"
+      ],
+      "rows": [
+        [
+          "`src/main.rs`",
+          "the binary crate with the same name as the package"
+        ],
+        [
+          "`src/lib.rs`",
+          "the library crate with the same name as the package"
+        ],
+        [
+          "`src/bin/*.rs`",
+          "one extra binary crate per file"
+        ],
+        [
+          "`tests/*.rs`",
+          "integration tests: each file is a separate crate that uses your library (chapter 11)"
+        ],
+        [
+          "`examples/*.rs`",
+          "example programs, run with `cargo run --example name`"
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "title": "A package with a library and two programs",
+      "code": "$ cargo new --lib satellites\n$ tree satellites\nsatellites\n├── Cargo.toml\n└── src\n    ├── bin\n    │   └── groundctl.rs      # binary crate \"groundctl\"\n    ├── lib.rs                # library crate \"satellites\" (crate root)\n    └── main.rs               # binary crate \"satellites\"\n",
+      "explain": "`cargo new --lib` starts a package with only `src/lib.rs`; the other two files were added by hand. A common, useful layout is a thin `main.rs` that parses arguments and calls into `lib.rs`, where the real logic lives and can be tested. Chapter 12 builds a program that way."
+    },
+    {
+      "type": "callout",
+      "kind": "note",
+      "title": "Editions are per crate",
+      "md": "The `edition = \"2024\"` line in `Cargo.toml` applies to that package's crates only. A 2024-edition crate can depend on a 2015-edition crate and the other way round, so the ecosystem never splits when new editions arrive. *Programming Rust* calls this one of Rust's strongest compatibility promises."
+    },
+    {
+      "type": "quiz",
+      "id": "ch07-quiz-crates",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which is true of a library crate?",
+          "options": [
+            "It must have a `main` function",
+            "It compiles to a program you can run",
+            "It defines functionality for other code to use and has no `main`",
+            "A package can have several"
+          ],
+          "answer": 2,
+          "explanation": "A package has at most one library crate, and it has no `main`."
+        },
+        {
+          "type": "single",
+          "q": "A package has `src/main.rs`, `src/lib.rs` and `src/bin/tool.rs`. How many crates is that?",
+          "options": [
+            "1",
+            "2",
+            "3",
+            "It is invalid"
+          ],
+          "answer": 2,
+          "explanation": "Two binaries (the package name and `tool`) plus one library."
+        },
+        {
+          "type": "fill",
+          "q": "The source file the compiler starts from, which forms the root module of a crate, is called the crate ______.",
+          "answer": [
+            "root"
+          ],
+          "explanation": "`src/main.rs` or `src/lib.rs`."
+        },
+        {
+          "type": "truefalse",
+          "q": "A 2024-edition crate cannot use a library written in the 2018 edition.",
+          "answer": false,
+          "explanation": "Editions are chosen per crate and crates of different editions work together."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "A crate is one unit of compilation: a binary (has `main`) or a library (does not).",
+        "The crate root (`src/main.rs` or `src/lib.rs`) is where compilation starts.",
+        "A package is a `Cargo.toml` plus one or more crates: any number of binaries, at most one library.",
+        "Cargo finds crates by file location; extra binaries go in `src/bin/`.",
+        "Editions are chosen per crate, so crates of different editions mix freely."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "crate",
+      "def": "The unit the compiler works on: a tree of modules that compiles to one library or one executable."
+    },
+    {
+      "term": "binary crate",
+      "def": "A crate with a main function that compiles to an executable."
+    },
+    {
+      "term": "library crate",
+      "def": "A crate without main that provides code for other crates to use."
+    },
+    {
+      "term": "crate root",
+      "def": "The source file the compiler starts from and the root module of the crate."
+    },
+    {
+      "term": "package",
+      "def": "One or more crates plus a Cargo.toml describing how to build them; at most one library crate."
+    }
+  ]
+}

@@ -1,0 +1,238 @@
+{
+  "title": "Modules, paths and privacy",
+  "summary": "Group related code into modules, make items public with pub, name them with absolute and relative paths, reach the parent with super, and see how privacy works for struct fields and enum variants.",
+  "minutes": 28,
+  "source": {
+    "chapter": "ch07",
+    "sections": [
+      "TRPL 7.2 Defining Modules to Control Scope and Privacy",
+      "TRPL 7.3 Paths for Referring to an Item in the Module Tree",
+      "TRPL 7.3 Exposing Paths with the pub Keyword",
+      "TRPL 7.3 Starting Relative Paths with super",
+      "TRPL 7.3 Making Structs and Enums Public",
+      "PR ch8 Modules",
+      "PR ch8 Paths and Imports",
+      "PR ch8 Making struct Fields pub",
+      "CR Day 4 Visibility"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "A **module** is a named container for items: functions, structs, enums, constants and other modules. Modules do two jobs. They **organize** code into groups that a reader can navigate, and they control **privacy**: whether code outside the module may use an item.\n\n*The Rust Programming Language* uses a restaurant as its example. The **front of house** is where customers are: hosts seat them, servers take orders and payment. The **back of house** is the kitchen, which customers never see. A library for running a restaurant mirrors that split:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/lib.rs",
+      "code": "mod front_of_house {\n    mod hosting {\n        fn add_to_waitlist() {}\n        fn seat_at_table() {}\n    }\n\n    mod serving {\n        fn take_order() {}\n        fn serve_order() {}\n        fn take_payment() {}\n    }\n}\n",
+      "explain": "`mod name { ... }` defines a module inline. Modules nest. The crate root is an implicit module named `crate`, so this file forms a tree."
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "title": "The module tree",
+      "code": "crate\n └── front_of_house\n     ├── hosting\n     │   ├── add_to_waitlist\n     │   └── seat_at_table\n     └── serving\n         ├── take_order\n         ├── serve_order\n         └── take_payment\n",
+      "explain": "It looks like a file-system tree, and you navigate it like one, with paths."
+    },
+    {
+      "type": "text",
+      "title": "Paths",
+      "md": "To use an item you name it with a **path**, with `::` between the parts:\n\n- An **absolute path** starts at the crate root with `crate`: `crate::front_of_house::hosting::add_to_waitlist()`.\n- A **relative path** starts from the current module, with a module name, `self` (this module) or `super` (the parent module).\n\nWhich to use? Ask whether the calling code is more likely to move together with the item or separately. Absolute paths survive moving the caller; relative paths survive moving both together. Absolute paths are the more common default.\n"
+    },
+    {
+      "type": "text",
+      "title": "Private by default",
+      "md": "Every item is **private** to its parent module unless marked `pub`. Code in a module can see everything in its own module and in its **ancestors**, but not inside its children. In the restaurant: the kitchen can see the dining room, but customers cannot see the kitchen. Privacy lets a module change its internals freely, as long as its public items keep working.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/lib.rs",
+      "code": "mod front_of_house {\n    mod hosting {\n        fn add_to_waitlist() {}\n    }\n}\n\npub fn eat_at_restaurant() {\n    crate::front_of_house::hosting::add_to_waitlist();\n}\n",
+      "output": "error[E0603]: module `hosting` is private\n --> src/lib.rs:8:28\n  |\n8 |     crate::front_of_house::hosting::add_to_waitlist();\n  |                            ^^^^^^^  --------------- function `add_to_waitlist` is not publicly re-exported\n  |                            |\n  |                            private module\n  |\nnote: the module `hosting` is defined here\n --> src/lib.rs:2:5\n  |\n2 |     mod hosting {\n  |     ^^^^^^^^^^^\n",
+      "output_label": "Compiler output",
+      "explain": "`front_of_house` itself is private, but `eat_at_restaurant` is its sibling (both live in the crate root), so it may name it. `hosting` and `add_to_waitlist` are inside it and need `pub`."
+    },
+    {
+      "type": "text",
+      "md": "Making a module `pub` only lets ancestors **name** it; its contents stay private. You must mark every step of the path that outside code uses:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "mod front_of_house {\n    pub mod hosting {\n        pub fn add_to_waitlist() {\n            println!(\"added to the waitlist\");\n        }\n    }\n}\n\npub fn eat_at_restaurant() {\n    crate::front_of_house::hosting::add_to_waitlist(); // absolute\n    front_of_house::hosting::add_to_waitlist();        // relative\n}\n\nfn main() {\n    eat_at_restaurant();\n}\n",
+      "output": "added to the waitlist\nadded to the waitlist\n"
+    },
+    {
+      "type": "text",
+      "title": "super",
+      "md": "`super::` starts a path in the parent module, like `..` in a file system. It is handy for an item that is closely tied to its parent and likely to move with it:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn deliver_order() {\n    println!(\"order delivered\");\n}\n\nmod back_of_house {\n    pub fn fix_incorrect_order() {\n        cook_order();\n        super::deliver_order();\n    }\n\n    fn cook_order() {\n        println!(\"order cooked\");\n    }\n}\n\nfn main() {\n    back_of_house::fix_incorrect_order();\n}\n",
+      "output": "order cooked\norder delivered\n"
+    },
+    {
+      "type": "text",
+      "title": "Public structs and enums",
+      "md": "For a **struct**, `pub` makes the type public, but **each field stays private** unless marked `pub` too. That is how a type protects its rules: if a field is private, outside code cannot build the struct with `Struct { ... }` at all, so the module must offer a constructor.\n\nFor an **enum**, `pub` makes **all its variants public**. An enum whose variants you cannot see would be useless.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "mod back_of_house {\n    pub struct Breakfast {\n        pub toast: String,\n        seasonal_fruit: String, // the chef decides; customers cannot\n    }\n\n    impl Breakfast {\n        pub fn summer(toast: &str) -> Breakfast {\n            Breakfast { toast: String::from(toast), seasonal_fruit: String::from(\"peaches\") }\n        }\n\n        pub fn fruit(&self) -> &str {\n            &self.seasonal_fruit\n        }\n    }\n\n    pub enum Appetizer {\n        Soup,\n        Salad,\n    }\n}\n\nfn main() {\n    let mut meal = back_of_house::Breakfast::summer(\"Rye\");\n    meal.toast = String::from(\"Wheat\"); // allowed: toast is pub\n    // meal.seasonal_fruit = String::from(\"blueberries\"); // error: private field\n    let _starter = back_of_house::Appetizer::Soup;\n    println!(\"{} toast with {}\", meal.toast, meal.fruit());\n}\n",
+      "output": "Wheat toast with peaches",
+      "explain": "Uncomment the `seasonal_fruit` line and the compiler reports `error[E0616]: field `seasonal_fruit` of struct `Breakfast` is private`. Because one field is private, `main` could not even write `Breakfast { toast: ..., seasonal_fruit: ... }`; it must call `summer`."
+    },
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Finer-grained visibility",
+      "md": "Besides `pub` there are `pub(crate)` (visible anywhere in this crate, but not to other crates) and `pub(super)` (visible to the parent module). `pub(crate)` is common for helpers that several modules share but that are not part of the library's public API."
+    },
+    {
+      "type": "playground",
+      "id": "ch07-play-privacy",
+      "title": "Open just enough",
+      "lang": "rust",
+      "md": "`main` wants to create a temperature reading with `sensors::Reading::new` and print it, but almost everything is private. Add the **minimum** `pub` keywords to make it compile: the `celsius` field must stay private (there is a getter), and `calibrate` must stay private too.\n",
+      "task": "Print `sensor 7: 21.5°C` without making `celsius` or `calibrate` public.",
+      "code": "mod sensors {\n    struct Reading {\n        id: u32,\n        celsius: f64,\n    }\n\n    impl Reading {\n        fn new(id: u32, raw: f64) -> Reading {\n            Reading { id, celsius: calibrate(raw) }\n        }\n\n        fn celsius(&self) -> f64 {\n            self.celsius\n        }\n    }\n\n    fn calibrate(raw: f64) -> f64 {\n        raw - 0.5\n    }\n}\n\nfn main() {\n    let r = sensors::Reading::new(7, 22.0);\n    println!(\"sensor {}: {}°C\", r.id, r.celsius());\n}\n",
+      "expected_output": "sensor 7: 21.5°C",
+      "hints": [
+        "Read the errors one at a time: each one names the private item.",
+        "Four `pub`s: the struct, the `id` field, and the `new` and `celsius` methods. `calibrate` is called from inside the module, so it can stay private."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch07-ex-modules",
+      "exercise_dir": "ch07-library",
+      "title": "A library with a public face",
+      "difficulty": "medium",
+      "goal": "Organize code into nested modules with the right visibility, so the public API is small and the rules are enforced inside.",
+      "behavior": "In `src/lib.rs`, create:\n- `pub mod catalog` with `pub struct Item { pub title: String, copies: u32 }` and methods `pub fn new(title: &str, copies: u32) -> Item`, `pub fn copies(&self) -> u32`, and `pub(crate) fn take(&mut self) -> bool` (removes one copy if there is one).\n- `pub mod loans` with `pub fn borrow(item: &mut crate::catalog::Item) -> Result<(), String>`: calls `take`; returns `Err(format!(\"no copies of {}\", title))` when none are left.\n- At the crate root, `pub fn stock_report(items: &[catalog::Item]) -> String`: one line per item, `\"<title>: <copies>\"`, joined with `\\n`.\nThe tests use `crate::catalog::Item::new`, `crate::loans::borrow` and `crate::stock_report`. `copies` must stay private.\n",
+      "examples": [
+        {
+          "input": "Item::new(\"Dune\", 1); borrow twice",
+          "output": "Ok(()), then Err(\"no copies of Dune\")"
+        }
+      ],
+      "hints": [
+        "`take` is `pub(crate)` so `loans` can call it but users of the library cannot.",
+        "Inside `loans`, refer to the item type as `crate::catalog::Item` or `super::catalog::Item`.",
+        "`stock_report`: build a `Vec<String>` of lines with `format!` and `join(\"\\n\")` it, or push onto a `String` and add `\\n` between lines."
+      ],
+      "solution_explain": "Outside the crate, the only way to change `copies` is `loans::borrow`, which checks the rule. `take` is `pub(crate)`: visible to `loans` but not part of the public API. The `use` at the top of `loans` is next lesson's topic; writing the full path `crate::catalog::Item` works just as well."
+    },
+    {
+      "type": "quiz",
+      "id": "ch07-quiz-modules",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Without any `pub`, who can call a function inside `mod kitchen`?",
+          "options": [
+            "Anyone in the crate",
+            "Only code in `kitchen` and its child modules",
+            "Only `main`",
+            "Nobody"
+          ],
+          "answer": 1,
+          "explanation": "Private items are visible in their own module and its descendants."
+        },
+        {
+          "type": "single",
+          "q": "Which path is absolute?",
+          "options": [
+            "`hosting::add_to_waitlist()`",
+            "`self::hosting::add_to_waitlist()`",
+            "`crate::front_of_house::hosting::add_to_waitlist()`",
+            "`super::add_to_waitlist()`"
+          ],
+          "answer": 2,
+          "explanation": "Absolute paths start with `crate`."
+        },
+        {
+          "type": "single",
+          "q": "`pub struct User { name: String }` is in a module. Can code outside write `User { name: s }`?",
+          "options": [
+            "Yes, the struct is public",
+            "No: the field `name` is private",
+            "Only with `use`",
+            "Only if `name` is a `&str`"
+          ],
+          "answer": 1,
+          "explanation": "Fields are private unless marked `pub` themselves, and a struct literal needs every field."
+        },
+        {
+          "type": "truefalse",
+          "q": "Marking an enum `pub` makes all of its variants public.",
+          "answer": true,
+          "explanation": "Unlike struct fields, enum variants share the enum's visibility."
+        },
+        {
+          "type": "single",
+          "q": "What does `super::helper()` call?",
+          "options": [
+            "A function named `helper` in the parent module",
+            "The root module's helper",
+            "A method on `self`",
+            "A function in a child module"
+          ],
+          "answer": 0,
+          "explanation": "`super` is the parent module."
+        },
+        {
+          "type": "single",
+          "q": "What does `pub(crate)` mean?",
+          "options": [
+            "Public to everyone",
+            "Visible anywhere in the current crate but not to other crates",
+            "Visible only to the parent module",
+            "Private"
+          ],
+          "answer": 1,
+          "explanation": "Good for internal helpers shared between modules."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "`mod name { ... }` groups items; modules form a tree rooted at `crate`.",
+        "Paths name items: absolute from `crate::`, relative from the current module, `self` or `super`.",
+        "Everything is private by default; children can see their ancestors, not the other way round.",
+        "`pub` must be added at every step of the path outside code uses.",
+        "Struct fields are private unless marked `pub`; enum variants are public with the enum.",
+        "`pub(crate)` and `pub(super)` give in-between visibility."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "module",
+      "def": "A named container of items that organizes code and controls privacy."
+    },
+    {
+      "term": "path",
+      "def": "A name for an item, with parts separated by ::, like crate::front_of_house::hosting."
+    },
+    {
+      "term": "privacy",
+      "def": "Items are private to their parent module unless marked pub; private items are hidden from outside code."
+    },
+    {
+      "term": "super",
+      "def": "A path start that refers to the parent module."
+    },
+    {
+      "term": "pub(crate)",
+      "def": "Visibility that makes an item usable anywhere in the same crate, but not by other crates."
+    }
+  ]
+}

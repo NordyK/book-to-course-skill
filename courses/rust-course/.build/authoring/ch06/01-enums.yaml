@@ -1,0 +1,288 @@
+title: "Enums and Option"
+summary: "Define a type by listing its possible variants, put data inside variants, add methods to enums, and meet Option<T>, Rust's replacement for null."
+minutes: 28
+source:
+  chapter: ch06
+  sections: ["TRPL 6.1 Defining an Enum", "TRPL 6.1 Enum Values", "TRPL 6.1 The Option Enum and Its Advantages Over Null Values", "PR ch10 Enums", "PR ch10 Enums with Data", "PR ch10 Enums in Memory", "PR ch10 Rich Data Structures Using Enums", "CR Day 2 Enums"]
+blocks:
+  - type: text
+    md: |
+      A struct says "a value has **all** of these fields". An **enum** (short for *enumeration*) says "a value is **one** of these variants". An IP address is either version 4 or version 6, never both. A shape is a circle or a rectangle. A network message is a ping, a text, or a disconnect. Whenever you would describe something with "either ... or ...", an enum is likely the right type.
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      enum IpAddrKind {
+          V4,
+          V6,
+      }
+
+      fn route(kind: IpAddrKind) {
+          println!("routing {kind:?}");
+      }
+
+      fn main() {
+          let four = IpAddrKind::V4;
+          let six = IpAddrKind::V6;
+          route(four);
+          route(six);
+      }
+    output: |
+      routing V4
+      routing V6
+    explain: "Variants live in the enum's namespace, so you write `IpAddrKind::V4`. Both values have the same type, `IpAddrKind`, which is why one function can take either."
+
+  - type: text
+    title: Variants can carry data
+    md: |
+      An enum's power comes from putting data directly into each variant, and each variant can hold a different kind and amount of data. An IPv4 address is four bytes; an IPv6 address is usually written as text:
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      enum IpAddr {
+          V4(u8, u8, u8, u8),
+          V6(String),
+      }
+
+      fn main() {
+          let home = IpAddr::V4(127, 0, 0, 1);
+          let loopback = IpAddr::V6(String::from("::1"));
+          println!("{home:?} {loopback:?}");
+      }
+    output: "V4(127, 0, 0, 1) V6(\"::1\")"
+    explain: "Each variant name works like a function that builds an instance: `IpAddr::V4(127, 0, 0, 1)`. Without enums you would need a struct with a kind field plus fields for both formats, with half of them always unused."
+
+  - type: text
+    md: |
+      Variants can look like any kind of struct: no data, a tuple, or named fields. Here is one enum for every message a small chat program sends:
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      enum Message {
+          Quit,                       // no data
+          Move { x: i32, y: i32 },    // named fields, like a struct
+          Write(String),              // one String
+          ChangeColor(i32, i32, i32), // three numbers
+      }
+
+      impl Message {
+          fn call(&self) {
+              println!("handling {self:?}");
+          }
+      }
+
+      fn main() {
+          let msgs = [Message::Write(String::from("hello")), Message::Move { x: 1, y: -2 }, Message::Quit];
+          for m in &msgs {
+              m.call();
+          }
+      }
+    output: |
+      handling Write("hello")
+      handling Move { x: 1, y: -2 }
+      handling Quit
+    explain: "As with structs, enums can have methods in an `impl` block. Four separate structs could hold the same data, but then no single function or array could take \"any message\"."
+
+  - type: callout
+    kind: note
+    title: How big is an enum?
+    md: "*Programming Rust* explains the memory layout: an enum value stores a small integer **tag** that says which variant it is, plus enough space for the largest variant. `Message` is as big as its largest variant plus the tag. Rust also optimizes common cases: `Option<&T>` is the same size as `&T`, because a reference can never be zero, so zero can mean `None`."
+
+  - type: text
+    title: "Option: a value that may be missing"
+    md: |
+      Many languages have **null**, a special value meaning "nothing here". Its inventor, Tony Hoare, called it his "billion-dollar mistake": any variable might secretly be null, and using it as if it were a value crashes the program, often far from where the null came from.
+
+      Rust has no null. Instead the standard library defines an enum:
+
+      ```rust
+      enum Option<T> {
+          None,
+          Some(T),
+      }
+      ```
+
+      `<T>` means `Option` works for any type (generics are chapter 10). It is so common that `Some` and `None` can be used without the `Option::` prefix.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let some_number = Some(5);          // Option<i32>
+          let some_char = Some('e');          // Option<char>
+          let absent_number: Option<i32> = None; // the type must be written: None of what?
+          println!("{some_number:?} {some_char:?} {absent_number:?}");
+      }
+    output: "Some(5) Some('e') None"
+
+  - type: text
+    title: Why Option is better than null
+    md: |
+      An `Option<i32>` is **not** an `i32`. You cannot add it to a number, call number methods on it, or pass it where an `i32` is expected:
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    code: |
+      fn main() {
+          let x: i8 = 5;
+          let y: Option<i8> = Some(5);
+          let sum = x + y;
+      }
+    output: |
+      error[E0277]: cannot add `Option<i8>` to `i8`
+       --> src/main.rs:4:17
+        |
+      4 |     let sum = x + y;
+        |                 ^ no implementation for `i8 + Option<i8>`
+        |
+        = help: the trait `Add<Option<i8>>` is not implemented for `i8`
+      help: the following other types implement trait `Add<Rhs>`
+       --> /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/arith.rs:98:8
+        |
+        = note: `i8` implements `Add`
+       ::: /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/ops/arith.rs:113:0
+        |
+        = note: in this macro invocation
+       --> /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/internal_macros.rs:22:8
+        |
+        = note: `&i8` implements `Add<i8>`
+       ::: /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/internal_macros.rs:33:8
+        |
+        = note: `i8` implements `Add<&i8>`
+       ::: /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/core/src/internal_macros.rs:44:8
+        |
+        = note: `&i8` implements `Add`
+        = note: this error originates in the macro `add_impl` (in Nightly builds, run with -Z macro-backtrace for more info)
+    output_label: Compiler output
+    explain: "That is the point. Wherever a value might be missing, its type is `Option<T>`, and the compiler makes you handle the `None` case before you get at the `T`. Everywhere else, a plain `T` is guaranteed to be there. The next lesson shows how to handle both cases with `match`."
+
+  - type: text
+    title: A few useful Option methods
+    md: |
+      `Option` comes with many methods. These are enough to start:
+
+  - type: table
+    title: "Option<T> methods (x is Some(4), n is None)"
+    headers: ["Method", "Some(4)", "None", "Use it when"]
+    rows:
+      - ["`is_some()` / `is_none()`", "`true` / `false`", "`false` / `true`", "You only need to know whether there is a value"]
+      - ["`unwrap_or(0)`", "`4`", "`0`", "There is a sensible default"]
+      - ["`map(|v| v * 2)`", "`Some(8)`", "`None`", "Transform the value if there is one"]
+      - ["`expect(\"msg\")`", "`4`", "panics with msg", "`None` would be a bug in your program"]
+
+  - type: callout
+    kind: tip
+    title: "|v| v * 2"
+    md: "`|v| v * 2` is a **closure**: a small unnamed function, here taking `v` and returning `v * 2`. Chapter 13 covers closures in depth; for now, read `|args| body` as \"a function of args\"."
+
+  - type: playground
+    id: ch06-play-shapes
+    title: "One type, several shapes"
+    lang: rust
+    md: |
+      `Shape` has a `Circle` variant. Add a `Rectangle { width: f64, height: f64 }` variant, and in `main` add `Shape::Rectangle { width: 2.0, height: 3.5 }` to the list. The `describe` method already uses `match`, which you will study next lesson; add an arm for the rectangle following the circle's example.
+    task: "Print `circle with radius 1`, then `rectangle 2 x 3.5`."
+    code: |
+      enum Shape {
+          Circle(f64),
+      }
+
+      impl Shape {
+          fn describe(&self) -> String {
+              match self {
+                  Shape::Circle(r) => format!("circle with radius {r}"),
+              }
+          }
+      }
+
+      fn main() {
+          let shapes = [Shape::Circle(1.0)];
+          for s in &shapes {
+              println!("{}", s.describe());
+          }
+      }
+    expected_output: |
+      circle with radius 1
+      rectangle 2 x 3.5
+    solution_code: |
+      enum Shape {
+          Circle(f64),
+          Rectangle { width: f64, height: f64 },
+      }
+
+      impl Shape {
+          fn describe(&self) -> String {
+              match self {
+                  Shape::Circle(r) => format!("circle with radius {r}"),
+                  Shape::Rectangle { width, height } => format!("rectangle {width} x {height}"),
+              }
+          }
+      }
+
+      fn main() {
+          let shapes = [Shape::Circle(1.0), Shape::Rectangle { width: 2.0, height: 3.5 }];
+          for s in &shapes {
+              println!("{}", s.describe());
+          }
+      }
+    hints:
+      - "Add the variant with named fields: `Rectangle { width: f64, height: f64 },`."
+      - "If you add the variant but not the arm, the compiler tells you `Shape::Rectangle { .. }` is not covered. That check is what makes enums safe to extend."
+      - "The arm: `Shape::Rectangle { width, height } => format!(\"rectangle {width} x {height}\"),`."
+
+  - type: quiz
+    id: ch06-quiz-enums
+    title: Check yourself
+    questions:
+      - type: single
+        q: "When is an enum a better fit than a struct?"
+        options: ["When a value has several fields at once", "When a value is exactly one of several alternatives", "When you need methods", "When data lives on the heap"]
+        answer: 1
+        explanation: "Struct: all of these. Enum: one of these."
+      - type: multi
+        q: "Which variant definitions are valid inside an enum?"
+        options: ["`Quit,`", "`Write(String),`", "`Move { x: i32, y: i32 },`", "`Color: (u8, u8, u8),`"]
+        answer: [0, 1, 2]
+        explanation: "Variants can have no data, tuple data or named fields. The last one is not Rust syntax."
+      - type: single
+        q: "What is the type of `None` in `let a: Option<String> = None;`?"
+        options: ["`None`", "`Option<String>`", "`String`", "`()`"]
+        answer: 1
+        explanation: "`None` is a variant of `Option<String>`; the annotation tells Rust which `T`."
+      - type: truefalse
+        q: "You can use an `Option<i32>` directly in arithmetic, like `Some(2) + 3`."
+        answer: false
+        explanation: "You must first handle the `None` case and get the `i32` out."
+      - type: single
+        q: "What is `Some(3).map(|v| v + 1).unwrap_or(0)`?"
+        options: ["`0`", "`3`", "`4`", "`Some(4)`"]
+        answer: 2
+        explanation: "`map` gives `Some(4)`; `unwrap_or` takes the 4 out."
+      - type: single
+        q: "Why does Rust use `Option` instead of null?"
+        options: ["It is faster than null", "A missing value has a different type, so the compiler forces you to handle it", "Null cannot be stored in memory", "It saves memory"]
+        answer: 1
+        explanation: "Only `Option<T>` can be missing, and you cannot use it as a `T` until you check."
+
+  - type: summary
+    points:
+      - "An enum is one of several variants: `enum IpAddrKind { V4, V6 }`; write `IpAddrKind::V4`."
+      - "Variants can carry data of different shapes: none, tuple-like, or struct-like."
+      - "Enums can have methods in `impl` blocks, like structs."
+      - "Rust has no null. `Option<T>` is `Some(T)` or `None`, and an `Option<T>` cannot be used as a `T` until you handle `None`."
+      - "Handy methods: `is_some`, `is_none`, `unwrap_or`, `map`, `expect`."
+terms:
+  - term: enum
+    def: "A type whose value is exactly one of a fixed set of variants, each of which may carry data."
+  - term: variant
+    def: "One of the alternatives listed in an enum, like Some or None."
+  - term: Option
+    def: "The standard enum Some(T) | None, used for values that may be absent instead of null."
+  - term: closure
+    def: "An anonymous function written |args| body, which can be passed to methods like map."

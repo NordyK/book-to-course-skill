@@ -1,0 +1,10 @@
+{
+  "title": "Smart Pointers",
+  "summary": "Pointers that own what they point to: Box for heap data and recursive types, Deref and Drop that make smart pointers work, Rc for shared ownership, RefCell for interior mutability, and Weak to break reference cycles.",
+  "goals": [
+    "Explain what a pointer is and use Box<T> for heap values, recursive types and trait objects",
+    "Implement Deref and Drop, and predict deref coercion and drop order",
+    "Share ownership with Rc<T> and mutate through shared references with RefCell<T>",
+    "Recognize reference cycles and break them with Weak<T>, as in a tree with parent links"
+  ]
+}

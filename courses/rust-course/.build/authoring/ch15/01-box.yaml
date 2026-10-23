@@ -1,0 +1,443 @@
+title: "Pointers and Box<T>"
+summary: "What a pointer is, references versus smart pointers, raw memory addresses, storing data on the heap with Box, recursive types like the cons list, and how Box sizes them."
+minutes: 30
+source:
+  chapter: ch15
+  sections: ["TRPL 15 Smart Pointers", "TRPL 15.1 Using Box<T> to Point to Data on the Heap", "TRPL 15.1 Storing Data on the Heap", "TRPL 15.1 Enabling Recursive Types with Boxes", "TRPL 15.1 More Information About the Cons List", "TRPL 15.1 Computing the Size of a Non-Recursive Type", "TRPL 15.1 Getting a Recursive Type with a Known Size", "RiA 6.1 Pointers", "RiA 6.2 Exploring Rust's reference and pointer types", "RiA 6.2 Rust's pointer ecosystem", "RiA 6.2 Smart pointer building blocks", "PR ch9 Boxes", "CR Day 3 Box"]
+blocks:
+  - type: text
+    md: |
+      A **pointer** is a variable that holds a memory address: it "points at" some other data. *Rust in Action* puts it plainly: a pointer is an integer that refers to a location in memory, and the type system decides what you may do with it.
+
+      Rust has three families:
+
+      - **References** (`&T`, `&mut T`) borrow; the borrow checker guarantees they are valid. They have no other abilities and no overhead.
+      - **Smart pointers** are structs that act like pointers but **own** the data they point to and carry extra behavior. `String` and `Vec<T>` are smart pointers: they own heap memory and know its capacity.
+      - **Raw pointers** (`*const T`, `*mut T`) are addresses with no guarantees, used in `unsafe` code (chapter 20).
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let a: i64 = 42;
+          let b: [u8; 10] = [0; 10];
+          let a_ptr = &a as *const i64;
+          let b_ptr = &b as *const [u8; 10];
+
+          println!("a: {} (a {}-byte value)", a, std::mem::size_of::<i64>());
+          println!("a reference is {} bytes", std::mem::size_of::<&i64>());
+          println!("b's reference is also {} bytes", std::mem::size_of::<&[u8; 10]>());
+          println!("a slice reference is {} bytes", std::mem::size_of::<&[u8]>());
+          println!("addresses differ: {}", a_ptr as usize != b_ptr as usize);
+      }
+    output: |
+      a: 42 (a 8-byte value)
+      a reference is 8 bytes
+      b's reference is also 8 bytes
+      a slice reference is 16 bytes
+      addresses differ: true
+    explain: "On a 64-bit machine every plain reference is 8 bytes, whatever it points to. A slice reference is a **fat pointer**: an address plus a length. The real addresses change every run, so this example only compares them; print `{:p}` to see one."
+
+  - type: text
+    title: Box<T>
+    md: |
+      The simplest smart pointer is **`Box<T>`**. `Box::new(value)` moves the value to the **heap** and leaves a pointer to it on the stack. When the box goes out of scope, both are freed. Boxes have no performance overhead beyond the heap allocation, and no extra abilities. Use them when:
+
+      1. you have a type whose size cannot be known at compile time, but need it in a context that requires a known size (recursive types, below);
+      2. you have a lot of data and want to transfer ownership **without copying** it;
+      3. you want a value of "some type that implements a trait" rather than one specific type: a **trait object**, `Box<dyn Trait>` (chapter 18).
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let b = Box::new(5);
+          println!("b = {b}");
+          let sum = *b + 1;  // * follows the pointer
+          println!("sum = {sum}");
+
+          let big = Box::new([0u8; 1_000_000]); // a megabyte on the heap
+          let moved = big;                      // moves 8 bytes, not a megabyte
+          println!("{} bytes, box is {} bytes", moved.len(), std::mem::size_of_val(&moved));
+      }
+    output: |
+      b = 5
+      sum = 6
+      1000000 bytes, box is 8 bytes
+
+  - type: text
+    title: Recursive types
+    md: |
+      A value of a **recursive type** contains another value of the same type. The classic example is a **cons list**, from Lisp: each item holds a value and the rest of the list, ending with `Nil`. A first attempt does not compile:
+
+  - type: code
+    lang: rust
+    code: |
+      enum List {
+          Cons(i32, List),
+          Nil,
+      }
+
+      fn main() {}
+    output: |
+      error[E0072]: recursive type `List` has infinite size
+       --> src/main.rs:1:1
+        |
+      1 | enum List {
+        | ^^^^^^^^^
+      2 |     Cons(i32, List),
+        |               ---- recursive without indirection
+        |
+      help: insert some indirection (e.g., a `Box`, `Rc`, or `&`) to break the cycle
+        |
+      2 |     Cons(i32, Box<List>),
+        |               ++++    +
+    output_label: Compiler output
+
+  - type: stepper
+    title: Why the size is infinite, and how Box fixes it
+    steps:
+      - title: Rust sizes an enum by its largest variant
+        md: "For `enum Message { Quit, Move { x: i32, y: i32 }, ... }` it looks at each variant and takes the biggest. That works because each variant has a known size."
+      - title: "A List contains a List"
+        md: "To size `Cons(i32, List)`, Rust needs the size of `List`, which needs the size of `Cons`, which needs `List`... The computation never ends."
+        code: |
+          size(List) = size(i32) + size(List)   // no solution
+      - title: "A Box has a fixed size"
+        md: "`Box<List>` is a pointer: 8 bytes whatever it points to. Now `Cons` is an `i32` plus a pointer, and the next element lives on the heap."
+        code: |
+          enum List {
+              Cons(i32, Box<List>),
+              Nil,
+          }
+          // size(List) = size(i32) + size(Box<List>) + tag: known!
+      - title: The list in memory
+        md: "Each `Cons` sits in its own heap allocation, linked by boxes. This **indirection** (storing a pointer instead of the value) is exactly what the help message suggested."
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      enum List {
+          Cons(i32, Box<List>),
+          Nil,
+      }
+
+      use List::{Cons, Nil};
+
+      fn sum(list: &List) -> i32 {
+          match list {
+              Cons(v, rest) => v + sum(rest),
+              Nil => 0,
+          }
+      }
+
+      fn main() {
+          let list = Cons(1, Box::new(Cons(2, Box::new(Cons(3, Box::new(Nil))))));
+          println!("{list:?}");
+          println!("sum = {}", sum(&list));
+          println!("a List is {} bytes", std::mem::size_of::<List>());
+      }
+    output: |
+      Cons(1, Cons(2, Cons(3, Nil)))
+      sum = 6
+      a List is 16 bytes
+    explain: "In `sum(rest)`, `rest` is a `&Box<List>`, and it is passed where a `&List` is expected. That automatic conversion is **deref coercion**, the topic of the next lesson. 16 bytes: 4 for the `i32`, 8 for the box, and the rest is alignment and the variant tag (Rust stores `Nil` in the box's null value)."
+
+  - type: playground
+    id: ch15-play-tree
+    title: "A boxed binary tree"
+    lang: rust
+    md: |
+      A binary search tree is recursive too: each node may have a left and a right child. `Option<Box<Node>>` means "maybe a child". Finish `insert` (smaller values go left, others right) and `count`.
+    task: "Print `5 nodes` and `in order: [1, 3, 4, 7, 9]`."
+    code: |
+      #[derive(Debug)]
+      struct Node {
+          value: i32,
+          left: Option<Box<Node>>,
+          right: Option<Box<Node>>,
+      }
+
+      fn insert(slot: &mut Option<Box<Node>>, value: i32) {
+          match slot {
+              None => *slot = Some(Box::new(Node { value, left: None, right: None })),
+              Some(node) => {
+                  // TODO: recurse into node.left or node.right
+              }
+          }
+      }
+
+      fn count(slot: &Option<Box<Node>>) -> usize {
+          0 // TODO
+      }
+
+      fn in_order(slot: &Option<Box<Node>>, out: &mut Vec<i32>) {
+          if let Some(node) = slot {
+              in_order(&node.left, out);
+              out.push(node.value);
+              in_order(&node.right, out);
+          }
+      }
+
+      fn main() {
+          let mut root = None;
+          for v in [7, 3, 9, 1, 4] {
+              insert(&mut root, v);
+          }
+          println!("{} nodes", count(&root));
+          let mut values = Vec::new();
+          in_order(&root, &mut values);
+          println!("in order: {values:?}");
+      }
+    expected_output: |
+      5 nodes
+      in order: [1, 3, 4, 7, 9]
+    solution_code: |
+      #[derive(Debug)]
+      struct Node {
+          value: i32,
+          left: Option<Box<Node>>,
+          right: Option<Box<Node>>,
+      }
+
+      fn insert(slot: &mut Option<Box<Node>>, value: i32) {
+          match slot {
+              None => *slot = Some(Box::new(Node { value, left: None, right: None })),
+              Some(node) => {
+                  if value < node.value {
+                      insert(&mut node.left, value);
+                  } else {
+                      insert(&mut node.right, value);
+                  }
+              }
+          }
+      }
+
+      fn count(slot: &Option<Box<Node>>) -> usize {
+          match slot {
+              None => 0,
+              Some(node) => 1 + count(&node.left) + count(&node.right),
+          }
+      }
+
+      fn in_order(slot: &Option<Box<Node>>, out: &mut Vec<i32>) {
+          if let Some(node) = slot {
+              in_order(&node.left, out);
+              out.push(node.value);
+              in_order(&node.right, out);
+          }
+      }
+
+      fn main() {
+          let mut root = None;
+          for v in [7, 3, 9, 1, 4] {
+              insert(&mut root, v);
+          }
+          println!("{} nodes", count(&root));
+          let mut values = Vec::new();
+          in_order(&root, &mut values);
+          println!("in order: {values:?}");
+      }
+    hints:
+      - "`if value < node.value { insert(&mut node.left, value) } else { insert(&mut node.right, value) }`"
+      - "`count`: `None => 0`, `Some(node) => 1 + count(&node.left) + count(&node.right)`."
+
+  - type: exercise
+    id: ch15-ex-box
+    exercise_dir: ch15-box
+    title: "An expression tree"
+    difficulty: medium
+    goal: "Model a recursive data type with Box and evaluate it recursively."
+    behavior: |
+      `pub enum Expr { Num(f64), Add(Box<Expr>, Box<Expr>), Mul(Box<Expr>, Box<Expr>), Neg(Box<Expr>), Div(Box<Expr>, Box<Expr>) }` is given.
+      - `pub fn eval(e: &Expr) -> Result<f64, String>`: evaluates; division by zero gives `Err("division by zero")`.
+      - `pub fn show(e: &Expr) -> String`: fully parenthesized text, e.g. `(1 + (2 * 3))`, `-(4)`, numbers with `{}` formatting.
+      - `pub fn depth(e: &Expr) -> usize`: a number has depth 1; others are 1 + the deepest child.
+      - Helper constructors `pub fn num(v: f64) -> Expr`, `pub fn add(a: Expr, b: Expr) -> Expr`, `pub fn mul(a: Expr, b: Expr) -> Expr` that do the boxing.
+    examples:
+      - input: "eval(&add(num(1.0), mul(num(2.0), num(3.0))))"
+        output: "Ok(7.0)"
+      - input: "show(&add(num(1.0), mul(num(2.0), num(3.0))))"
+        output: "\"(1 + (2 * 3))\""
+    hints:
+      - "`Expr::Add(a, b) => Ok(eval(a)? + eval(b)?)`: `a` is a `&Box<Expr>`, which coerces to `&Expr`."
+      - "In `Div`, compute the divisor first and return the error if it is `0.0`."
+      - "`add(a, b)` is `Expr::Add(Box::new(a), Box::new(b))`."
+    rust:
+      starter: |
+        #[derive(Debug, Clone, PartialEq)]
+        pub enum Expr {
+            Num(f64),
+            Add(Box<Expr>, Box<Expr>),
+            Mul(Box<Expr>, Box<Expr>),
+            Div(Box<Expr>, Box<Expr>),
+            Neg(Box<Expr>),
+        }
+
+        pub fn num(v: f64) -> Expr {
+            todo!()
+        }
+
+        pub fn add(a: Expr, b: Expr) -> Expr {
+            todo!()
+        }
+
+        pub fn mul(a: Expr, b: Expr) -> Expr {
+            todo!()
+        }
+
+        pub fn eval(e: &Expr) -> Result<f64, String> {
+            todo!()
+        }
+
+        pub fn show(e: &Expr) -> String {
+            todo!()
+        }
+
+        pub fn depth(e: &Expr) -> usize {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        fn sample() -> Expr {
+            add(num(1.0), mul(num(2.0), num(3.0)))
+        }
+
+        #[test]
+        fn evaluates() {
+            assert_eq!(eval(&sample()), Ok(7.0));
+            assert_eq!(eval(&Expr::Neg(Box::new(num(4.0)))), Ok(-4.0));
+            assert_eq!(eval(&Expr::Div(Box::new(num(1.0)), Box::new(num(4.0)))), Ok(0.25));
+        }
+
+        #[test]
+        fn division_by_zero() {
+            let e = add(num(1.0), Expr::Div(Box::new(num(1.0)), Box::new(add(num(2.0), num(-2.0)))));
+            assert_eq!(eval(&e), Err(String::from("division by zero")));
+        }
+
+        #[test]
+        fn shows() {
+            assert_eq!(show(&sample()), "(1 + (2 * 3))");
+            assert_eq!(show(&Expr::Neg(Box::new(num(4.5)))), "-(4.5)");
+            assert_eq!(show(&Expr::Div(Box::new(num(1.0)), Box::new(num(2.0)))), "(1 / 2)");
+        }
+
+        #[test]
+        fn depths() {
+            assert_eq!(depth(&num(1.0)), 1);
+            assert_eq!(depth(&sample()), 3);
+        }
+
+        #[test]
+        fn helpers_box() {
+            assert_eq!(add(num(1.0), num(2.0)), Expr::Add(Box::new(Expr::Num(1.0)), Box::new(Expr::Num(2.0))));
+        }
+      solution: |
+        #[derive(Debug, Clone, PartialEq)]
+        pub enum Expr {
+            Num(f64),
+            Add(Box<Expr>, Box<Expr>),
+            Mul(Box<Expr>, Box<Expr>),
+            Div(Box<Expr>, Box<Expr>),
+            Neg(Box<Expr>),
+        }
+
+        pub fn num(v: f64) -> Expr {
+            Expr::Num(v)
+        }
+
+        pub fn add(a: Expr, b: Expr) -> Expr {
+            Expr::Add(Box::new(a), Box::new(b))
+        }
+
+        pub fn mul(a: Expr, b: Expr) -> Expr {
+            Expr::Mul(Box::new(a), Box::new(b))
+        }
+
+        pub fn eval(e: &Expr) -> Result<f64, String> {
+            match e {
+                Expr::Num(v) => Ok(*v),
+                Expr::Add(a, b) => Ok(eval(a)? + eval(b)?),
+                Expr::Mul(a, b) => Ok(eval(a)? * eval(b)?),
+                Expr::Div(a, b) => {
+                    let d = eval(b)?;
+                    if d == 0.0 {
+                        return Err(String::from("division by zero"));
+                    }
+                    Ok(eval(a)? / d)
+                }
+                Expr::Neg(a) => Ok(-eval(a)?),
+            }
+        }
+
+        pub fn show(e: &Expr) -> String {
+            match e {
+                Expr::Num(v) => format!("{v}"),
+                Expr::Add(a, b) => format!("({} + {})", show(a), show(b)),
+                Expr::Mul(a, b) => format!("({} * {})", show(a), show(b)),
+                Expr::Div(a, b) => format!("({} / {})", show(a), show(b)),
+                Expr::Neg(a) => format!("-({})", show(a)),
+            }
+        }
+
+        pub fn depth(e: &Expr) -> usize {
+            match e {
+                Expr::Num(_) => 1,
+                Expr::Add(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) => 1 + depth(a).max(depth(b)),
+                Expr::Neg(a) => 1 + depth(a),
+            }
+        }
+    solution_explain: "Every recursive call passes a `&Box<Expr>` where `&Expr` is expected; deref coercion converts it. Interpreters and compilers represent programs with exactly this kind of boxed tree, called an abstract syntax tree."
+
+  - type: quiz
+    id: ch15-quiz-box
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What makes a smart pointer different from a reference?"
+        options: ["It is faster", "It owns the data it points to and may add behavior", "It can be null", "It cannot be dereferenced"]
+        answer: 1
+        explanation: "String and Vec are smart pointers."
+      - type: single
+        q: "Why does `enum List { Cons(i32, List), Nil }` not compile?"
+        options: ["Enums cannot hold i32", "Its size would be infinite", "Nil is a keyword", "Lists need generics"]
+        answer: 1
+        explanation: "Add indirection with Box."
+      - type: single
+        q: "How big is a `Box<[u8; 1000]>` value itself on a 64-bit machine?"
+        options: ["1000 bytes", "8 bytes", "1008 bytes", "It depends on the contents"]
+        answer: 1
+        explanation: "The array is on the heap; the box is a pointer."
+      - type: multi
+        q: "When is Box a good choice?"
+        options: ["Recursive types", "Moving large data without copying it", "Storing a value of some type that implements a trait", "Sharing one value between several owners"]
+        answer: [0, 1, 2]
+        explanation: "Shared ownership needs Rc (lesson 3)."
+      - type: single
+        q: "What is a fat pointer?"
+        options: ["A pointer to a large value", "A pointer with extra data, like a slice's address plus length", "A Box", "A null pointer"]
+        answer: 1
+        explanation: "&[T] and &str are fat pointers."
+
+  - type: summary
+    points:
+      - "Pointers hold addresses; references borrow, smart pointers own, raw pointers are unchecked."
+      - "`Box<T>` puts a value on the heap and frees it when the box goes out of scope."
+      - "Recursive types need indirection: `Cons(i32, Box<List>)` has a known size."
+      - "Boxes also move big data cheaply and hold trait objects."
+terms:
+  - term: pointer
+    def: "A value holding the memory address of other data."
+  - term: smart pointer
+    def: "A struct that acts like a pointer, owns its data, and adds behavior through Deref and Drop."
+  - term: "Box<T>"
+    def: "A smart pointer that owns a value stored on the heap."
+  - term: recursive type
+    def: "A type that contains a value of itself, which needs indirection to have a known size."
+  - term: cons list
+    def: "A linked list made of nested pairs of a value and the rest of the list."
+  - term: fat pointer
+    def: "A pointer that carries extra data, such as a length, besides the address."

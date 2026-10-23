@@ -1,0 +1,213 @@
+title: "Arguments and files"
+summary: "Starting minigrep: what grep does, reading command-line arguments with std::env::args, saving them in variables, and reading a file into a String."
+minutes: 20
+source:
+  chapter: ch12
+  sections: ["TRPL 12 An I/O Project: Building a Command Line Program", "TRPL 12.1 Accepting Command Line Arguments", "TRPL 12.1 Reading the Argument Values", "TRPL 12.1 Saving the Argument Values in Variables", "TRPL 12.2 Reading a File", "PR ch2 Handling Command-Line Arguments"]
+blocks:
+  - type: text
+    md: |
+      This chapter is a project that puts chapters 7 to 11 to work: modules, collections, error handling, traits and lifetimes, and tests. You build **`minigrep`**, a small version of the classic tool `grep` ("**g**lobally search a **r**egular **e**xpression and **p**rint"). Given a query and a file, it prints every line of the file that contains the query:
+
+      ```bash
+      $ cargo run -- frog poem.txt
+      How public, like a frog
+      ```
+
+      Command-line tools are where Rust shines: fast, a single binary, safe, and portable. Start a project:
+
+      ```bash
+      $ cargo new minigrep
+      $ cd minigrep
+      ```
+
+  - type: text
+    title: Reading the arguments
+    md: |
+      `std::env::args()` returns an **iterator** over the command-line arguments. Calling `.collect()` turns it into a collection; because `collect` can build many kinds of collections, annotate the type you want:
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    code: |
+      use std::env;
+
+      fn main() {
+          let args: Vec<String> = env::args().collect();
+          dbg!(&args);
+      }
+
+  - type: code
+    lang: bash
+    code: |
+      $ cargo run -- needle haystack
+      [src/main.rs:5:5] &args = [
+          "target/debug/minigrep",
+          "needle",
+          "haystack",
+      ]
+    explain: "The first element is the program's own path, which lets programs print their name in messages. The `--` tells Cargo that the following arguments are for your program, not for Cargo."
+
+  - type: callout
+    kind: warning
+    title: Invalid Unicode
+    md: "`env::args` panics if an argument is not valid Unicode, which can happen on some systems. If your tool must accept any bytes, use `env::args_os`, which yields `OsString` values instead. For minigrep, `args` is fine."
+
+  - type: text
+    title: Saving the values and reading the file
+    md: |
+      Index the vector to name the two arguments. Then read the file with **`fs::read_to_string`**, which returns `Result<String, io::Error>`. For now, `expect` handles errors; lesson 2 improves that.
+
+      Create `poem.txt` in the project root, next to `Cargo.toml`, with Emily Dickinson's poem:
+
+      ```text
+      I'm nobody! Who are you?
+      Are you nobody, too?
+      Then there's a pair of us - don't tell!
+      They'd banish us, you know.
+
+      How dreary to be somebody!
+      How public, like a frog
+      To tell your name the livelong day
+      To an admiring bog!
+      ```
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    code: |
+      use std::env;
+      use std::fs;
+
+      fn main() {
+          let args: Vec<String> = env::args().collect();
+
+          let query = &args[1];
+          let file_path = &args[2];
+
+          println!("Searching for {query}");
+          println!("In file {file_path}");
+
+          let contents = fs::read_to_string(file_path)
+              .expect("Should have been able to read the file");
+
+          println!("With text:\n{contents}");
+      }
+
+  - type: code
+    lang: bash
+    code: |
+      $ cargo run -- the poem.txt
+      Searching for the
+      In file poem.txt
+      With text:
+      I'm nobody! Who are you?
+      Are you nobody, too?
+      ...
+
+  - type: text
+    title: What is wrong with this code
+    md: |
+      It works, but it has problems that grow with the program, and fixing them is the topic of the next lesson:
+
+      1. `main` does everything: parses arguments, reads the file, and (soon) searches. It will be hard to test and to read.
+      2. `query` and `file_path` are configuration, but they are loose variables.
+      3. Running with too few arguments panics with `index out of bounds`, which tells the user nothing.
+      4. Every error is an `expect` panic, in different places.
+
+  - type: playground
+    id: ch12-play-args
+    title: "Arguments without panics"
+    lang: rust
+    md: |
+      The console cannot pass real command-line arguments, so `main` simulates three different `args` vectors. Write `parse_args`, which returns the query and file path or an error message when there are too few arguments. Indexing past the end would panic; check the length first.
+    task: "Print `ok: query=frog file=poem.txt`, then `error: not enough arguments` twice."
+    code: |
+      fn parse_args(args: &[String]) -> Result<(String, String), String> {
+          let query = args[1].clone();
+          let file_path = args[2].clone();
+          Ok((query, file_path))
+      }
+
+      fn main() {
+          let runs = [
+              vec!["minigrep", "frog", "poem.txt"],
+              vec!["minigrep", "frog"],
+              vec!["minigrep"],
+          ];
+          for run in runs {
+              let args: Vec<String> = run.iter().map(|s| s.to_string()).collect();
+              match parse_args(&args) {
+                  Ok((q, f)) => println!("ok: query={q} file={f}"),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+      }
+    starter_ok: panic
+    expected_output: |
+      ok: query=frog file=poem.txt
+      error: not enough arguments
+      error: not enough arguments
+    solution_code: |
+      fn parse_args(args: &[String]) -> Result<(String, String), String> {
+          if args.len() < 3 {
+              return Err(String::from("not enough arguments"));
+          }
+          let query = args[1].clone();
+          let file_path = args[2].clone();
+          Ok((query, file_path))
+      }
+
+      fn main() {
+          let runs = [
+              vec!["minigrep", "frog", "poem.txt"],
+              vec!["minigrep", "frog"],
+              vec!["minigrep"],
+          ];
+          for run in runs {
+              let args: Vec<String> = run.iter().map(|s| s.to_string()).collect();
+              match parse_args(&args) {
+                  Ok((q, f)) => println!("ok: query={q} file={f}"),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+      }
+    hints:
+      - "`if args.len() < 3 { return Err(String::from(\"not enough arguments\")); }` before indexing."
+
+  - type: quiz
+    id: ch12-quiz-args
+    title: Check yourself
+    questions:
+      - type: single
+        q: "For `cargo run -- frog poem.txt`, what is `args[0]`?"
+        options: ["\"frog\"", "\"poem.txt\"", "The path of the program, like \"target/debug/minigrep\"", "\"cargo\""]
+        answer: 2
+        explanation: "The query is args[1]."
+      - type: single
+        q: "Why does `let args = env::args().collect();` need a type annotation?"
+        options: ["args are always strings", "collect can build many collection types, so Rust needs to know which one", "It does not", "Because of lifetimes"]
+        answer: 1
+        explanation: "Write `let args: Vec<String> = ...`."
+      - type: single
+        q: "What does `fs::read_to_string(path)` return?"
+        options: ["`String`", "`Result<String, io::Error>`", "`Option<String>`", "`&str`"]
+        answer: 1
+        explanation: "Reading can fail: missing file, permissions, invalid UTF-8."
+      - type: single
+        q: "In `cargo run -- frog poem.txt`, what is `--` for?"
+        options: ["Comments", "It separates Cargo's arguments from the program's", "It enables release mode", "It is required by grep"]
+        answer: 1
+        explanation: "Everything after it goes to your program."
+
+  - type: summary
+    points:
+      - "`env::args().collect::<Vec<String>>()` gives the arguments; index 0 is the program path."
+      - "`fs::read_to_string` reads a whole file into a `String`, returning a `Result`."
+      - "Indexing args without checking the length panics with an unhelpful message."
+      - "A `main` that does everything is hard to test; the next lesson splits it up."
+terms:
+  - term: command-line arguments
+    def: "Words typed after the program name, available through std::env::args."
+  - term: grep
+    def: "A classic Unix tool that prints lines of input that match a pattern."

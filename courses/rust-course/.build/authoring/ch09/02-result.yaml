@@ -1,0 +1,485 @@
+title: "Recoverable errors with Result"
+summary: "Result<T, E>, matching on the kind of error, unwrap and expect, combinators like map_err and unwrap_or_else, the ? operator, ? in main, your own error enum with Display and From, and Box<dyn Error>."
+minutes: 40
+source:
+  chapter: ch09
+  sections: ["TRPL 9.2 Recoverable Errors with Result", "TRPL 9.2 Matching on Different Errors", "TRPL 9.2 Shortcuts for Panic on Error", "TRPL 9.2 Propagating Errors", "TRPL 9.2 A Shortcut for Propagating Errors: the ? Operator", "TRPL 9.2 Where the ? Operator Can Be Used", "PR ch7 Result", "PR ch7 Catching Errors", "PR ch7 Result Type Aliases", "PR ch7 Printing Errors", "PR ch7 Propagating Errors", "PR ch7 Working with Multiple Error Types", "PR ch7 Declaring a Custom Error Type", "PR ch7 Why Results?", "CR Day 4 Error Handling"]
+blocks:
+  - type: text
+    md: |
+      Most failures are not bugs. A file may be missing; text may not be a number. A function that can fail in an expected way returns a **`Result`**:
+
+      ```rust
+      enum Result<T, E> {
+          Ok(T),
+          Err(E),
+      }
+      ```
+
+      `T` is the type of the value on success and `E` the type of the error. Like `Option`, `Result` is in the prelude, and the compiler will not let you use the `T` until you have dealt with the possibility of `Err`.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          for text in ["42", "-7", "forty-two", ""] {
+              match text.parse::<i32>() {
+                  Ok(n) => println!("{text:?} -> {n}"),
+                  Err(e) => println!("{text:?} -> error: {e}"),
+              }
+          }
+      }
+    output: |
+      "42" -> 42
+      "-7" -> -7
+      "forty-two" -> error: invalid digit found in string
+      "" -> error: cannot parse integer from empty string
+    explain: "`parse::<i32>()` returns `Result<i32, ParseIntError>`. The error value describes what went wrong and can be printed with `{}`."
+
+  - type: text
+    title: Matching on the kind of error
+    md: |
+      Errors often carry a **kind** you can match on. Opening a file returns `Result<File, io::Error>`, and `io::Error` has a `kind()` method. *The Rust Programming Language* uses this to create the file when it is missing but give up on any other error, such as missing permissions:
+
+  - type: code
+    lang: rust
+    code: |
+      use std::fs::File;
+      use std::io::ErrorKind;
+
+      fn main() {
+          let greeting_file = match File::open("hello.txt") {
+              Ok(file) => file,
+              Err(error) => match error.kind() {
+                  ErrorKind::NotFound => match File::create("hello.txt") {
+                      Ok(fc) => fc,
+                      Err(e) => panic!("Problem creating the file: {e:?}"),
+                  },
+                  _ => panic!("Problem opening the file: {error:?}"),
+              },
+          };
+          println!("{greeting_file:?}");
+      }
+    explain: "It works, but three nested `match`es are a lot of noise. The tools below shorten code like this considerably."
+
+  - type: text
+    title: unwrap and expect
+    md: |
+      When an error would mean a bug, or in quick prototypes and tests, two shortcuts turn an `Err` into a panic:
+
+      - `.unwrap()` returns the `Ok` value or panics with a generic message.
+      - `.expect("why this should work")` does the same with your message. Prefer `expect` in real code, and phrase the message as the reason you believe it cannot fail: `.expect("hello.txt should be included in this project")`. Future readers, including you, will thank you.
+
+  - type: table
+    title: Handling a Result without match
+    headers: ["Method", "On Ok(v)", "On Err(e)"]
+    rows:
+      - ["`unwrap()` / `expect(msg)`", "`v`", "panic"]
+      - ["`unwrap_or(default)`", "`v`", "`default`"]
+      - ["`unwrap_or_else(|e| ...)`", "`v`", "the closure's result, computed from `e`"]
+      - ["`map(|v| ...)`", "`Ok(f(v))`", "`Err(e)` unchanged"]
+      - ["`map_err(|e| ...)`", "`Ok(v)` unchanged", "`Err(f(e))`: convert the error"]
+      - ["`ok()`", "`Some(v)`", "`None` (the error is dropped)"]
+      - ["`is_ok()` / `is_err()`", "`true` / `false`", "`false` / `true`"]
+
+  - type: text
+    title: Propagating errors
+    md: |
+      Often the function that hits an error is not the right place to decide what to do about it. It should hand the error to its caller: **propagate** it. Written out with `match`, that looks like this:
+
+  - type: code
+    lang: rust
+    code: |
+      use std::fs::File;
+      use std::io::{self, Read};
+
+      fn read_username_from_file() -> Result<String, io::Error> {
+          let mut username_file = match File::open("hello.txt") {
+              Ok(file) => file,
+              Err(e) => return Err(e),
+          };
+          let mut username = String::new();
+          match username_file.read_to_string(&mut username) {
+              Ok(_) => Ok(username),
+              Err(e) => Err(e),
+          }
+      }
+
+  - type: text
+    title: The ? operator
+    md: |
+      Propagating is so common that Rust has an operator for it. Put **`?`** after an expression that returns a `Result`: if it is `Ok(v)`, the expression evaluates to `v` and the function continues; if it is `Err(e)`, the function **returns `Err(e)` immediately**. The function above shrinks to:
+
+  - type: code
+    lang: rust
+    code: |
+      use std::fs;
+      use std::io::{self, Read};
+
+      fn read_username_from_file() -> Result<String, io::Error> {
+          let mut username = String::new();
+          fs::File::open("hello.txt")?.read_to_string(&mut username)?;
+          Ok(username)
+      }
+
+      // and since this is so common, the standard library has it as one call:
+      fn read_username_short() -> Result<String, io::Error> {
+          fs::read_to_string("hello.txt")
+      }
+    explain: "`?` chains: `File::open(...)?` gives a `File`, on which `read_to_string` is called, and its result is checked by the second `?`. The `Read` trait must be in scope to call `read_to_string` on a file."
+
+  - type: callout
+    kind: key
+    title: "? also converts the error"
+    md: "When the error types differ, `?` calls `From::from` on the error to convert it into the function's error type. That is how one function can use `?` on a parse error and an I/O error and return a single error type of its own. You will build such a type below."
+
+  - type: text
+    title: Where ? can be used
+    md: |
+      `?` returns early, so it can only be used in a function whose return type it can return into: `Result` (or `Option`, where `?` on `None` returns `None`). Using `?` in a function that returns `()` is a compile error. `main` may return `Result<(), E>`: if it returns `Err`, the program prints the error and exits with a non-zero status.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::num::ParseIntError;
+
+      fn sum_args(args: &[&str]) -> Result<i64, ParseIntError> {
+          let mut total = 0;
+          for a in args {
+              total += a.trim().parse::<i64>()?;
+          }
+          Ok(total)
+      }
+
+      fn last_char_of_first_line(text: &str) -> Option<char> {
+          text.lines().next()?.chars().last()
+      }
+
+      fn main() -> Result<(), ParseIntError> {
+          println!("{}", sum_args(&["1", " 2", "39 "])?);
+          println!("{:?}", last_char_of_first_line("Hello, world\nHow are you"));
+          println!("{:?}", last_char_of_first_line(""));
+          println!("{}", sum_args(&["1", "two"])?);
+          println!("not reached");
+          Ok(())
+      }
+    output: |
+      42
+      Some('d')
+      None
+    explain: "Then the last `sum_args` fails, so `main` returns early and Rust prints `Error: ParseIntError { kind: InvalidDigit }` to standard error, and the exit code is 1. In `last_char_of_first_line`, `?` on the `Option` returned by `next()` returns `None` early for empty text. When `main` returns `Err`, Rust prints `Error:` and the error's debug form."
+
+  - type: playground
+    id: ch09-play-question
+    title: "Replace match with ?"
+    lang: rust
+    md: |
+      `parse_pair` turns `"3x4"` into `(3, 4)`. Rewrite its body using `?` so there is no `match` left. The output must stay the same. Hint: `split_once` returns an `Option`, and `ok_or` turns an `Option` into a `Result` with the error you give it.
+    task: "Rewrite parse_pair without match; the output stays `Ok((3, 4))`, `Err(\"missing x\")`, `Err(\"bad number\")`."
+    code: |
+      fn parse_pair(s: &str) -> Result<(u32, u32), String> {
+          let (a, b) = match s.split_once('x') {
+              Some(parts) => parts,
+              None => return Err(String::from("missing x")),
+          };
+          let a = match a.parse::<u32>() {
+              Ok(n) => n,
+              Err(_) => return Err(String::from("bad number")),
+          };
+          let b = match b.parse::<u32>() {
+              Ok(n) => n,
+              Err(_) => return Err(String::from("bad number")),
+          };
+          Ok((a, b))
+      }
+
+      fn main() {
+          println!("{:?}", parse_pair("3x4"));
+          println!("{:?}", parse_pair("34"));
+          println!("{:?}", parse_pair("3xfour"));
+      }
+    hints:
+      - "`let (a, b) = s.split_once('x').ok_or(String::from(\"missing x\"))?;`"
+      - "`let a = a.parse::<u32>().map_err(|_| String::from(\"bad number\"))?;` and the same for `b`."
+      - "There is no automatic output check here because the output does not change: compare the shape of the code."
+
+  - type: text
+    title: Your own error type
+    md: |
+      A function that can fail in several ways should return an error type that names those ways. The idiomatic shape is an **enum** with one variant per cause, plus two trait implementations:
+
+      - `Display`, so the error can be shown to a user with `{}`;
+      - `From<OtherError>` for each underlying error, so `?` converts automatically.
+
+      Implementing `std::error::Error` too (an empty `impl` is enough) lets your type work with any code that accepts errors in general. Traits get their own lesson in chapter 10; here is the pattern to copy:
+
+  - type: code
+    lang: rust
+    code: |
+      use std::fmt;
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      enum ConfigError {
+          Missing(String),
+          BadNumber(ParseIntError),
+      }
+
+      impl fmt::Display for ConfigError {
+          fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+              match self {
+                  ConfigError::Missing(key) => write!(f, "missing setting: {key}"),
+                  ConfigError::BadNumber(e) => write!(f, "bad number: {e}"),
+              }
+          }
+      }
+
+      impl std::error::Error for ConfigError {}
+
+      impl From<ParseIntError> for ConfigError {
+          fn from(e: ParseIntError) -> Self {
+              ConfigError::BadNumber(e)
+          }
+      }
+
+      fn threads(setting: Option<&str>) -> Result<u32, ConfigError> {
+          let text = setting.ok_or(ConfigError::Missing(String::from("threads")))?;
+          let n: u32 = text.parse()?; // ParseIntError -> ConfigError via From
+          Ok(n)
+      }
+
+      fn main() {
+          for s in [Some("8"), None, Some("eight")] {
+              match threads(s) {
+                  Ok(n) => println!("using {n} threads"),
+                  Err(e) => println!("error: {e}"),
+              }
+          }
+      }
+    output: |
+      using 8 threads
+      error: missing setting: threads
+      error: bad number: invalid digit found in string
+
+  - type: text
+    title: Box<dyn Error> for applications
+    md: |
+      Writing an error enum is right for libraries, whose callers may want to react to each cause. In an application's `main` or in quick tools, you often only want to report whatever went wrong. Then use `Box<dyn std::error::Error>`: "a pointer to any kind of error". `?` converts any error type into it.
+
+      ```rust
+      use std::error::Error;
+
+      fn main() -> Result<(), Box<dyn Error>> {
+          let text = std::fs::read_to_string("numbers.txt")?; // io::Error
+          let n: i64 = text.trim().parse()?;                  // ParseIntError
+          println!("{}", n * 2);
+          Ok(())
+      }
+      ```
+
+      The `anyhow` (applications) and `thiserror` (libraries) crates are widely used to remove the boilerplate of both approaches; they build on exactly the traits shown here.
+
+  - type: exercise
+    id: ch09-ex-result
+    exercise_dir: ch09-errors
+    title: "A parser that explains its errors"
+    difficulty: hard
+    goal: "Build an error enum, make ? convert into it, and propagate errors through several functions."
+    behavior: |
+      Parse lines like `"temp 21.5"` (a sensor name, a space, a reading).
+      - `pub enum ReadingError { Empty, NoValue(String), BadValue(std::num::ParseFloatError), OutOfRange(f64) }` (already defined).
+      - Implement `std::fmt::Display` for it: `"empty line"`, `"no value for <name>"`, `"bad value: <parse error>"`, `"out of range: <value>"`.
+      - Implement `From<std::num::ParseFloatError>` for `ReadingError` (producing `BadValue`).
+      - `pub fn parse_reading(line: &str) -> Result<(String, f64), ReadingError>`: trims the line; empty → `Empty`; no space → `NoValue(name)`; value not a float → `BadValue` (use `?`); value outside -50.0..=150.0 → `OutOfRange(v)`.
+      - `pub fn average(lines: &[&str]) -> Result<f64, ReadingError>`: the mean of all readings; the first error stops it and is returned. An empty list gives `Err(ReadingError::Empty)`.
+    examples:
+      - input: "parse_reading(\"temp 21.5\")"
+        output: "Ok((\"temp\", 21.5))"
+      - input: "parse_reading(\"temp\").unwrap_err().to_string()"
+        output: "\"no value for temp\""
+      - input: "average(&[\"a 10\", \"b 20\"])"
+        output: "Ok(15.0)"
+    hints:
+      - "`impl fmt::Display for ReadingError { fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { match self { ... => write!(f, \"...\") } } }`"
+      - "`let Some((name, value)) = line.split_once(' ') else { return Err(ReadingError::NoValue(line.to_string())); };`"
+      - "`let v: f64 = value.trim().parse()?;` works once `From<ParseFloatError>` is implemented."
+      - "`average`: `let (_, v) = parse_reading(line)?;` inside the loop."
+    rust:
+      starter: |
+        use std::fmt;
+        use std::num::ParseFloatError;
+
+        #[derive(Debug, PartialEq)]
+        pub enum ReadingError {
+            Empty,
+            NoValue(String),
+            BadValue(ParseFloatError),
+            OutOfRange(f64),
+        }
+
+        // impl fmt::Display for ReadingError { ... }
+
+        // impl From<ParseFloatError> for ReadingError { ... }
+
+        /// "name value" -> (name, value), with checks.
+        pub fn parse_reading(line: &str) -> Result<(String, f64), ReadingError> {
+            todo!()
+        }
+
+        /// The mean of all readings, or the first error.
+        pub fn average(lines: &[&str]) -> Result<f64, ReadingError> {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn good_readings() {
+            assert_eq!(parse_reading("temp 21.5"), Ok((String::from("temp"), 21.5)));
+            assert_eq!(parse_reading("  hum   40 "), Ok((String::from("hum"), 40.0)), "extra spaces");
+        }
+
+        #[test]
+        fn error_variants() {
+            assert_eq!(parse_reading("   "), Err(ReadingError::Empty));
+            assert_eq!(parse_reading("temp"), Err(ReadingError::NoValue(String::from("temp"))));
+            assert!(matches!(parse_reading("temp hot"), Err(ReadingError::BadValue(_))), "not a number");
+            assert_eq!(parse_reading("temp 200"), Err(ReadingError::OutOfRange(200.0)));
+            assert_eq!(parse_reading("temp -50"), Ok((String::from("temp"), -50.0)), "the range is inclusive");
+        }
+
+        #[test]
+        fn messages() {
+            assert_eq!(ReadingError::Empty.to_string(), "empty line");
+            assert_eq!(parse_reading("temp").unwrap_err().to_string(), "no value for temp");
+            assert_eq!(parse_reading("t x").unwrap_err().to_string(), "bad value: invalid float literal");
+            assert_eq!(parse_reading("t 151").unwrap_err().to_string(), "out of range: 151");
+        }
+
+        #[test]
+        fn question_mark_converts() {
+            let e: ReadingError = "x".parse::<f64>().unwrap_err().into();
+            assert!(matches!(e, ReadingError::BadValue(_)), "From<ParseFloatError> is implemented");
+        }
+
+        #[test]
+        fn averages() {
+            assert_eq!(average(&["a 10", "b 20"]), Ok(15.0));
+            assert_eq!(average(&[]), Err(ReadingError::Empty));
+            assert_eq!(average(&["a 10", "b", "c 999"]), Err(ReadingError::NoValue(String::from("b"))), "first error wins");
+        }
+      solution: |
+        use std::fmt;
+        use std::num::ParseFloatError;
+
+        #[derive(Debug, PartialEq)]
+        pub enum ReadingError {
+            Empty,
+            NoValue(String),
+            BadValue(ParseFloatError),
+            OutOfRange(f64),
+        }
+
+        impl fmt::Display for ReadingError {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                match self {
+                    ReadingError::Empty => write!(f, "empty line"),
+                    ReadingError::NoValue(name) => write!(f, "no value for {name}"),
+                    ReadingError::BadValue(e) => write!(f, "bad value: {e}"),
+                    ReadingError::OutOfRange(v) => write!(f, "out of range: {v}"),
+                }
+            }
+        }
+
+        impl std::error::Error for ReadingError {}
+
+        impl From<ParseFloatError> for ReadingError {
+            fn from(e: ParseFloatError) -> Self {
+                ReadingError::BadValue(e)
+            }
+        }
+
+        /// "name value" -> (name, value), with checks.
+        pub fn parse_reading(line: &str) -> Result<(String, f64), ReadingError> {
+            let line = line.trim();
+            if line.is_empty() {
+                return Err(ReadingError::Empty);
+            }
+            let Some((name, value)) = line.split_once(' ') else {
+                return Err(ReadingError::NoValue(line.to_string()));
+            };
+            let v: f64 = value.trim().parse()?;
+            if !(-50.0..=150.0).contains(&v) {
+                return Err(ReadingError::OutOfRange(v));
+            }
+            Ok((name.to_string(), v))
+        }
+
+        /// The mean of all readings, or the first error.
+        pub fn average(lines: &[&str]) -> Result<f64, ReadingError> {
+            if lines.is_empty() {
+                return Err(ReadingError::Empty);
+            }
+            let mut sum = 0.0;
+            for line in lines {
+                let (_, v) = parse_reading(line)?;
+                sum += v;
+            }
+            Ok(sum / lines.len() as f64)
+        }
+    solution_explain: "`?` on `parse()` converts the `ParseFloatError` into `ReadingError::BadValue` through the `From` implementation. `(-50.0..=150.0).contains(&v)` reads better than two comparisons. `average` gets early return on the first bad line for free from `?`."
+
+  - type: quiz
+    id: ch09-quiz-result
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What does `?` do when applied to `Err(e)` inside a function returning `Result<T, MyError>`?"
+        options: ["Panics", "Returns `Err(From::from(e))` from the function immediately", "Ignores the error and continues", "Returns `Ok(())`"]
+        answer: 1
+        explanation: "It returns early, converting the error with `From`."
+      - type: single
+        q: "Why does `fn main() { let n: i32 = \"5\".parse()?; }` not compile?"
+        options: ["`parse` does not return a Result", "`main` returns `()`, so `?` has nothing to return an error into", "`?` only works on Option", "`i32` cannot be parsed"]
+        answer: 1
+        explanation: "Declare `fn main() -> Result<(), Box<dyn Error>>` or handle the error."
+      - type: single
+        q: "What is `\"x\".parse::<i32>().unwrap_or(-1)`?"
+        options: ["`-1`", "`0`", "A panic", "`Err(-1)`"]
+        answer: 0
+        explanation: "On `Err`, `unwrap_or` returns the default."
+      - type: single
+        q: "Which converts a `Result<T, ParseIntError>` into a `Result<T, String>`?"
+        options: ["`.map(|e| e.to_string())`", "`.map_err(|e| e.to_string())`", "`.ok()`", "`.unwrap()`"]
+        answer: 1
+        explanation: "`map_err` transforms only the error."
+      - type: multi
+        q: "What does a good custom error type usually implement?"
+        options: ["`Debug`", "`Display`", "`From` for the errors it wraps", "`Copy`"]
+        answer: [0, 1, 2]
+        explanation: "Many errors wrap non-Copy data like Strings; `Copy` is not needed."
+      - type: single
+        q: "When is `Box<dyn Error>` a good error type?"
+        options: ["In a library whose callers need to match on each cause", "In an application's main or a quick tool that only reports errors", "Never", "Only for I/O errors"]
+        answer: 1
+        explanation: "It accepts any error, at the cost of callers not knowing which kinds can occur."
+
+  - type: summary
+    points:
+      - "`Result<T, E>` is `Ok(T)` or `Err(E)`; the compiler makes you handle the error before using the value."
+      - "`unwrap` and `expect` panic on `Err`; prefer `expect` with a message saying why it should not fail."
+      - "`unwrap_or`, `unwrap_or_else`, `map`, `map_err` and `ok` handle results without `match`."
+      - "`?` returns the error early and converts it with `From`; it works in functions returning `Result` or `Option`."
+      - "`main` can return `Result<(), E>`."
+      - "Libraries: an error enum with `Display`, `Error` and `From`. Applications: `Box<dyn Error>` is often enough."
+terms:
+  - term: "Result<T, E>"
+    def: "The enum Ok(T) | Err(E) returned by operations that can fail in expected ways."
+  - term: "? operator"
+    def: "Unwraps an Ok (or Some) value, or returns the error (converted with From) from the current function."
+  - term: propagating an error
+    def: "Returning an error to the caller instead of handling it where it occurred."
+  - term: "Box<dyn Error>"
+    def: "A boxed value of any type implementing std::error::Error; a catch-all error type."
+  - term: "From"
+    def: "The conversion trait that ? uses to turn one error type into another."

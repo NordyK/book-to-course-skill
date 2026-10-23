@@ -1,0 +1,7 @@
+title: "Files, Storage and I/O"
+summary: "How Rust reads and writes data: the Read, BufRead and Write traits, files and OpenOptions, paths and directories, buffering; binary formats with explicit byte order, a hexdump tool and checksums; and actionkv, a log-structured key-value store that survives crashes."
+goals:
+  - Read and write files and streams through the Read, BufRead and Write traits, with buffering
+  - Work with paths, directories and file metadata through std::fs and std::path
+  - Encode and decode binary records with a fixed byte order and verify them with a CRC32 checksum
+  - Build an append-only key-value store with an in-memory index, as in Rust in Action's actionkv

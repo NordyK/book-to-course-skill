@@ -1,0 +1,282 @@
+{
+  "title": "no_std: a tiny kernel and bare metal",
+  "summary": "What std is made of (core, alloc and the OS layer), freestanding programs with no_std and no_main, the panic handler and the _start entry point, Rust in Action's FledgeOS writing to the VGA text buffer with volatile writes, formatting without an allocator through core::fmt::Write, inline assembly, and how microcontroller crates use memory-mapped registers and the type-state pattern.",
+  "minutes": 40,
+  "source": {
+    "chapter": "ch24",
+    "sections": [
+      "RiA 11 Kernel",
+      "RiA 11.1 FledgeOS",
+      "RiA 11.1.4 Source code listings",
+      "RiA 11.1.5 Writing to the screen with VGA-compatible text mode",
+      "RiA 11.1.6 _start(), the main() function for FledgeOS",
+      "RiA 11.1.7 Being power conscious by interacting with the CPU",
+      "RiA 11.2 Nice output",
+      "RiA 11.2.1 Controlling the in-memory representation of enums",
+      "RiA 11.2.3 Creating a type that can print to the VGA frame buffer",
+      "RiA 11.3 Implementing a panic handler that reports the error to the user",
+      "CR XI Bare Metal: Morning",
+      "CR XII Bare Metal: Afternoon"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Every program so far ran on top of an operating system: `println!` asks the OS to write to a terminal, `Vec` asks an allocator for memory, `thread::spawn` asks the OS for a thread. A kernel, a bootloader or the firmware of a microcontroller has **no OS underneath**. Rust still works there, because the standard library is built in layers and you can stop at the lowest one.\n"
+    },
+    {
+      "type": "table",
+      "title": "The three layers of the standard library",
+      "headers": [
+        "Crate",
+        "Needs",
+        "Gives you"
+      ],
+      "rows": [
+        [
+          "`core`",
+          "nothing: no OS, no heap",
+          "primitive types, `Option`, `Result`, iterators, slices, `str`, `core::fmt`, atomics, `core::ptr`"
+        ],
+        [
+          "`alloc`",
+          "a global allocator you provide",
+          "`Box`, `Vec`, `String`, `Rc`, `Arc`, `BTreeMap`"
+        ],
+        [
+          "`std`",
+          "an operating system",
+          "files, networking, threads, time, `HashMap`, `println!`, processes"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "title": "A freestanding program",
+      "md": "`#![no_std]` at the top of a crate links `core` instead of `std`. A **library** can do this and still be used everywhere; many crates (`serde`, `heapless`) do, so they run on microcontrollers too. A **binary** with no OS also needs:\n\n- **`#![no_main]`**: there is no C runtime to call `main`, so we define the entry point ourselves.\n- **an entry point**: the linker looks for a symbol, `_start` on x86, called by the bootloader. It never returns (`-> !`): there is nobody to return to.\n- **`#[panic_handler]`**: `std` normally prints the message and unwinds; without it you decide what a panic does, usually print and halt.\n- **a target without an OS**, such as `x86_64-unknown-none` or `thumbv7em-none-eabihf` for ARM Cortex-M (`rustup target add ...`).\n\n*Rust in Action* builds **FledgeOS** this way, using the `bootloader` crate and `bootimage` to produce a disk image that boots in the QEMU emulator. Its first version, modernized for the 2024 edition:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/main.rs",
+      "code": "#![no_std]\n#![no_main]\n\nuse core::panic::PanicInfo;\n\n#[panic_handler]\nfn panic(_info: &PanicInfo) -> ! {\n    loop {}\n}\n\n#[unsafe(no_mangle)]\npub extern \"C\" fn _start() -> ! {\n    let framebuffer = 0xb8000 as *mut u8;\n    unsafe {\n        framebuffer.add(1).write_volatile(0x30); // background of the first cell: cyan\n    }\n    loop {\n        unsafe { core::arch::asm!(\"hlt\") }; // sleep until the next interrupt\n    }\n}\n",
+      "explain": "This only builds for a bare-metal target and runs under a bootloader, so it cannot run in the console. The rest of the lesson simulates the hardware in an ordinary program. `hlt` tells the CPU to sleep until an interrupt arrives, instead of spinning at 100%."
+    },
+    {
+      "type": "text",
+      "title": "VGA text mode",
+      "md": "When a PC boots in VGA-compatible text mode, the screen is a grid of **80 × 25** cells, and the hardware reads it from memory starting at address **`0xb8000`**: 2 bytes per cell, 4,000 bytes in all. Writing to that memory changes the screen. This is **memory-mapped I/O** (MMIO): device registers that look like ordinary memory addresses.\n"
+    },
+    {
+      "type": "table",
+      "title": "One VGA cell",
+      "headers": [
+        "Byte",
+        "Bits",
+        "Meaning"
+      ],
+      "rows": [
+        [
+          "0",
+          "0–7",
+          "the character, in code page 437 (ASCII plus box drawing)"
+        ],
+        [
+          "1",
+          "0–3",
+          "foreground color, 16 choices (bit 3 is \"bright\")"
+        ],
+        [
+          "1",
+          "4–6",
+          "background color, 8 choices"
+        ],
+        [
+          "1",
+          "7",
+          "blink (or bright background, depending on the mode)"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "md": "*Rust in Action* names the 16 colors with a `#[repr(u8)]` enum, so each variant has a fixed byte value and the compiler rejects colors that do not exist. Writes use **`write_volatile`**. An ordinary write to memory that the program never reads again could be removed by the optimizer; a **volatile** write is always performed, in order, which is what device memory needs. Here the 4,000 bytes are an array so the code can run in the console:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "#[allow(dead_code)]\n#[derive(Clone, Copy)]\n#[repr(u8)]\nenum Color {\n    Black = 0x0, Blue = 0x1, Green = 0x2, Cyan = 0x3,\n    Red = 0x4, Magenta = 0x5, Brown = 0x6, Gray = 0x7,\n    DarkGray = 0x8, BrightBlue = 0x9, BrightGreen = 0xA, BrightCyan = 0xB,\n    BrightRed = 0xC, BrightMagenta = 0xD, Yellow = 0xE, White = 0xF,\n}\n\nstruct Cursor {\n    position: usize,\n    foreground: Color,\n    background: Color,\n}\n\nimpl Cursor {\n    fn color(&self) -> u8 {\n        (self.foreground as u8) | ((self.background as u8) << 4)\n    }\n\n    fn print(&mut self, framebuffer: *mut u8, text: &[u8]) {\n        let color = self.color();\n        for &ch in text {\n            unsafe {\n                framebuffer.add(self.position).write_volatile(ch);\n                framebuffer.add(self.position + 1).write_volatile(color);\n            }\n            self.position += 2;\n        }\n    }\n}\n\nfn main() {\n    let mut memory = [0u8; 80 * 25 * 2]; // stands in for the 4,000 bytes at 0xb8000\n    let mut cursor = Cursor { position: 0, foreground: Color::BrightCyan, background: Color::Black };\n    cursor.print(memory.as_mut_ptr(), b\"Rust in Action\");\n    println!(\"{:02x?}\", &memory[..8]);\n    let text: String = memory[..28].chunks(2).map(|cell| cell[0] as char).collect();\n    println!(\"{text}\");\n}\n",
+      "output": "[52, 0b, 75, 0b, 73, 0b, 74, 0b]\nRust in Action\n",
+      "explain": "Each character byte (`0x52` is `R`) is followed by the attribute `0x0b`: bright cyan (`0xB`) on black (`0x0`). In FledgeOS the pointer is `0xb8000 as *mut u8` and the same code paints the screen."
+    },
+    {
+      "type": "text",
+      "title": "Formatting without std",
+      "md": "`println!` is in `std`, but formatting itself is in `core`. Any type that implements **`core::fmt::Write`** (one method, `write_str`) can be the target of `write!`, and `write!` handles `{}` and `{:?}` with no heap allocation. FledgeOS implements it for its cursor, which gives it formatted output and a panic handler that prints the `PanicInfo` message (`write!(cursor, \"{}\", info)`) before halting. Writing into a fixed buffer shows the idea:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use core::fmt::{self, Write};\n\nstruct Fixed<const N: usize> {\n    buf: [u8; N],\n    len: usize,\n}\n\nimpl<const N: usize> Write for Fixed<N> {\n    fn write_str(&mut self, s: &str) -> fmt::Result {\n        let bytes = s.as_bytes();\n        if self.len + bytes.len() > N {\n            return Err(fmt::Error);\n        }\n        self.buf[self.len..self.len + bytes.len()].copy_from_slice(bytes);\n        self.len += bytes.len();\n        Ok(())\n    }\n}\n\nfn main() {\n    let mut w = Fixed::<32> { buf: [0; 32], len: 0 };\n    write!(w, \"panicked at {}:{}\", \"main.rs\", 42).unwrap();\n    println!(\"{}\", core::str::from_utf8(&w.buf[..w.len]).unwrap());\n\n    let mut tiny = Fixed::<4> { buf: [0; 4], len: 0 };\n    println!(\"{:?}\", write!(tiny, \"{}\", 123456));\n}\n",
+      "output": "panicked at main.rs:42\nErr(Error)\n",
+      "explain": "Nothing here needs an allocator. The `heapless` crate offers `heapless::String<N>` and `Vec<T, N>` built the same way, with capacity fixed at compile time."
+    },
+    {
+      "type": "callout",
+      "kind": "note",
+      "title": "Inline assembly",
+      "md": "`core::arch::asm!` (stable since Rust 1.59) embeds machine instructions: `asm!(\"hlt\")` to sleep, or instructions with register operands such as `asm!(\"add {0}, {1}\", inout(reg) x, in(reg) y)`. It is always `unsafe`, and it is specific to one CPU architecture, so guard it with `#[cfg(target_arch = \"x86_64\")]`. *Rust in Action* used the older `core::intrinsics::abort` and LLVM intrinsics, which need nightly Rust."
+    },
+    {
+      "type": "text",
+      "title": "Bare metal microcontrollers",
+      "md": "*Comprehensive Rust*'s bare-metal days use a micro:bit (an ARM Cortex-M board). The same ideas apply, plus a set of community crates layered like `core` / `alloc` / `std`:\n\n- **`cortex-m-rt`** provides the reset handler and the `#[entry]` attribute for your `fn main() -> !`.\n- A **PAC** (peripheral access crate, generated by `svd2rust` from the chip vendor's description) gives a typed, volatile register for every peripheral address.\n- A **HAL** crate builds safe drivers (GPIO pins, timers, UART) on top of the PAC, implementing the **`embedded-hal`** traits so device drivers work on any chip.\n- **`#[global_allocator]`** plus `extern crate alloc` brings back `Vec` and `Box` when you have spare RAM.\n\nHALs model hardware states as types, the **type-state pattern** from chapter 18: a pin is `Pin<Input>` or `Pin<Output>`, and only an output pin has `set_high`. Configuring the pin consumes the old value, so using it in the wrong mode does not compile.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::marker::PhantomData;\n\nstruct Input;\nstruct Output;\n\nstruct Pin<Mode> {\n    number: u8,\n    _mode: PhantomData<Mode>,\n}\n\nimpl Pin<Input> {\n    fn new(number: u8) -> Self {\n        Pin { number, _mode: PhantomData }\n    }\n    fn into_output(self) -> Pin<Output> {\n        println!(\"pin {} configured as output\", self.number);\n        Pin { number: self.number, _mode: PhantomData }\n    }\n}\n\nimpl Pin<Output> {\n    fn set_high(&mut self) {\n        println!(\"pin {} high\", self.number);\n    }\n}\n\nfn main() {\n    let button = Pin::new(14);\n    let mut led = Pin::new(21).into_output();\n    led.set_high();\n    // button.set_high(); // error: no method `set_high` for `Pin<Input>`\n    let _ = button;\n    println!(\"size of a pin: {} byte\", size_of::<Pin<Output>>());\n}\n",
+      "output": "pin 21 configured as output\npin 21 high\nsize of a pin: 1 byte\n",
+      "explain": "`PhantomData<Mode>` takes no space, so the type-state costs nothing at run time: the check happened at compile time."
+    },
+    {
+      "type": "playground",
+      "id": "ch24-play-vga",
+      "title": "Newlines and wrapping on a tiny screen",
+      "lang": "rust",
+      "md": "The screen is 12 cells wide and 3 rows high; each cell is a `u16` holding the attribute in the high byte and the character in the low byte. `write_byte` currently writes every byte in a row. Make `\\n` move to the start of the next row, and make a byte that would go past the end of a row wrap to the next one.\n",
+      "task": "Print `|hello.......|`, `|kernel world|`, `|............|` and `attribute 0x0b`.",
+      "code": "const W: usize = 12;\nconst H: usize = 3;\n\nstruct Screen {\n    cells: [u16; W * H],\n    row: usize,\n    col: usize,\n    attr: u8,\n}\n\nimpl Screen {\n    fn write_byte(&mut self, b: u8) {\n        // TODO: handle b'\\n', and wrap when self.col == W\n        self.cells[self.row * W + self.col] = (self.attr as u16) << 8 | b as u16;\n        self.col += 1;\n    }\n\n    fn show(&self) {\n        for r in 0..H {\n            let line: String = self.cells[r * W..(r + 1) * W]\n                .iter()\n                .map(|&c| match (c & 0xff) as u8 {\n                    0 => '.',\n                    b if b < 0x20 => '?',\n                    b => b as char,\n                })\n                .collect();\n            println!(\"|{line}|\");\n        }\n    }\n}\n\nfn main() {\n    let mut s = Screen { cells: [0; W * H], row: 0, col: 0, attr: 0x0b };\n    for &b in b\"hello\\nkernel world\" {\n        s.write_byte(b);\n    }\n    s.show();\n    println!(\"attribute {:#04x}\", s.cells[0] >> 8);\n}\n",
+      "expected_output": "|hello.......|\n|kernel world|\n|............|\nattribute 0x0b\n",
+      "hints": [
+        "Add a `newline` method that does `self.row += 1; self.col = 0;`.",
+        "Wrap before writing: `if self.col == W { self.newline(); }`. Checking after writing would wrap one byte too early for a line that exactly fills the row."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch24-ex-vga",
+      "exercise_dir": "ch24-vga",
+      "title": "A no_std VGA text writer",
+      "difficulty": "hard",
+      "goal": "Write the screen driver of a tiny kernel as a no_std library: colors, cells, wrapping, scrolling and core::fmt::Write.",
+      "behavior": "The crate starts with `#![cfg_attr(not(test), no_std)]`, so only `core` is available outside tests. Implement:\n- `pub fn attribute(fg: Color, bg: Color) -> u8`: background in the high 4 bits, foreground in the low 4.\n- `pub fn cell(ch: u8, attr: u8) -> u16`: attribute in the high byte, character in the low byte.\n- `Writer::new(buf, width, height)`: panics if `buf.len() != width * height`; fills the buffer with blank cells (`b' '` in attribute `0x07`, gray on black), which is also the starting attribute; cursor at row 0, column 0.\n- `set_color(fg, bg)`, `position() -> (row, col)`.\n- `write_byte(b)`: `\\n` goes to the next row; printable ASCII (`0x20..=0x7e`) is written as is and any other byte as `0xfe` (a block). If the cursor is past the end of the row (`col == width`), wrap first. Going to the next row from the last row **scrolls**: every row moves up one, and the last row becomes blank cells in the current attribute.\n- `clear()`: blank cells in the current attribute, cursor to (0, 0).\n- `impl core::fmt::Write for Writer` writing each byte of the string.\n",
+      "examples": [
+        {
+          "input": "width 5, height 3, write!(w, \"ab\\ncdefgh\")",
+          "output": "rows \"ab   \", \"cdefg\", \"h    \"; position (2, 1)"
+        }
+      ],
+      "hints": [
+        "Write a private `newline(&mut self)`: if `row + 1 < height`, move down; otherwise `self.buf.copy_within(width.., 0)` and blank the last row.",
+        "`match b { b'\\n' => ..., 0x20..=0x7e => ..., _ => ... }` covers the three cases.",
+        "`write_str` is `for b in s.bytes() { self.write_byte(b) } Ok(())`."
+      ],
+      "solution_explain": "The writer only borrows a slice of cells, so the same code drives a test buffer or, in a kernel, a slice made from `0xb8000` (where you would switch the stores to `write_volatile`). Scrolling is one `copy_within` plus a `fill`. Wrapping lazily, only when the next byte arrives, keeps an exactly full line from leaving an empty row behind it."
+    },
+    {
+      "type": "quiz",
+      "id": "ch24-quiz-nostd",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which crate is available with `#![no_std]` and no allocator?",
+          "options": [
+            "std",
+            "alloc",
+            "core",
+            "none"
+          ],
+          "answer": 2,
+          "explanation": "core needs nothing from the platform."
+        },
+        {
+          "type": "single",
+          "q": "Why does a freestanding binary need `#![no_main]`?",
+          "options": [
+            "main is slow",
+            "No runtime calls main; we define the entry point such as _start",
+            "It enables unsafe",
+            "To skip the panic handler"
+          ],
+          "answer": 1,
+          "explanation": "The bootloader jumps to _start."
+        },
+        {
+          "type": "single",
+          "q": "Why use `write_volatile` for the VGA buffer?",
+          "options": [
+            "It is faster",
+            "The optimizer might remove ordinary writes the program never reads back",
+            "It is the only safe write",
+            "It writes two bytes"
+          ],
+          "answer": 1,
+          "explanation": "Device memory has side effects the compiler cannot see."
+        },
+        {
+          "type": "single",
+          "q": "What is the attribute byte for yellow (0xE) on blue (0x1)?",
+          "options": [
+            "0xe1",
+            "0x1e",
+            "0x0e",
+            "0xef"
+          ],
+          "answer": 1,
+          "explanation": "Background in the high nibble, foreground in the low."
+        },
+        {
+          "type": "single",
+          "q": "What lets `write!` work without std?",
+          "options": [
+            "alloc::format!",
+            "Implementing core::fmt::Write",
+            "println!",
+            "A global allocator"
+          ],
+          "answer": 1,
+          "explanation": "One method: write_str."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "std = core + alloc + the OS layer; no_std code uses core, plus alloc if you provide an allocator.",
+        "A freestanding binary needs no_main, an entry point such as _start that never returns, and a #[panic_handler].",
+        "VGA text mode is 80x25 two-byte cells at 0xb8000: character, then attribute.",
+        "Use write_volatile for memory-mapped I/O; #[repr(u8)] enums give names to hardware values.",
+        "core::fmt::Write gives formatted output with no heap.",
+        "Embedded Rust layers PAC, HAL and embedded-hal traits, and uses type-state to make misuse a compile error."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "no_std",
+      "def": "A crate attribute that links core instead of std, for code without an operating system."
+    },
+    {
+      "term": "freestanding binary",
+      "def": "A program that runs without an operating system or C runtime."
+    },
+    {
+      "term": "panic handler",
+      "def": "The function marked #[panic_handler] that decides what a panic does in a no_std program."
+    },
+    {
+      "term": "memory-mapped I/O",
+      "def": "Controlling hardware by reading and writing special memory addresses."
+    },
+    {
+      "term": "volatile access",
+      "def": "A memory read or write the compiler must perform exactly as written."
+    },
+    {
+      "term": "HAL",
+      "def": "Hardware abstraction layer: a crate with safe drivers for a chip's peripherals."
+    }
+  ]
+}

@@ -1,0 +1,353 @@
+{
+  "version": 1,
+  "created": "2026-10-23T02:32:57+00:00",
+  "updated": "2026-10-23T05:16:03+00:00",
+  "book": {
+    "title": "Rust: From First Program to Systems Programming",
+    "author": "Merged from 5 books (see .build/plan.md)",
+    "language": "en",
+    "source": "merged",
+    "format": "merged"
+  },
+  "ui_lang": "en",
+  "chapters": [
+    {
+      "id": "ch01",
+      "title": "Getting Started with Rust",
+      "words": 16584,
+      "file": "chapters/ch01.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch02",
+      "title": "Your First Program: a Guessing Game",
+      "words": 19409,
+      "file": "chapters/ch02.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch03",
+      "title": "Common Programming Concepts",
+      "words": 44758,
+      "file": "chapters/ch03.md",
+      "status": "done",
+      "lessons_built": 6,
+      "note": ""
+    },
+    {
+      "id": "ch04",
+      "title": "Ownership, Borrowing and Slices",
+      "words": 37714,
+      "file": "chapters/ch04.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch05",
+      "title": "Structs: Grouping Related Data",
+      "words": 26149,
+      "file": "chapters/ch05.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch06",
+      "title": "Enums and Pattern Matching",
+      "words": 19569,
+      "file": "chapters/ch06.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch07",
+      "title": "Packages, Crates and Modules",
+      "words": 24587,
+      "file": "chapters/ch07.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch08",
+      "title": "Common Collections and Text",
+      "words": 34694,
+      "file": "chapters/ch08.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch09",
+      "title": "Error Handling",
+      "words": 19474,
+      "file": "chapters/ch09.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch10",
+      "title": "Generics, Traits and Lifetimes",
+      "words": 41941,
+      "file": "chapters/ch10.md",
+      "status": "done",
+      "lessons_built": 5,
+      "note": ""
+    },
+    {
+      "id": "ch11",
+      "title": "Writing Automated Tests",
+      "words": 15221,
+      "file": "chapters/ch11.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch12",
+      "title": "Project: a Command-Line Search Tool",
+      "words": 17357,
+      "file": "chapters/ch12.md",
+      "status": "done",
+      "lessons_built": 5,
+      "note": ""
+    },
+    {
+      "id": "ch13",
+      "title": "Closures and Iterators",
+      "words": 32543,
+      "file": "chapters/ch13.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch14",
+      "title": "Cargo and Crates.io",
+      "words": 5977,
+      "file": "chapters/ch14.md",
+      "status": "done",
+      "lessons_built": 3,
+      "note": ""
+    },
+    {
+      "id": "ch15",
+      "title": "Smart Pointers",
+      "words": 32353,
+      "file": "chapters/ch15.md",
+      "status": "done",
+      "lessons_built": 5,
+      "note": ""
+    },
+    {
+      "id": "ch16",
+      "title": "Fearless Concurrency",
+      "words": 33307,
+      "file": "chapters/ch16.md",
+      "status": "done",
+      "lessons_built": 5,
+      "note": ""
+    },
+    {
+      "id": "ch17",
+      "title": "Async Programming",
+      "words": 39463,
+      "file": "chapters/ch17.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch18",
+      "title": "Trait Objects and OOP in Rust",
+      "words": 14862,
+      "file": "chapters/ch18.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch19",
+      "title": "Patterns in Depth",
+      "words": 14957,
+      "file": "chapters/ch19.md",
+      "status": "done",
+      "lessons_built": 3,
+      "note": ""
+    },
+    {
+      "id": "ch20",
+      "title": "Advanced Features: Unsafe, Advanced Traits and Types, Macros",
+      "words": 49637,
+      "file": "chapters/ch20.md",
+      "status": "done",
+      "lessons_built": 5,
+      "note": ""
+    },
+    {
+      "id": "ch21",
+      "title": "Data in Depth: Bits, Integers and Floats",
+      "words": 20516,
+      "file": "chapters/ch21.md",
+      "status": "done",
+      "lessons_built": 5,
+      "note": ""
+    },
+    {
+      "id": "ch22",
+      "title": "Files, Storage and I/O",
+      "words": 18122,
+      "file": "chapters/ch22.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch23",
+      "title": "Networking and Time",
+      "words": 18166,
+      "file": "chapters/ch23.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch24",
+      "title": "Going Low-Level: FFI, Kernels and Signals",
+      "words": 22868,
+      "file": "chapters/ch24.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch25",
+      "title": "Final Project: a Multithreaded Web Server",
+      "words": 39913,
+      "file": "chapters/ch25.md",
+      "status": "done",
+      "lessons_built": 4,
+      "note": ""
+    }
+  ],
+  "notes": [
+    "Rust exercises are authored inline in lesson YAML (rust: starter/tests/solution); playgrounds with output checks need solution_code; run yaml2json.py, build_course.py, verify_exercises.py (CARGO_TARGET_DIR=.cargo-target) and .build/tools/verify_playgrounds.py after every chapter."
+  ],
+  "log": [
+    {
+      "at": "2026-10-23T02:32:57+00:00",
+      "msg": "course initialised"
+    },
+    {
+      "at": "2026-10-23T03:00:19+00:00",
+      "msg": "ch01 → done"
+    },
+    {
+      "at": "2026-10-23T03:00:19+00:00",
+      "msg": "ch02 → done"
+    },
+    {
+      "at": "2026-10-23T03:00:19+00:00",
+      "msg": "ch02 written: 3 lessons + test, 3 tested exercises, 6 playgrounds"
+    },
+    {
+      "at": "2026-10-23T03:21:17+00:00",
+      "msg": "ch03 → done"
+    },
+    {
+      "at": "2026-10-23T03:27:10+00:00",
+      "msg": "ch04 → done"
+    },
+    {
+      "at": "2026-10-23T03:30:09+00:00",
+      "msg": "ch05 → done"
+    },
+    {
+      "at": "2026-10-23T03:33:33+00:00",
+      "msg": "ch06 → done"
+    },
+    {
+      "at": "2026-10-23T03:36:14+00:00",
+      "msg": "ch07 → done"
+    },
+    {
+      "at": "2026-10-23T03:39:34+00:00",
+      "msg": "ch08 → done"
+    },
+    {
+      "at": "2026-10-23T03:43:56+00:00",
+      "msg": "ch09 → done"
+    },
+    {
+      "at": "2026-10-23T03:49:45+00:00",
+      "msg": "ch10 → done"
+    },
+    {
+      "at": "2026-10-23T03:52:49+00:00",
+      "msg": "ch11 → done"
+    },
+    {
+      "at": "2026-10-23T03:56:12+00:00",
+      "msg": "ch12 → done"
+    },
+    {
+      "at": "2026-10-23T04:00:20+00:00",
+      "msg": "ch13 → done"
+    },
+    {
+      "at": "2026-10-23T04:02:47+00:00",
+      "msg": "ch14 → done"
+    },
+    {
+      "at": "2026-10-23T04:08:30+00:00",
+      "msg": "ch15 → done"
+    },
+    {
+      "at": "2026-10-23T04:12:59+00:00",
+      "msg": "ch16 → done"
+    },
+    {
+      "at": "2026-10-23T04:17:59+00:00",
+      "msg": "ch17 → done"
+    },
+    {
+      "at": "2026-10-23T04:22:09+00:00",
+      "msg": "ch18 → done"
+    },
+    {
+      "at": "2026-10-23T04:26:21+00:00",
+      "msg": "ch19 → done"
+    },
+    {
+      "at": "2026-10-23T04:35:52+00:00",
+      "msg": "ch20 → done"
+    },
+    {
+      "at": "2026-10-23T04:41:47+00:00",
+      "msg": "ch21 → done"
+    },
+    {
+      "at": "2026-10-23T04:49:00+00:00",
+      "msg": "ch22 → done"
+    },
+    {
+      "at": "2026-10-23T04:56:32+00:00",
+      "msg": "ch23 → done"
+    },
+    {
+      "at": "2026-10-23T05:07:54+00:00",
+      "msg": "ch24 → done"
+    },
+    {
+      "at": "2026-10-23T05:16:03+00:00",
+      "msg": "ch25 → done"
+    }
+  ]
+}

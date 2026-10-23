@@ -1,0 +1,159 @@
+{
+  "title": "Chapter test: Ownership, Borrowing and Slices",
+  "kind": "test",
+  "summary": "Twelve questions on moves, copies, references, the borrowing rules and slices. You need 70% to pass; you can retry and your best score is kept.",
+  "blocks": [
+    {
+      "type": "quiz",
+      "id": "ch04-test",
+      "pass_score": 0.7,
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which of these is **not** one of the ownership rules?",
+          "options": [
+            "Each value has an owner",
+            "There is only one owner at a time",
+            "When the owner goes out of scope, the value is dropped",
+            "A value can be read by only one variable at a time"
+          ],
+          "answer": 3,
+          "explanation": "Many shared references can read a value at once. Only ownership is exclusive."
+        },
+        {
+          "type": "single",
+          "q": "Does this compile?",
+          "code": "let a = (1, 2.5);\nlet b = a;\nprintln!(\"{a:?} {b:?}\");\n",
+          "lang": "rust",
+          "options": [
+            "Yes: the tuple is `Copy`",
+            "No: `a` was moved",
+            "No: tuples cannot be printed",
+            "Only with `clone()`"
+          ],
+          "answer": 0,
+          "explanation": "A tuple of `Copy` types is `Copy`, so `a` is still usable."
+        },
+        {
+          "type": "single",
+          "q": "Does this compile?",
+          "code": "let a = (1, String::from(\"x\"));\nlet b = a;\nprintln!(\"{}\", a.0);\n",
+          "lang": "rust",
+          "options": [
+            "Yes: `a.0` is an `i32`",
+            "No: `a` was moved as a whole",
+            "Yes: only the String moved",
+            "No: tuples are always moved"
+          ],
+          "answer": 1,
+          "explanation": "The tuple contains a String, so it is not `Copy`; `let b = a;` moves the whole tuple."
+        },
+        {
+          "type": "single",
+          "q": "How many times is the heap text of `s` freed?",
+          "code": "fn keep(s: String) -> String { s }\nfn main() {\n    let s = String::from(\"orbit\");\n    let t = keep(s);\n    let u = t;\n}\n",
+          "lang": "rust",
+          "options": [
+            "Zero",
+            "Once",
+            "Twice",
+            "Three times"
+          ],
+          "answer": 1,
+          "explanation": "Ownership moves `s` → parameter → `t` → `u`. Only the final owner, `u`, drops it, once."
+        },
+        {
+          "type": "multi",
+          "q": "Which lines are allowed at the marked point, given `let mut v = String::new(); let r = &v;` and that `r` is used after the marked point?",
+          "options": [
+            "`let r2 = &v;`",
+            "`v.push('a');`",
+            "`let m = &mut v;`",
+            "`println!(\"{v}\");`"
+          ],
+          "answer": [
+            0,
+            3
+          ],
+          "explanation": "While a shared borrow is alive, more shared reads are fine; any mutable borrow is not."
+        },
+        {
+          "type": "single",
+          "q": "Which signature is best for a function that appends a timestamp to the caller's String?",
+          "options": [
+            "`fn stamp(s: String)`",
+            "`fn stamp(s: &String)`",
+            "`fn stamp(s: &mut String)`",
+            "`fn stamp(s: &str)`"
+          ],
+          "answer": 2,
+          "explanation": "It changes the caller's value but does not need to own it."
+        },
+        {
+          "type": "fill",
+          "q": "The error code for \"cannot borrow as mutable because it is also borrowed as immutable\" is E0___.",
+          "answer": [
+            "502"
+          ],
+          "explanation": "E0502. E0499 is two mutable borrows; E0382 is use after move."
+        },
+        {
+          "type": "single",
+          "q": "What does this print?",
+          "code": "fn bump(n: &mut i32) { *n += 10; }\nfn main() {\n    let mut x = 1;\n    bump(&mut x);\n    bump(&mut x);\n    println!(\"{x}\");\n}\n",
+          "lang": "rust",
+          "options": [
+            "1",
+            "11",
+            "21",
+            "It does not compile"
+          ],
+          "answer": 2,
+          "explanation": "Each mutable borrow ends when `bump` returns, so two calls in a row are fine: 1 + 10 + 10."
+        },
+        {
+          "type": "single",
+          "q": "`let s = String::from(\"hello world\"); let w = &s[6..];` What is `w`?",
+          "options": [
+            "\"hello\"",
+            "\" world\"",
+            "\"world\"",
+            "\"orld\""
+          ],
+          "answer": 2,
+          "explanation": "Byte 6 is `w`; the slice runs to the end."
+        },
+        {
+          "type": "truefalse",
+          "q": "A function returning `&str` that points into its own local `String` compiles if the String is long enough.",
+          "answer": false,
+          "explanation": "The local String is dropped when the function returns; the slice would dangle, so the compiler rejects it."
+        },
+        {
+          "type": "single",
+          "q": "Which call does **not** compile for `fn count(s: &str) -> usize`?",
+          "options": [
+            "`count(\"abc\")`",
+            "`count(&String::from(\"abc\"))`",
+            "`count(String::from(\"abc\"))`",
+            "`count(&\"abcdef\"[..3])`"
+          ],
+          "answer": 2,
+          "explanation": "A `String` value is not a reference. Pass `&string` and it coerces to `&str`."
+        },
+        {
+          "type": "order",
+          "q": "Order what happens in `let s1 = String::from(\"hi\"); let s2 = s1; println!(\"{s2}\");` from the first step to the last.",
+          "items": [
+            "The allocator gives heap memory for \"hi\"",
+            "Pointer, length and capacity are copied into s2",
+            "s1 is marked as moved",
+            "s2 is printed",
+            "s2 goes out of scope and the heap memory is freed"
+          ],
+          "explanation": "One allocation, one cheap move, one free at the end of the owner's scope."
+        }
+      ]
+    }
+  ]
+}

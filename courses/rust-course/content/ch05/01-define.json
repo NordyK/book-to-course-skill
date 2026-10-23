@@ -1,0 +1,214 @@
+{
+  "title": "Defining and creating structs",
+  "summary": "Named fields, instances, mutable instances, field init shorthand, struct update syntax, tuple structs, unit-like structs, and who owns a struct's fields.",
+  "minutes": 26,
+  "source": {
+    "chapter": "ch05",
+    "sections": [
+      "TRPL 5.1 Defining and Instantiating Structs",
+      "TRPL 5.1 Using the Field Init Shorthand",
+      "TRPL 5.1 Creating Instances with Struct Update Syntax",
+      "TRPL 5.1 Tuple Structs",
+      "TRPL 5.1 Unit-Like Structs",
+      "TRPL 5.1 Ownership of Struct Data",
+      "PR ch9 Named-Field Structs",
+      "PR ch9 Tuple-Like Structs",
+      "PR ch9 Unit-Like Structs",
+      "CR Day 1 Afternoon Structs"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "A tuple groups values by position. A **struct** groups them by **name**. Each piece of data in a struct is a **field**, with a name and a type, so code that uses it reads `user.email` instead of `user.2`. Structs are how you model the things your program is about: a user, a rectangle, a file, a satellite. With enums (next chapter) they are the building blocks of every Rust program's data.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "title": "Defining a struct and creating an instance",
+      "code": "struct User {\n    active: bool,\n    username: String,\n    email: String,\n    sign_in_count: u64,\n}\n\nfn main() {\n    let user1 = User {\n        active: true,\n        username: String::from(\"someusername123\"),\n        email: String::from(\"someone@example.com\"),\n        sign_in_count: 1,\n    };\n    println!(\"{} <{}>, {} sign-in(s), active: {}\",\n        user1.username, user1.email, user1.sign_in_count, user1.active);\n}\n",
+      "output": "someusername123 <someone@example.com>, 1 sign-in(s), active: true",
+      "explain": "The definition is a template; an **instance** fills in concrete values. Fields can be listed in any order when creating an instance. Struct names use **UpperCamelCase**, field names use snake_case."
+    },
+    {
+      "type": "text",
+      "title": "Changing fields",
+      "md": "To change a field, the whole instance must be mutable: `let mut user1 = User { ... };` then `user1.email = String::from(\"new@example.com\");`. Rust does not let you mark only some fields as mutable. Mutability belongs to the variable, not to the type.\n"
+    },
+    {
+      "type": "text",
+      "title": "Field init shorthand",
+      "md": "A function that builds a struct often has parameters with the same names as the fields. Then you can write the name once:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn build_user(email: String, username: String) -> User {\n    User {\n        active: true,\n        username,       // same as username: username\n        email,          // same as email: email\n        sign_in_count: 1,\n    }\n}\n"
+    },
+    {
+      "type": "text",
+      "title": "Struct update syntax",
+      "md": "To create an instance that is mostly a copy of another, list the fields that differ and finish with `..other`:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "let user2 = User {\n    email: String::from(\"another@example.com\"),\n    ..user1\n};\n",
+      "explain": "`..user1` takes every remaining field from `user1`. It works like assignment, so it **moves** data: `user1.username` (a String) moves into `user2`, and `user1` can no longer be used as a whole. `active` and `sign_in_count` are `Copy`, and `user1.email` was not used, so those fields of `user1` would still be readable on their own."
+    },
+    {
+      "type": "playground",
+      "id": "ch05-play-update",
+      "title": "Struct update and moves",
+      "lang": "rust",
+      "md": "Run it: the last `println!` fails because `user1.username` moved into `user2`. Fix it by giving `user2` its own `username` (for example `String::from(\"other\")`), so nothing is moved out of `user1` except `Copy` fields. The program should print the two lines in the task.\n",
+      "task": "Print `ferris (2 sign-ins)` and then `other (2 sign-ins)`.",
+      "code": "struct User {\n    username: String,\n    sign_in_count: u64,\n}\n\nfn main() {\n    let user1 = User { username: String::from(\"ferris\"), sign_in_count: 2 };\n    let user2 = User { ..user1 };\n    println!(\"{} ({} sign-ins)\", user1.username, user1.sign_in_count);\n    println!(\"{} ({} sign-ins)\", user2.username, user2.sign_in_count);\n}\n",
+      "expected_output": "ferris (2 sign-ins)\nother (2 sign-ins)\n",
+      "hints": [
+        "`User { username: String::from(\"other\"), ..user1 }` copies only `sign_in_count`, which is `Copy`."
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Tuple structs",
+      "md": "A **tuple struct** has a name but unnamed fields. Use one when naming each field would add nothing, but you want a distinct type. `Color` and `Point` below hold the same three numbers, yet you cannot pass a `Point` where a `Color` is expected. This is the **newtype** idea: wrapping a value in its own type so the compiler keeps different meanings apart.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "struct Color(i32, i32, i32);\nstruct Point(i32, i32, i32);\nstruct Meters(f64);\n\nfn main() {\n    let black = Color(0, 0, 0);\n    let origin = Point(0, 0, 0);\n    let Point(x, y, z) = origin;       // destructure with the type name\n    let height = Meters(1.8);\n    println!(\"{} {x}{y}{z} {}\", black.0, height.0);\n}\n",
+      "output": "0 000 1.8",
+      "explain": "Fields are reached by position (`black.0`) or by destructuring. A function `fn climb(by: Meters)` can never be called with feet or seconds by mistake, even though both are plain numbers underneath."
+    },
+    {
+      "type": "text",
+      "title": "Unit-like structs",
+      "md": "A struct can have no fields at all: `struct AlwaysEqual;`. It holds no data, so it takes no memory. That sounds useless, but it becomes handy with traits (chapter 10), where you want a type that has behavior but no state.\n"
+    },
+    {
+      "type": "text",
+      "title": "Who owns the fields",
+      "md": "`User` uses `String` rather than `&str` for its text. That is deliberate: each instance **owns** all its data, and the data lives exactly as long as the instance. A struct can hold references, but then the compiler needs to know the referenced data lives long enough, which requires **lifetimes** (chapter 10). Try it now and you get `error[E0106]: missing lifetime specifier`. Until then, give your structs owned types.\n"
+    },
+    {
+      "type": "exercise",
+      "id": "ch05-ex-define",
+      "exercise_dir": "ch05-structs",
+      "title": "Model a book in a library",
+      "difficulty": "easy",
+      "goal": "Define a struct, build instances with shorthand and update syntax, and use a newtype.",
+      "behavior": "The starter defines `pub struct Isbn(pub String);` and an empty `pub struct Book`. Complete it and the functions:\n- `Book` has public fields `title: String`, `author: String`, `isbn: Isbn`, `year: u16`, `available: bool`.\n- `pub fn new_book(title: String, author: String, isbn: Isbn, year: u16) -> Book`: a book that is available. Use field init shorthand.\n- `pub fn second_edition(book: &Book, isbn: Isbn, year: u16) -> Book`: a new book with the same title and author (cloned), the new ISBN and year, and available.\n- `pub fn describe(book: &Book) -> String`: `\"<title> by <author> (<year>)\"`, plus `\" [on loan]\"` when not available.\n",
+      "examples": [
+        {
+          "input": "describe(&new_book(\"Dune\".into(), \"Frank Herbert\".into(), Isbn(\"978-0441013593\".into()), 1965))",
+          "output": "\"Dune by Frank Herbert (1965)\""
+        }
+      ],
+      "hints": [
+        "Fields in a struct are private outside their module unless marked `pub`. The tests are a separate module, so write `pub title: String,` and so on.",
+        "`second_edition`: `Book { title: book.title.clone(), author: book.author.clone(), isbn, year, available: true }`.",
+        "`describe`: `let mut s = format!(\"{} by {} ({})\", book.title, book.author, book.year);` then push the loan note if needed."
+      ],
+      "solution_explain": "`second_edition` borrows the original, so it must clone the Strings it reuses; `..*book` would try to move them out of a borrow and fail. `format!` works like `println!` but returns the String instead of printing it."
+    },
+    {
+      "type": "quiz",
+      "id": "ch05-quiz-define",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "How do you make only the `email` field of a struct instance changeable?",
+          "options": [
+            "`mut email: String` in the struct",
+            "`let user.email = mut ...`",
+            "You cannot: the whole instance must be `mut`",
+            "Use `&mut email`"
+          ],
+          "answer": 2,
+          "explanation": "Mutability belongs to the binding: `let mut user = ...` makes every field changeable."
+        },
+        {
+          "type": "single",
+          "q": "What does field init shorthand let you write?",
+          "options": [
+            "`User { email }` instead of `User { email: email }`",
+            "`User(email)` instead of `User { email }`",
+            "`..user1` to copy fields",
+            "`user.0` instead of `user.email`"
+          ],
+          "answer": 0,
+          "explanation": "When a variable has the same name as the field, write it once."
+        },
+        {
+          "type": "single",
+          "q": "After `let u2 = User { email: e, ..u1 };` where `User` has a `username: String`, can you still use `u1.username`?",
+          "options": [
+            "Yes",
+            "No: it was moved into `u2`",
+            "Only if `u1` is `mut`",
+            "Only inside a block"
+          ],
+          "answer": 1,
+          "explanation": "Struct update syntax moves the non-`Copy` fields it takes."
+        },
+        {
+          "type": "single",
+          "q": "What is a tuple struct good for?",
+          "options": [
+            "Storing many fields with names",
+            "Giving a distinct type to a value without naming its fields, like `struct Meters(f64)`",
+            "Making fields public",
+            "Avoiding moves"
+          ],
+          "answer": 1,
+          "explanation": "It is the newtype pattern: same data, different meaning, checked by the compiler."
+        },
+        {
+          "type": "truefalse",
+          "q": "A struct field of type `&str` compiles without any extra annotation.",
+          "answer": false,
+          "explanation": "Reference fields need a lifetime parameter (chapter 10). Prefer owned `String` for now."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "`struct Name { field: Type, ... }` defines a type; `Name { field: value, ... }` creates an instance.",
+        "Read and write fields with dot notation; the whole instance must be `mut` to change any field.",
+        "Field init shorthand: `User { email }` when a variable has the field's name.",
+        "Struct update syntax `..other` fills the rest from another instance, moving non-`Copy` fields.",
+        "Tuple structs (`struct Meters(f64)`) give a distinct type without field names; unit-like structs have no fields.",
+        "Prefer owned field types like `String`; reference fields need lifetimes."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "struct",
+      "def": "A custom type that groups named fields into one value."
+    },
+    {
+      "term": "field",
+      "def": "A named piece of data inside a struct."
+    },
+    {
+      "term": "instance",
+      "def": "A concrete value of a struct type, with every field filled in."
+    },
+    {
+      "term": "tuple struct",
+      "def": "A struct whose fields have no names, only positions, like struct Color(i32, i32, i32)."
+    },
+    {
+      "term": "newtype",
+      "def": "A tuple struct wrapping a single value to give it its own type, like struct Meters(f64)."
+    },
+    {
+      "term": "unit-like struct",
+      "def": "A struct with no fields, useful for implementing traits on a type that holds no data."
+    }
+  ]
+}

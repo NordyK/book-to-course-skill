@@ -1,0 +1,98 @@
+title: "Chapter test: Common Programming Concepts"
+kind: test
+summary: Twelve questions on variables, types, tuples and arrays, functions and loops. You need 70% to pass; you can retry and your best score is kept.
+blocks:
+  - type: quiz
+    id: ch03-test
+    pass_score: 0.7
+    questions:
+      - type: single
+        q: "Which change makes this compile?"
+        code: |
+          let total = 0;
+          total += 5;
+        lang: rust
+        options: ["`const total = 0;`", "`let mut total = 0;`", "`let total: u32 = 0;`", "`total = total + 5;`"]
+        answer: 1
+        explanation: "Variables are immutable by default; `mut` allows changing them."
+      - type: single
+        q: "What does this print?"
+        code: |
+          let x = 5;
+          let x = x * 2;
+          {
+              let x = x + 1;
+              print!("{x} ");
+          }
+          println!("{x}");
+        lang: rust
+        options: ["11 11", "11 10", "6 5", "It does not compile"]
+        answer: 1
+        hints: ["Each `let x` makes a new variable. Where does the inner one stop existing?"]
+        explanation: "Shadowing: the outer `x` becomes 10; the inner block shadows it with 11 only until the closing brace."
+      - type: multi
+        q: "Which are true of `const` but not of `let`?"
+        options: ["The type must be written", "The value must be computable at compile time", "It can never be `mut`", "It can be declared at the top level, outside functions", "It can be shadowed"]
+        answer: [0, 1, 2, 3]
+        explanation: "Constants need a type, a compile-time value, are always immutable and may be global. Shadowing is a `let` feature."
+      - type: single
+        q: "In a release build, `let x: u8 = 255;` and at run time `x + 1` is computed. What is the result?"
+        options: ["A panic", "256", "0", "255"]
+        answer: 2
+        explanation: "Release builds drop the overflow check and wrap around. Debug builds would panic."
+      - type: single
+        q: "Which expression returns `None` instead of overflowing?"
+        options: ["`200u8 + 100`", "`200u8.wrapping_add(100)`", "`200u8.checked_add(100)`", "`200u8.saturating_add(100)`"]
+        answer: 2
+        explanation: "`checked_` methods return `Option`. `wrapping_` gives 44 and `saturating_` gives 255."
+      - type: single
+        q: "What is the type of `[\"a\", \"b\", \"c\"]`?"
+        options: ["`[&str]`", "`[&str; 3]`", "`(&str, &str, &str)`", "`Vec<&str>`"]
+        answer: 1
+        explanation: "An array's type includes its length."
+      - type: fill
+        q: "`let point = (3, 7);` Write the expression that reads the 7: `point.___`"
+        answer: ["1"]
+        explanation: "Tuple positions start at 0, so the second element is `.1`."
+      - type: single
+        q: "What does this function return?"
+        code: |
+          fn f(x: i32) -> i32 {
+              if x > 0 {
+                  return 1;
+              }
+              x * 2
+          }
+        lang: rust
+        options: ["`f(5)` is 10 and `f(-3)` is -6", "`f(5)` is 1 and `f(-3)` is -6", "`f(5)` is 1 and `f(-3)` is 1", "It does not compile"]
+        answer: 1
+        explanation: "`return` leaves early for positive numbers; otherwise the final expression `x * 2` is returned."
+      - type: truefalse
+        q: "`fn double(x: i32) -> i32 { x * 2; }` compiles and returns twice x."
+        answer: false
+        explanation: "The semicolon makes the body end in a statement, so it returns `()` and the compiler reports mismatched types."
+      - type: numeric
+        q: "What is printed? `let mut s = 0; for i in 1..=4 { s += i; } println!(\"{s}\");`"
+        answer: 10
+        explanation: "1 + 2 + 3 + 4 = 10; `..=` includes 4."
+      - type: single
+        q: "What does this print?"
+        code: |
+          let mut count = 0;
+          'outer: for a in 0..3 {
+              for b in 0..3 {
+                  if b == 2 { continue 'outer; }
+                  if a == 2 { break 'outer; }
+                  count += 1;
+              }
+          }
+          println!("{count}");
+        lang: rust
+        options: ["4", "6", "9", "2"]
+        answer: 0
+        hints: ["For each `a`, which values of `b` reach `count += 1`?"]
+        explanation: "For a = 0 and a = 1, b = 0 and b = 1 count (b = 2 jumps to the next a): 4. At a = 2 the outer loop stops before counting."
+      - type: order
+        q: "Put these in the order Rust runs them for `let v = loop { n += 1; if n == 3 { break n * 10; } };` with `n` starting at 0, ending with the value of `v`."
+        items: ["n becomes 1", "n becomes 2", "n becomes 3", "break with 30", "v is 30"]
+        explanation: "The loop runs until n is 3, then `break n * 10` hands 30 to `v`."

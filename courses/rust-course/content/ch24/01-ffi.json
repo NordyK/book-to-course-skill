@@ -1,0 +1,301 @@
+{
+  "title": "Foreign functions: Rust and C",
+  "summary": "The C ABI as the common language of systems code, matching C types with core::ffi, struct layout with repr(C), declaring C functions and choosing which are safe, CString and CStr, passing Rust callbacks to C, wrapping a C handle in a safe type with Drop, the -sys crate pattern, and exporting Rust functions to C without unwinding across the boundary.",
+  "minutes": 45,
+  "source": {
+    "chapter": "ch24",
+    "sections": [
+      "PR 23 Foreign Functions",
+      "PR 23 Finding Common Data Representations",
+      "PR 23 Declaring Foreign Functions and Variables",
+      "PR 23 Using Functions from Libraries",
+      "PR 23 A Raw Interface to libgit2",
+      "PR 23 A Safe Interface to libgit2",
+      "CR XVI Unsafe: FFI"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Not every library is written in Rust. Operating systems, databases, codecs and graphics drivers expose **C interfaces**, and almost every language can call C. *Programming Rust* calls this the common denominator: Rust's **foreign function interface** (FFI) lets Rust call C functions and lets C call Rust, as long as both sides agree on how values look in memory and how functions are called. That agreement is the **C ABI** (application binary interface).\n\nChapter 20 showed the minimum: an `unsafe extern \"C\"` block declaring `strlen`. This lesson goes the rest of the way. Everything here calls functions from the C standard library, which every Rust program on Linux already links, so all examples run in the console.\n"
+    },
+    {
+      "type": "table",
+      "title": "C types and their Rust equivalents",
+      "headers": [
+        "C",
+        "Rust (core::ffi / std::ffi)",
+        "Notes"
+      ],
+      "rows": [
+        [
+          "`int`, `unsigned int`",
+          "`c_int`, `c_uint`",
+          "aliases for `i32`, `u32` on every mainstream platform"
+        ],
+        [
+          "`long`, `long long`",
+          "`c_long`, `c_longlong`",
+          "`long` is 64 bits on Linux and macOS, 32 bits on Windows"
+        ],
+        [
+          "`char`",
+          "`c_char`",
+          "`i8` or `u8` depending on the platform; not Rust's 4-byte `char`"
+        ],
+        [
+          "`double`, `float`",
+          "`f64`, `f32`",
+          ""
+        ],
+        [
+          "`size_t`, `ptrdiff_t`",
+          "`usize`, `isize`",
+          ""
+        ],
+        [
+          "`bool`",
+          "`bool`",
+          ""
+        ],
+        [
+          "`void *`, `T *`",
+          "`*mut c_void`, `*mut T` / `*const T`",
+          "C pointers and C++ references are raw pointers"
+        ],
+        [
+          "`char *` string",
+          "`*const c_char` plus `CStr` / `CString`",
+          "NUL-terminated"
+        ],
+        [
+          "`struct`",
+          "`#[repr(C)] struct`",
+          "C field order and padding"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "title": "repr(C): the C layout",
+      "md": "Rust is free to **reorder** struct fields to reduce padding, and it does. C lays fields out in declaration order, each aligned to its own size. `#[repr(C)]` asks Rust to use exactly the C rules, so a pointer to the struct can be handed to C. `std::mem::offset_of!` shows where each field lands.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::mem::{align_of, offset_of, size_of};\n\n#[repr(C)]\nstruct CLayout {\n    a: u8,\n    b: u32,\n    c: u16,\n}\n\nstruct RustLayout {\n    a: u8,\n    b: u32,\n    c: u16,\n}\n\nfn main() {\n    println!(\"repr(C): size {}, align {}\", size_of::<CLayout>(), align_of::<CLayout>());\n    println!(\"offsets a={} b={} c={}\", offset_of!(CLayout, a), offset_of!(CLayout, b), offset_of!(CLayout, c));\n    println!(\"default: size {}\", size_of::<RustLayout>());\n    println!(\"offsets a={} b={} c={}\", offset_of!(RustLayout, a), offset_of!(RustLayout, b), offset_of!(RustLayout, c));\n}\n",
+      "output": "repr(C): size 12, align 4\noffsets a=0 b=4 c=8\ndefault: size 8\noffsets a=6 b=0 c=4\n",
+      "explain": "In C order, `a` is followed by 3 bytes of padding so `b` is 4-aligned, and 2 bytes of tail padding make the size a multiple of 4. The default Rust layout is unspecified; today's compiler puts the largest field first and saves 4 bytes. Never pass a struct without `repr(C)` to C."
+    },
+    {
+      "type": "text",
+      "title": "Declaring C functions, safe and unsafe",
+      "md": "Inside an `unsafe extern \"C\" { ... }` block you write the C prototype in Rust syntax. The block is `unsafe` because the compiler cannot check that the declaration matches the real function: get a type wrong and you have undefined behavior. Every function declared there is `unsafe` to call, unless you mark it **`safe fn`**, a promise that **every** possible input is fine.\n\nThat promise is easy to get wrong. C's `sqrt` is fine for any `double`, so it can be `safe`. But `abs(INT_MIN)` and `div(n, 0)` are undefined behavior in C, so those must stay `unsafe` and every call needs a reason it is sound. C functions that return values through pointers, like `strtol`'s end pointer, take a `*mut` to a local variable.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::ffi::{CStr, c_char, c_int, c_long};\n\n#[repr(C)]\n#[derive(Debug)]\nstruct DivT {\n    quot: c_int,\n    rem: c_int,\n}\n\nunsafe extern \"C\" {\n    safe fn sqrt(x: f64) -> f64; // defined for every input\n    fn abs(x: c_int) -> c_int; // abs(INT_MIN) is undefined\n    fn div(n: c_int, d: c_int) -> DivT; // div by 0 is undefined\n    fn strtol(s: *const c_char, end: *mut *mut c_char, base: c_int) -> c_long;\n}\n\nfn main() {\n    println!(\"sqrt(2) = {}\", sqrt(2.0));\n    // SAFETY: -42 is not INT_MIN.\n    println!(\"abs(-42) = {}\", unsafe { abs(-42) });\n    // SAFETY: the divisor is not zero and the quotient fits.\n    println!(\"{:?}\", unsafe { div(17, 5) });\n\n    let text: &CStr = c\"0x1F rest\";\n    let mut end: *mut c_char = std::ptr::null_mut();\n    // SAFETY: text is NUL-terminated; strtol sets end to a position inside it.\n    let n = unsafe { strtol(text.as_ptr(), &mut end, 0) };\n    let used = end as usize - text.as_ptr() as usize;\n    let rest = unsafe { CStr::from_ptr(end) };\n    println!(\"{n} (used {used} bytes, rest {rest:?})\");\n}\n",
+      "output": "sqrt(2) = 1.4142135623730951\nabs(-42) = 42\nDivT { quot: 3, rem: 2 }\n31 (used 4 bytes, rest \" rest\")\n",
+      "explain": "`div` returns a struct by value, which works because `DivT` is `repr(C)` with the same fields as C's `div_t`. With base 0, `strtol` reads a `0x` prefix as hexadecimal. The end pointer tells us how much of the string was a number."
+    },
+    {
+      "type": "text",
+      "title": "Strings across the boundary",
+      "md": "C strings are a pointer to bytes ending in a NUL (`0`) byte. Rust strings carry a length and may contain `0`. Two types bridge them:\n\n- **`CString`** owns a NUL-terminated buffer. `CString::new(s)` copies a Rust string and appends the NUL; it fails with `NulError` if `s` contains a `0` byte. `.as_ptr()` lends it to C.\n- **`CStr`** borrows a C string. `CStr::from_ptr(p)` (unsafe) wraps a pointer you got from C; `.to_str()` checks it is UTF-8. A `c\"...\"` literal is a `&'static CStr`.\n\nThey mirror `String` and `&str`, and `OsString` / `OsStr` from chapter 22.\n"
+    },
+    {
+      "type": "callout",
+      "kind": "warning",
+      "title": "The dangling as_ptr trap",
+      "md": "`let p = CString::new(\"hi\").unwrap().as_ptr();` compiles, but the `CString` is a temporary that is dropped at the end of the statement, so `p` points at freed memory. Keep the `CString` in a variable that lives as long as C uses the pointer. Rust warns about this (`dangling_pointers_from_temporaries`); treat that warning as an error."
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::ffi::{CStr, CString, c_char, c_int};\n\nunsafe extern \"C\" {\n    fn strlen(s: *const c_char) -> usize;\n    fn strchr(s: *const c_char, c: c_int) -> *mut c_char;\n}\n\nfn main() {\n    let owned = CString::new(\"hello, world\").expect(\"no NUL inside\");\n    let len = unsafe { strlen(owned.as_ptr()) };\n    println!(\"strlen = {len}\");\n\n    let p = unsafe { strchr(owned.as_ptr(), b',' as c_int) };\n    if !p.is_null() {\n        // SAFETY: strchr returns a pointer into `owned`, which is still alive.\n        let tail = unsafe { CStr::from_ptr(p) };\n        println!(\"from comma: {:?}\", tail.to_str());\n    }\n\n    println!(\"{:?}\", CString::new(\"bad\\0string\"));\n    let bytes = owned.as_bytes_with_nul();\n    println!(\"{} bytes with NUL, last = {}\", bytes.len(), bytes[bytes.len() - 1]);\n    let back: String = owned.into_string().unwrap();\n    println!(\"{back}\");\n}\n",
+      "output": "strlen = 12\nfrom comma: Ok(\", world\")\nErr(NulError(3, [98, 97, 100, 0, 115, 116, 114, 105, 110, 103]))\n13 bytes with NUL, last = 0\nhello, world\n",
+      "explain": "`strchr` returns NULL when the character is missing, so the pointer is checked before use. `NulError` reports where the forbidden `0` was and gives the bytes back."
+    },
+    {
+      "type": "text",
+      "title": "Callbacks: C calling Rust",
+      "md": "Some C functions take a **function pointer** and call it back. C's `qsort` sorts any array: it takes a pointer to the first element, the count, the element size and a comparison function returning negative, zero or positive. A Rust function declared `extern \"C\" fn` uses the C calling convention and can be passed directly. It receives `void` pointers, so it must cast them back to the real element type.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::cmp::Ordering;\nuse std::ffi::{c_int, c_void};\n\nunsafe extern \"C\" {\n    fn qsort(\n        base: *mut c_void,\n        n: usize,\n        size: usize,\n        cmp: extern \"C\" fn(*const c_void, *const c_void) -> c_int,\n    );\n}\n\nextern \"C\" fn by_abs(a: *const c_void, b: *const c_void) -> c_int {\n    // SAFETY: qsort passes pointers to elements of our i32 array.\n    let (a, b) = unsafe { (*(a as *const i32), *(b as *const i32)) };\n    match a.unsigned_abs().cmp(&b.unsigned_abs()) {\n        Ordering::Less => -1,\n        Ordering::Equal => 0,\n        Ordering::Greater => 1,\n    }\n}\n\nfn main() {\n    let mut v = [5, -12, 3, -1, 8, -7];\n    unsafe { qsort(v.as_mut_ptr().cast(), v.len(), size_of::<i32>(), by_abs) };\n    println!(\"{v:?}\");\n}\n",
+      "output": "[-1, 3, 5, -7, 8, -12]\n",
+      "explain": "`unsigned_abs` cannot overflow, unlike `abs` on `i32::MIN`. That matters here: a panic inside an `extern \"C\"` function cannot unwind into C, so Rust **aborts the whole process** instead."
+    },
+    {
+      "type": "text",
+      "title": "Wrapping a C library safely",
+      "md": "*Programming Rust* wraps **libgit2** in two layers, and that is how real FFI crates are built:\n\n1. A **raw** layer (by convention a crate named `foo-sys`) with `#[repr(C)]` types and `extern` declarations, often generated from the C headers by **bindgen**, plus a `build.rs` that tells Cargo what to link (`cargo:rustc-link-lib=git2`) or builds the C code with the `cc` crate.\n2. A **safe** layer that owns the C handles: each type holds a raw pointer, its constructor checks for errors and returns `Result`, its methods convert strings with `CString` / `CStr`, and its `Drop` calls the C cleanup function. Lifetimes (and `PhantomData`) make sure borrowed C data cannot outlive its owner.\n\nC hands out **opaque** types (a pointer to a struct whose fields you never see). In Rust, declare them as a zero-sized `#[repr(C)]` struct with a private field so nobody can create or move one: `#[repr(C)] pub struct git_repository { _private: [u8; 0] }`. Here is the same pattern around C's `FILE`:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::ffi::{CStr, CString, c_char, c_int};\nuse std::io;\n\n#[repr(C)]\nstruct FILE {\n    _private: [u8; 0],\n}\n\nunsafe extern \"C\" {\n    fn fopen(path: *const c_char, mode: *const c_char) -> *mut FILE;\n    fn fputs(s: *const c_char, f: *mut FILE) -> c_int;\n    fn fclose(f: *mut FILE) -> c_int;\n}\n\n/// Owns an open C `FILE *`; closing happens in Drop.\nstruct CFile(*mut FILE);\n\nimpl CFile {\n    fn create(path: &str) -> io::Result<CFile> {\n        let path = CString::new(path).map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;\n        let f = unsafe { fopen(path.as_ptr(), c\"w\".as_ptr()) };\n        if f.is_null() { Err(io::Error::last_os_error()) } else { Ok(CFile(f)) }\n    }\n\n    fn write(&mut self, s: &CStr) -> io::Result<()> {\n        if unsafe { fputs(s.as_ptr(), self.0) } < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }\n    }\n}\n\nimpl Drop for CFile {\n    fn drop(&mut self) {\n        unsafe { fclose(self.0) };\n    }\n}\n\nfn main() -> io::Result<()> {\n    let path = std::env::temp_dir().join(format!(\"ffi-{}.txt\", std::process::id()));\n    {\n        let mut f = CFile::create(path.to_str().unwrap())?;\n        f.write(c\"written by C's stdio\\n\")?;\n        f.write(c\"closed by Drop\\n\")?;\n    } // fclose runs here and flushes the buffer\n    print!(\"{}\", std::fs::read_to_string(&path)?);\n    std::fs::remove_file(&path)?;\n    println!(\"{:?}\", CFile::create(\"/no/such/dir/x.txt\").err().map(|e| e.kind()));\n    Ok(())\n}\n",
+      "output": "written by C's stdio\nclosed by Drop\nSome(NotFound)\n",
+      "explain": "Users of `CFile` never write `unsafe`, cannot forget to close the file, and get `io::Error` values. `io::Error::last_os_error()` reads C's `errno`, which `fopen` set to `ENOENT`."
+    },
+    {
+      "type": "text",
+      "title": "Exporting Rust to C",
+      "md": "To let C call Rust, write an `extern \"C\" fn` and stop the compiler from **mangling** its name: `#[unsafe(no_mangle)] pub extern \"C\" fn rust_add(a: i32, b: i32) -> i32`. Build the crate as a C library with `crate-type = [\"cdylib\"]` (shared `.so` / `.dll`) or `[\"staticlib\"]` in `Cargo.toml`, and generate the C header with **cbindgen**. The attribute is `unsafe(...)` since the 2024 edition because two exported functions with the same name would clash at link time.\n\nTwo rules at the boundary: take only C-compatible types (raw pointers, not references, if C might pass NULL), and never let a panic escape. A panic in an `extern \"C\"` function aborts the process; catch it with `std::panic::catch_unwind` and turn it into an error code. (`extern \"C-unwind\"` exists for the rare case where unwinding through C is intended.)\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::panic;\n\n/// C signature: int checked_div(int a, int b, int *out);\n/// Returns 0 on success, -1 on a panic, -2 if out is NULL.\n#[unsafe(no_mangle)]\npub extern \"C\" fn checked_div(a: i32, b: i32, out: *mut i32) -> i32 {\n    if out.is_null() {\n        return -2;\n    }\n    match panic::catch_unwind(|| a / b) {\n        Ok(v) => {\n            // SAFETY: the caller promises out points to a writable int.\n            unsafe { *out = v };\n            0\n        }\n        Err(_) => -1,\n    }\n}\n\nfn main() {\n    panic::set_hook(Box::new(|_| {})); // keep the panic message out of the output\n    let mut out = 0;\n    println!(\"{} {}\", checked_div(17, 5, &mut out), out);\n    println!(\"{}\", checked_div(1, 0, &mut out));\n    println!(\"{}\", checked_div(1, 1, std::ptr::null_mut()));\n}\n",
+      "output": "0 3\n-1\n-2\n",
+      "explain": "Dividing by zero panics in Rust; `catch_unwind` stops the unwinding and the function reports `-1` instead of taking the C program down."
+    },
+    {
+      "type": "playground",
+      "id": "ch24-play-qsort",
+      "title": "Sort C strings with qsort and strcmp",
+      "lang": "rust",
+      "md": "`ptrs` is an array of C string pointers. Finish `compare` so `qsort` sorts them alphabetically with C's `strcmp`. `qsort` passes **pointers to elements**, and each element is itself a `*const c_char`, so each argument is really a `*const *const c_char`.\n",
+      "task": "Print `apple`, `banana`, `cherry`, `fig`, `pear`.",
+      "code": "use std::ffi::{CStr, c_char, c_int, c_void};\n\nunsafe extern \"C\" {\n    fn qsort(base: *mut c_void, n: usize, size: usize, cmp: extern \"C\" fn(*const c_void, *const c_void) -> c_int);\n    fn strcmp(a: *const c_char, b: *const c_char) -> c_int;\n}\n\nextern \"C\" fn compare(a: *const c_void, b: *const c_void) -> c_int {\n    // TODO: cast a and b to *const *const c_char, read the string pointers, call strcmp\n    0\n}\n\nfn main() {\n    let words: [&CStr; 5] = [c\"pear\", c\"apple\", c\"fig\", c\"banana\", c\"cherry\"];\n    let mut ptrs: Vec<*const c_char> = words.iter().map(|w| w.as_ptr()).collect();\n    unsafe { qsort(ptrs.as_mut_ptr().cast(), ptrs.len(), size_of::<*const c_char>(), compare) };\n    for p in ptrs {\n        println!(\"{}\", unsafe { CStr::from_ptr(p) }.to_str().unwrap());\n    }\n}\n",
+      "expected_output": "apple\nbanana\ncherry\nfig\npear\n",
+      "hints": [
+        "`let a = *(a as *const *const c_char);` reads the string pointer stored in the element.",
+        "`strcmp` already returns negative, zero or positive, which is what `qsort` wants."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch24-ex-ffi",
+      "exercise_dir": "ch24-ffi",
+      "title": "Safe wrappers over libc",
+      "difficulty": "hard",
+      "goal": "Write safe Rust functions over C library calls, so the unsafe code and its conditions live in one place.",
+      "behavior": "The `unsafe extern \"C\"` declarations are given. Implement:\n- `pub fn c_len(s: &CStr) -> usize` with `strlen`.\n- `pub fn c_div(n: i32, d: i32) -> Option<(i32, i32)>` with `div`; return `None` when C would hit undefined behavior: `d == 0`, or `n == i32::MIN` with `d == -1`.\n- `pub fn parse_long(s: &str, base: u32) -> Option<(i64, usize)>` with `strtol`: the value and how many bytes were used (leading spaces count). `None` if `base` is not 0 or 2..=36, if `s` contains a NUL byte, or if no digits were read.\n- `pub fn sort_desc(v: &mut [i32])` with `qsort` and your own `extern \"C\"` comparator, largest first. It must work for `i32::MIN` and `i32::MAX`.\n- `pub fn zero_pad(n: i32, width: usize) -> String` with `snprintf` and the format `%0*d`: call it once with a NULL buffer to learn the length, then again into a buffer of length + 1.\n",
+      "examples": [
+        {
+          "input": "parse_long(\"  -17xyz\", 10)",
+          "output": "Some((-17, 5))"
+        },
+        {
+          "input": "zero_pad(-42, 5)",
+          "output": "\"-0042\""
+        }
+      ],
+      "hints": [
+        "`parse_long`: `let c = CString::new(s).ok()?;` then call `strtol` with `&mut end` and compute `end as usize - c.as_ptr() as usize`.",
+        "A comparator that returns `a - b` overflows for `i32::MIN`. Use `b.cmp(&a)` and map the `Ordering` to -1, 0 or 1.",
+        "`snprintf` is variadic: pass `width as c_int` and `n as c_int` after the format. The first call `snprintf(null_mut(), 0, fmt, ...)` returns the number of characters it would write.",
+        "For the second call allocate `vec![0u8; len + 1]`, pass `buf.as_mut_ptr().cast()`, then `buf.truncate(len)` and `String::from_utf8(buf)`."
+      ],
+      "solution_explain": "Each wrapper checks the conditions under which the C call is defined before making it, so callers cannot cause undefined behavior. `parse_long` relies on the end pointer to tell \"no digits\" apart from a real 0. The comparator uses `cmp` rather than subtraction, which would overflow. `zero_pad` uses the standard two-call `snprintf` pattern: measure, allocate, write."
+    },
+    {
+      "type": "quiz",
+      "id": "ch24-quiz-ffi",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Why must a struct passed to C be `#[repr(C)]`?",
+          "options": [
+            "For speed",
+            "Rust may reorder fields; repr(C) uses C's order and padding",
+            "To make it Copy",
+            "To allow references"
+          ],
+          "answer": 1,
+          "explanation": "The default layout is unspecified."
+        },
+        {
+          "type": "single",
+          "q": "When may a foreign function be declared `safe fn`?",
+          "options": [
+            "Always",
+            "When every possible input is defined behavior",
+            "When it returns a value",
+            "When it is in libc"
+          ],
+          "answer": 1,
+          "explanation": "sqrt yes, abs and div no."
+        },
+        {
+          "type": "single",
+          "q": "What is wrong with `let p = CString::new(\"x\").unwrap().as_ptr();`?",
+          "options": [
+            "Nothing",
+            "The CString is dropped at the end of the statement, so p dangles",
+            "as_ptr is unsafe",
+            "It leaks"
+          ],
+          "answer": 1,
+          "explanation": "Keep the CString in a variable."
+        },
+        {
+          "type": "single",
+          "q": "What happens if a Rust `extern \"C\"` function panics?",
+          "options": [
+            "C catches it",
+            "The process aborts",
+            "It returns 0",
+            "It unwinds through C"
+          ],
+          "answer": 1,
+          "explanation": "Catch panics with catch_unwind at the boundary."
+        },
+        {
+          "type": "single",
+          "q": "What does a `-sys` crate usually contain?",
+          "options": [
+            "A safe API",
+            "Raw declarations and the build script that links the C library",
+            "Tests only",
+            "A C compiler"
+          ],
+          "answer": 1,
+          "explanation": "The safe wrapper is a separate crate on top."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "The C ABI is the common interface; core::ffi has c_int, c_char and friends.",
+        "#[repr(C)] gives a struct C's layout; opaque C types are zero-sized private structs.",
+        "Foreign functions are unsafe to call unless declared safe fn, which promises every input is fine.",
+        "CString owns a NUL-terminated string to lend to C; CStr borrows one from C.",
+        "Pass extern \"C\" fns as callbacks; wrap C handles in types whose Drop frees them.",
+        "Export with #[unsafe(no_mangle)] pub extern \"C\" fn, and never let a panic cross into C."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "FFI",
+      "def": "The foreign function interface: calling functions written in another language, usually through the C ABI."
+    },
+    {
+      "term": "ABI",
+      "def": "Application binary interface: how arguments, return values and data are laid out at the machine level."
+    },
+    {
+      "term": "repr(C)",
+      "def": "An attribute that lays out a struct or enum the way a C compiler would."
+    },
+    {
+      "term": "CString / CStr",
+      "def": "Owned and borrowed NUL-terminated strings for passing text to and from C."
+    },
+    {
+      "term": "name mangling",
+      "def": "The compiler encoding extra information into symbol names; no_mangle turns it off so C can find the function."
+    },
+    {
+      "term": "bindgen",
+      "def": "A tool that generates Rust extern declarations from C header files."
+    }
+  ]
+}

@@ -1,0 +1,366 @@
+{
+  "title": "Ownership: who cleans up",
+  "summary": "Where values live, the three ownership rules, and what moving, copying, cloning and dropping mean, including when you pass values to functions.",
+  "minutes": 35,
+  "source": {
+    "chapter": "ch04",
+    "sections": [
+      "TRPL 4.1 What Is Ownership?",
+      "TRPL 4.1 The Stack and the Heap",
+      "TRPL 4.1 Ownership Rules",
+      "TRPL 4.1 Memory and Allocation",
+      "TRPL 4.1 Ownership and Functions",
+      "PR ch4 Ownership",
+      "PR ch4 Moves",
+      "PR ch4 Copy Types",
+      "RiA 4.1-4.3 CubeSat ground station",
+      "CR Day 3 Memory Management"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Every program has to manage memory: get it when it needs to store something, and give it back when it is finished. Languages solve this in one of two ways:\n\n- **Garbage collection** (Java, Python, Go, JavaScript): a runtime looks for memory nobody uses any more and frees it. Easy to use, but it costs run time and memory, and you do not decide when cleanup happens.\n- **Manual management** (C, C++): you allocate and free memory yourself. Fast, but forget to free and you leak; free twice or use memory after freeing it and you get crashes and security holes.\n\nRust takes a third way. Memory is managed through a set of **ownership** rules that the compiler checks. If a rule is broken, the program does not compile. When it does compile, the cleanup code is placed exactly where it belongs, with no garbage collector running in the background. Ownership is the topic that makes Rust feel different at first, and the one that pays off most once it clicks.\n"
+    },
+    {
+      "type": "text",
+      "title": "The stack and the heap",
+      "md": "To see why ownership exists, you need a rough picture of the two places a program keeps its data.\n\nThe **stack** stores values in the order they arrive and removes them in the opposite order, like a stack of plates: last in, first out. Everything on the stack must have a size known when the program is compiled. Pushing and popping is extremely fast, because the place for new data is always the top.\n\nThe **heap** is for data whose size is unknown when compiling, or which can change: text typed by a user, a list that grows. You ask the memory allocator for space, it finds a free block big enough and gives you its address, a **pointer**. The pointer has a fixed size, so it can live on the stack, while the data it points to lives on the heap. Allocating and reading through a pointer is slower than using the stack.\n"
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "title": "What ownership is really about",
+      "md": "Keeping track of which code is using which data on the heap, making sure nothing is duplicated by accident, and freeing heap memory that is no longer used. Once you understand ownership, you rarely need to think about the stack and the heap directly, but knowing they exist explains every rule that follows."
+    },
+    {
+      "type": "text",
+      "title": "The three rules",
+      "md": "1. Each value in Rust has an **owner**.\n2. There can only be **one owner at a time**.\n3. When the owner goes **out of scope**, the value is **dropped** (its memory is freed).\n\nA **scope** is the region of code where a name is valid, usually the `{ ... }` block it was declared in.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    {                      // s is not valid here, it is not declared yet\n        let s = \"hello\";   // s is valid from this point forward\n        println!(\"{s}\");\n    }                      // the scope is over, and s is no longer valid\n}\n",
+      "output": "hello"
+    },
+    {
+      "type": "text",
+      "title": "A type that lives on the heap: String",
+      "md": "String literals like `\"hello\"` are baked into the program file, so they never need to be freed, and they cannot change. To show ownership in action we need text that lives on the heap: the `String` type. You create one from a literal with `String::from`, and unlike a literal it can grow:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let mut s = String::from(\"hello\");\n    s.push_str(\", world!\"); // appends a literal to the String\n    println!(\"{s}\");\n}\n",
+      "output": "hello, world!",
+      "explain": "`String::from` asks the allocator for heap memory. Someone must give it back. In Rust, that happens automatically when `s` goes out of scope: Rust calls a special function, `drop`, at the closing brace. C++ programmers know this pattern as RAII."
+    },
+    {
+      "type": "text",
+      "title": "Move",
+      "md": "Here is where Rust differs from other languages. With integers, copying a variable copies the value, and both variables are usable:\n\n```rust\nlet x = 5;\nlet y = x;          // y is a copy of 5; x is still 5\n```\n\nA `String` is three parts on the stack, a pointer to the heap text, a length and a capacity, plus the text itself on the heap:\n"
+    },
+    {
+      "type": "svg",
+      "caption": "`let s1 = String::from(\"hello\"); let s2 = s1;` copies the three stack fields. Both would point at the same heap text, so Rust marks `s1` as no longer valid: the value has **moved** to `s2`.",
+      "svg": "<svg viewBox='0 0 560 230' xmlns='http://www.w3.org/2000/svg' font-family='ui-monospace, monospace' font-size='13'>\n  <g fill='none' stroke='currentColor' stroke-width='1'>\n    <rect x='20' y='40' width='150' height='90'/>\n    <path d='M20 70 H170 M20 100 H170 M95 40 V130'/>\n    <rect x='20' y='150' width='150' height='90' stroke-dasharray='4 3' opacity='.55'/>\n    <rect x='360' y='70' width='180' height='120'/>\n    <path d='M360 94 H540 M360 118 H540 M360 142 H540 M360 166 H540 M450 70 V190'/>\n    <path d='M150 55 C 250 55, 280 82, 356 82' stroke-width='1.5'/>\n    <path d='M350 78 L356 82 L350 86' stroke-width='1.5'/>\n  </g>\n  <g fill='currentColor'>\n    <text x='20' y='30' font-family='sans-serif' font-weight='600'>s2 (stack)</text>\n    <text x='28' y='60'>ptr</text><text x='28' y='90'>len</text><text x='103' y='90'>5</text>\n    <text x='28' y='120'>capacity</text><text x='130' y='120'>5</text>\n    <text x='360' y='60' font-family='sans-serif' font-weight='600'>heap</text>\n    <text x='368' y='87'>0</text><text x='458' y='87'>h</text>\n    <text x='368' y='111'>1</text><text x='458' y='111'>e</text>\n    <text x='368' y='135'>2</text><text x='458' y='135'>l</text>\n    <text x='368' y='159'>3</text><text x='458' y='159'>l</text>\n    <text x='368' y='183'>4</text><text x='458' y='183'>o</text>\n    <text x='190' y='190' font-family='sans-serif' opacity='.7'>s1: moved, no longer usable</text>\n  </g>\n</svg>\n"
+    },
+    {
+      "type": "text",
+      "md": "If both `s1` and `s2` stayed valid, both would try to free the same heap memory when they go out of scope. That is a **double free**, one of the classic memory-safety bugs. Rust avoids it by treating `let s2 = s1;` as a **move**: ownership of the heap text passes to `s2`, and `s1` can no longer be used. Nothing on the heap is copied, so a move is cheap no matter how big the text is.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/main.rs",
+      "code": "fn main() {\n    let s1 = String::from(\"hello\");\n    let s2 = s1;\n    println!(\"{s1}, world!\");\n}\n",
+      "output": "error[E0382]: borrow of moved value: `s1`\n --> src/main.rs:4:16\n  |\n2 |     let s1 = String::from(\"hello\");\n  |         -- move occurs because `s1` has type `String`, which does not implement the `Copy` trait\n3 |     let s2 = s1;\n  |              -- value moved here\n4 |     println!(\"{s1}, world!\");\n  |                ^^ value borrowed here after move\n  |\nhelp: consider cloning the value if the performance cost is acceptable\n  |\n3 |     let s2 = s1.clone();\n  |                ++++++++\n",
+      "output_label": "Compiler output",
+      "explain": "The message tells the whole story in three labels: why it moved (`String` is not `Copy`), where it moved, and where you tried to use it afterwards. Learn to read these three lines; you will see them often in your first weeks."
+    },
+    {
+      "type": "callout",
+      "kind": "note",
+      "title": "Assigning a new value drops the old one",
+      "md": "`let mut s = String::from(\"hello\"); s = String::from(\"ahoy\");` frees the memory of `\"hello\"` immediately, because nothing owns it any more. You do not have to do anything."
+    },
+    {
+      "type": "text",
+      "title": "Clone",
+      "md": "When you really do want a second, independent copy of the heap data, ask for it explicitly with `.clone()`. Cloning a big value can be expensive, and the visible `clone()` call is Rust's way of making that cost obvious when you read the code.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let s1 = String::from(\"hello\");\n    let s2 = s1.clone();\n    println!(\"s1 = {s1}, s2 = {s2}\");\n}\n",
+      "output": "s1 = hello, s2 = hello"
+    },
+    {
+      "type": "text",
+      "title": "Copy types",
+      "md": "Why did `let y = x;` work for integers? Because integers live entirely on the stack, and copying them is as cheap as moving them. Types like that implement the **`Copy`** trait, and assigning them copies instead of moving. The original stays valid.\n\n`Copy` types: all integer types, `bool`, all floating-point types, `char`, and tuples and arrays that contain only `Copy` types, such as `(i32, f64)` or `[u8; 4]`. A type that owns heap memory, like `String`, can never be `Copy`.\n"
+    },
+    {
+      "type": "table",
+      "title": "What happens on `let b = a;`",
+      "headers": [
+        "Type of `a`",
+        "Result",
+        "Can you still use `a`?"
+      ],
+      "rows": [
+        [
+          "`i32`, `f64`, `bool`, `char`",
+          "copy",
+          "yes"
+        ],
+        [
+          "`(i32, bool)`, `[u8; 4]`",
+          "copy (all parts are `Copy`)",
+          "yes"
+        ],
+        [
+          "`String`",
+          "move",
+          "no"
+        ],
+        [
+          "`(i32, String)`",
+          "move (one part is not `Copy`)",
+          "no"
+        ],
+        [
+          "`a.clone()` of a `String`",
+          "deep copy of the heap data",
+          "yes"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Ownership and functions",
+      "md": "Passing a value to a function works exactly like assigning it to a variable: a `String` is **moved** into the function's parameter, and an `i32` is copied. Returning a value moves it out to the caller.\n"
+    },
+    {
+      "type": "stepper",
+      "title": "Follow the ownership",
+      "lang": "rust",
+      "steps": [
+        {
+          "title": "s comes into scope",
+          "md": "`s` owns a heap-allocated String.",
+          "code": "fn main() {\n    let s = String::from(\"hello\");\n    takes_ownership(s);\n    let x = 5;\n    makes_copy(x);\n    println!(\"{x}\");\n}\n\nfn takes_ownership(some_string: String) {\n    println!(\"{some_string}\");\n}\n\nfn makes_copy(some_integer: i32) {\n    println!(\"{some_integer}\");\n}\n",
+          "highlight": [
+            2
+          ]
+        },
+        {
+          "title": "s moves into the function",
+          "md": "Ownership passes to the parameter `some_string`. From this line on, using `s` in `main` would be a compile error.",
+          "code": "fn main() {\n    let s = String::from(\"hello\");\n    takes_ownership(s);\n    let x = 5;\n    makes_copy(x);\n    println!(\"{x}\");\n}\n\nfn takes_ownership(some_string: String) {\n    println!(\"{some_string}\");\n}\n\nfn makes_copy(some_integer: i32) {\n    println!(\"{some_integer}\");\n}\n",
+          "highlight": [
+            3,
+            9
+          ]
+        },
+        {
+          "title": "The function ends: drop",
+          "md": "`some_string` goes out of scope at the closing brace of `takes_ownership`, so the String is dropped and its heap memory freed, there and not in `main`.",
+          "code": "fn main() {\n    let s = String::from(\"hello\");\n    takes_ownership(s);\n    let x = 5;\n    makes_copy(x);\n    println!(\"{x}\");\n}\n\nfn takes_ownership(some_string: String) {\n    println!(\"{some_string}\");\n}\n\nfn makes_copy(some_integer: i32) {\n    println!(\"{some_integer}\");\n}\n",
+          "highlight": [
+            11
+          ]
+        },
+        {
+          "title": "x is copied",
+          "md": "`i32` is `Copy`, so `makes_copy` gets its own copy and `x` stays usable in `main`.",
+          "code": "fn main() {\n    let s = String::from(\"hello\");\n    takes_ownership(s);\n    let x = 5;\n    makes_copy(x);\n    println!(\"{x}\");\n}\n\nfn takes_ownership(some_string: String) {\n    println!(\"{some_string}\");\n}\n\nfn makes_copy(some_integer: i32) {\n    println!(\"{some_integer}\");\n}\n",
+          "highlight": [
+            4,
+            5,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Giving it back",
+      "md": "A function can return ownership. That works, but threading every value in and back out quickly gets tedious, as this example shows:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let s1 = String::from(\"hello\");\n    let (s2, len) = calculate_length(s1);\n    println!(\"The length of '{s2}' is {len}.\");\n}\n\nfn calculate_length(s: String) -> (String, usize) {\n    let length = s.len();\n    (s, length) // give the String back along with the answer\n}\n",
+      "output": "The length of 'hello' is 5.",
+      "explain": "All we wanted was the length, yet we had to pass the String in, get it back out in a tuple, and give it a new name. The next lesson shows the proper tool for \"let me look at this without taking it\": a **reference**."
+    },
+    {
+      "type": "playground",
+      "id": "ch04-play-cubesat",
+      "title": "The satellite that vanished",
+      "lang": "rust",
+      "md": "Adapted from *Rust in Action*. A ground station checks each satellite's status twice, but `check_status` takes ownership of the satellite name, so the second round does not compile. Run it and read the error. Then fix it **without** using `clone()`: make `check_status` return the name back together with the status, and rebind the variable on each call. The program should print the two lines shown in the task.\n",
+      "task": "Print `sat-a: ok` twice, once per round, without calling clone().",
+      "code": "fn check_status(sat: String) -> &'static str {\n    if sat.is_empty() { \"unknown\" } else { \"ok\" }\n}\n\nfn main() {\n    let sat_a = String::from(\"sat-a\");\n    let status = check_status(sat_a);\n    println!(\"{sat_a}: {status}\");\n    let status = check_status(sat_a);\n    println!(\"{sat_a}: {status}\");\n}\n",
+      "expected_output": "sat-a: ok\nsat-a: ok\n",
+      "hints": [
+        "Change the return type to a tuple: `-> (String, &'static str)`, and return `(sat, status)`.",
+        "In `main`, shadow the variable on each call: `let (sat_a, status) = check_status(sat_a);`",
+        "This works but is clumsy. Lesson 2 replaces it with `fn check_status(sat: &String)`."
+      ]
+    },
+    {
+      "type": "reveal",
+      "prompt": "Why does Rust move a String instead of copying it, as Python or Java appear to do?",
+      "md": "Copying would mean duplicating the heap data on every assignment and every function call, which would be slow for big values and surprising. Sharing the heap data between two owners without copying (what garbage-collected languages do) needs a runtime to know when the last user is gone. A move gives you the speed of sharing and the safety of a single owner: exactly one variable is responsible for freeing the memory, and the compiler knows which.\n"
+    },
+    {
+      "type": "exercise",
+      "id": "ch04-ex-ownership",
+      "exercise_dir": "ch04-ownership",
+      "title": "Pass, return and clone",
+      "difficulty": "easy",
+      "goal": "Write functions that take ownership of a String and hand back what the caller needs.",
+      "behavior": "- `pub fn shout(s: String) -> String`: the same text in capital letters, with `!` added at the end. It takes ownership of `s` and may reuse it.\n- `pub fn join_words(a: String, b: String) -> String`: `a`, a space, then `b`.\n- `pub fn twice(s: &str) -> (String, String)`: two independent Strings containing the same text (you will need `String::from` or `.to_string()`, and `.clone()`).\n",
+      "examples": [
+        {
+          "input": "shout(String::from(\"hello\"))",
+          "output": "\"HELLO!\""
+        },
+        {
+          "input": "join_words(String::from(\"ground\"), String::from(\"station\"))",
+          "output": "\"ground station\""
+        },
+        {
+          "input": "twice(\"sat\")",
+          "output": "(\"sat\", \"sat\")"
+        }
+      ],
+      "hints": [
+        "`s.to_uppercase()` returns a new String. Then `push('!')` onto it, or use `format!(\"{}!\", ...)`.",
+        "`join_words` can take `mut a`, then `a.push(' ');` and `a.push_str(&b);` and return `a`. (The `&` is next lesson's topic; `push_str` wants to look at `b`, not own it.)",
+        "`twice`: `let first = String::from(s); let second = first.clone(); (first, second)`."
+      ],
+      "solution_explain": "`join_words` reuses `a`'s heap buffer instead of allocating a new String: since the function owns `a`, it may change it. `b` is dropped when the function returns. In `twice`, `clone` is the only way to get two owners of equal text."
+    },
+    {
+      "type": "quiz",
+      "id": "ch04-quiz-ownership",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which statement about the heap is true?",
+          "options": [
+            "Every value in Rust is on the heap",
+            "Data whose size can change, like a String's text, is stored on the heap",
+            "The heap is faster than the stack",
+            "Heap memory is freed by a garbage collector in Rust"
+          ],
+          "answer": 1,
+          "explanation": "Growable data goes on the heap. Rust frees it when the owner goes out of scope; there is no garbage collector."
+        },
+        {
+          "type": "single",
+          "q": "After `let a = String::from(\"x\"); let b = a;`, what happens if you use `a`?",
+          "options": [
+            "It prints `x`",
+            "It prints an empty string",
+            "Compile error: value used after move",
+            "A panic at run time"
+          ],
+          "answer": 2,
+          "explanation": "Ownership moved to `b`. The compiler rejects any later use of `a`."
+        },
+        {
+          "type": "multi",
+          "q": "Which types are `Copy`?",
+          "options": [
+            "`u64`",
+            "`String`",
+            "`(char, bool)`",
+            "`[i32; 3]`",
+            "`(i32, String)`"
+          ],
+          "answer": [
+            0,
+            2,
+            3
+          ],
+          "explanation": "Plain numbers, `char`, `bool`, and tuples or arrays made only of `Copy` types are `Copy`. Anything containing a `String` is not."
+        },
+        {
+          "type": "single",
+          "q": "When is the memory of `s` freed here?",
+          "code": "fn eat(s: String) {\n    println!(\"{s}\");\n}\nfn main() {\n    let s = String::from(\"hi\");\n    eat(s);\n    println!(\"done\");\n}\n",
+          "lang": "rust",
+          "options": [
+            "At the end of `main`",
+            "At the end of `eat`",
+            "Never, it leaks",
+            "When the program exits"
+          ],
+          "answer": 1,
+          "explanation": "`s` moved into `eat`, so it is dropped when `eat`'s parameter goes out of scope."
+        },
+        {
+          "type": "truefalse",
+          "q": "A move copies all of a String's heap data to the new owner.",
+          "answer": false,
+          "explanation": "Only the pointer, length and capacity (on the stack) are copied. That is why a move is cheap."
+        },
+        {
+          "type": "fill",
+          "q": "To make a deep copy of a String so both variables stay usable, call `.______()`.",
+          "answer": [
+            "clone"
+          ],
+          "explanation": "`clone` duplicates the heap data."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Stack: fast, fixed-size, last in first out. Heap: for data whose size is unknown or changes, reached through a pointer.",
+        "Rules: every value has one owner; when the owner goes out of scope, the value is dropped.",
+        "Assigning or passing a non-`Copy` value like `String` **moves** it; the old name can no longer be used.",
+        "`Copy` types (numbers, `bool`, `char`, and tuples/arrays of them) are copied instead.",
+        "`.clone()` makes an explicit, possibly expensive, deep copy.",
+        "Functions take ownership of what they are given and can give it back by returning it."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "ownership",
+      "def": "Rust's system for memory management: each value has exactly one owner, and it is freed when the owner goes out of scope."
+    },
+    {
+      "term": "move",
+      "def": "Transferring ownership of a value to another variable or function; the original can no longer be used."
+    },
+    {
+      "term": "drop",
+      "def": "Freeing a value's resources when its owner goes out of scope; Rust inserts the call automatically."
+    },
+    {
+      "term": "Copy",
+      "def": "A trait for types that are duplicated by simple bit copying (numbers, bool, char); assigning them copies instead of moving."
+    },
+    {
+      "term": "clone",
+      "def": "An explicit deep copy of a value, including its heap data."
+    },
+    {
+      "term": "heap",
+      "def": "Memory for data whose size is not known at compile time, allocated on request and reached through a pointer."
+    },
+    {
+      "term": "stack",
+      "def": "Memory for fixed-size values, managed last in, first out; very fast."
+    }
+  ]
+}

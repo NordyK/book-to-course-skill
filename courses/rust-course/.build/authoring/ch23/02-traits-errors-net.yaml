@@ -1,0 +1,764 @@
+title: "Errors, MAC addresses and protocol state machines"
+summary: "Returning several error types from one function: Box<dyn Error>, a custom error enum with Display, Error and From so ? converts automatically, and when unwrap is acceptable; trait objects in Rust in Action's role-playing game; MAC addresses as a newtype with local and multicast bits; and network protocols as enum state machines."
+minutes: 40
+source:
+  chapter: ch23
+  sections: ["RiA 8.3 Trait Objects", "RiA 8.3.3 Creating a tiny role-playing game", "RiA 8.5 Ergonomic Error Handling for Libraries", "RiA 8.5.1 Issue: unable to return multiple error types", "RiA 8.5.2 Wrapping downstream errors by defining our own error type", "RiA 8.5.3 Cheat with unwrap() and expect()", "RiA 8.6 MAC addresses", "RiA 8.6.1 Generating MAC addresses", "RiA 8.7 Implementing state machines with Rust's enums"]
+blocks:
+  - type: text
+    title: One function, several kinds of error
+    md: |
+      Network code fails in many ways: the address does not parse (`AddrParseError`), the connection is refused (`io::Error`), the reply is not a number (`ParseIntError`). A function that uses `?` on all three cannot return `Result<T, io::Error>`, because `?` only converts errors into the declared type. *Rust in Action* shows three ways out.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::fs::File;
+      use std::net::Ipv6Addr;
+
+      fn main() -> Result<(), std::io::Error> {
+          let _f = File::open("invisible.txt")?;
+
+          let _localhost = "::1".parse::<Ipv6Addr>()?;
+
+          Ok(())
+      }
+    output: |
+      error[E0277]: `?` couldn't convert the error to `std::io::Error`
+       --> src/main.rs:7:47
+        |
+      4 | fn main() -> Result<(), std::io::Error> {
+        |              -------------------------- expected `std::io::Error` because of this
+      ...
+      7 |     let _localhost = "::1".parse::<Ipv6Addr>()?;
+        |                            -------------------^ the trait `From<AddrParseError>` is not implemented for `std::io::Error`
+        |                            |
+        |                            this can't be annotated with `?` because it has type `Result<_, AddrParseError>`
+        |
+        = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+        = help: `std::io::Error` implements trait `From<T>`:
+                  From<ErrorKind>
+                  From<IntoInnerError<W>>
+                  From<NulError>
+                  From<TryReserveError>
+                  From<std::fs::TryLockError>
+    output_label: Compiler output
+    explain: "`?` needs a `From<AddrParseError> for io::Error` impl to convert the error, and none exists."
+
+  - type: text
+    title: "Way 1: Box<dyn Error>"
+    md: |
+      Every error type implements the `std::error::Error` trait, and there is a blanket `From<E: Error> for Box<dyn Error>`. So a function returning `Result<T, Box<dyn Error>>` can use `?` on anything. It is quick and fine for applications, but callers lose the concrete type: they can print the error, but matching on it needs `downcast_ref`.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::error::Error;
+      use std::net::Ipv6Addr;
+
+      fn parse_both(addr: &str, port: &str) -> Result<(Ipv6Addr, u16), Box<dyn Error>> {
+          let ip = addr.parse::<Ipv6Addr>()?;
+          let port = port.parse::<u16>()?;
+          Ok((ip, port))
+      }
+
+      fn main() {
+          println!("{:?}", parse_both("::1", "8080"));
+          println!("{}", parse_both("::1", "99999").unwrap_err());
+          let e = parse_both("not-an-ip", "80").unwrap_err();
+          println!("{e}");
+          println!("is AddrParseError: {}", e.downcast_ref::<std::net::AddrParseError>().is_some());
+      }
+    output: |
+      Ok((::1, 8080))
+      number too large to fit in target type
+      invalid IPv6 address syntax
+      is AddrParseError: true
+
+  - type: text
+    title: "Way 2: your own error type"
+    md: |
+      Libraries should give callers an error they can match on. Define an **enum** with one variant per downstream error, then implement three things:
+
+      1. `std::fmt::Display`, so it can be printed;
+      2. `std::error::Error`, so it fits wherever errors are expected (`source()` can return the wrapped error);
+      3. `From<DownstreamError>` for each variant, so `?` converts automatically.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::error;
+      use std::fmt;
+      use std::fs::File;
+      use std::io;
+      use std::net::{self, Ipv6Addr};
+
+      #[derive(Debug)]
+      enum UpstreamError {
+          IO(io::Error),
+          Parsing(net::AddrParseError),
+      }
+
+      impl fmt::Display for UpstreamError {
+          fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+              match self {
+                  UpstreamError::IO(e) => write!(f, "I/O error: {e}"),
+                  UpstreamError::Parsing(e) => write!(f, "bad address: {e}"),
+              }
+          }
+      }
+
+      impl error::Error for UpstreamError {
+          fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+              match self {
+                  UpstreamError::IO(e) => Some(e),
+                  UpstreamError::Parsing(e) => Some(e),
+              }
+          }
+      }
+
+      impl From<io::Error> for UpstreamError {
+          fn from(error: io::Error) -> Self {
+              UpstreamError::IO(error)
+          }
+      }
+
+      impl From<net::AddrParseError> for UpstreamError {
+          fn from(error: net::AddrParseError) -> Self {
+              UpstreamError::Parsing(error)
+          }
+      }
+
+      fn connect(addr: &str, file: &str) -> Result<Ipv6Addr, UpstreamError> {
+          let ip = addr.parse::<Ipv6Addr>()?;
+          let _f = File::open(file)?;
+          Ok(ip)
+      }
+
+      fn main() {
+          for (addr, file) in [("zz", "x"), ("::1", "/no/such/file")] {
+              match connect(addr, file) {
+                  Ok(ip) => println!("ok {ip}"),
+                  Err(UpstreamError::Parsing(_)) => println!("fix the address, please"),
+                  Err(e) => println!("{e} (source: {:?})", error::Error::source(&e).is_some()),
+              }
+          }
+      }
+    output: |
+      fix the address, please
+      I/O error: No such file or directory (os error 2) (source: true)
+    explain: "The `?` operator calls `From::from` on the error, which is why the two `impl From` blocks are all it takes for both `?`s to compile. The `thiserror` crate generates exactly this boilerplate from attributes; `anyhow` is a richer `Box<dyn Error>` for applications."
+
+  - type: callout
+    kind: tip
+    title: "Way 3: unwrap and expect"
+    md: "*Rust in Action* also lists \"cheating\" with `unwrap()` and `expect()`. In prototypes, examples and tests that is reasonable: a crash with a message is what you want. In library code it turns a recoverable error into a panic for every user, so prefer the error enum there."
+
+  - type: text
+    title: Trait objects in a tiny game
+    md: |
+      *Rust in Action* introduces trait objects (chapter 18 of this course) with a role-playing game: dwarves, elves and humans can all `enchant` things, and a party is a `Vec<&dyn Enchanter>`. Different types, one interface, chosen at run time:
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      struct Dwarf;
+      #[derive(Debug)]
+      struct Elf;
+      #[derive(Debug)]
+      struct Human;
+
+      #[derive(Debug)]
+      enum Thing {
+          Sword,
+          Trinket,
+      }
+
+      trait Enchanter: std::fmt::Debug {
+          fn competency(&self) -> f64;
+
+          // the book rolls a random die here; a fixed "roll" keeps the output repeatable
+          fn enchant(&self, thing: &mut Thing, roll: f64) {
+              let probability_of_success = self.competency();
+              print!("{:?} mutters incoherently. ", self);
+              if roll < probability_of_success {
+                  println!("The {:?} glows brightly.", thing);
+              } else {
+                  println!("The {:?} fizzes, then turns into a worthless trinket.", thing);
+                  *thing = Thing::Trinket;
+              }
+          }
+      }
+
+      impl Enchanter for Dwarf {
+          fn competency(&self) -> f64 {
+              0.5
+          }
+      }
+      impl Enchanter for Elf {
+          fn competency(&self) -> f64 {
+              0.95
+          }
+      }
+      impl Enchanter for Human {
+          fn competency(&self) -> f64 {
+              0.8
+          }
+      }
+
+      fn main() {
+          let mut it = Thing::Sword;
+          let d = Dwarf;
+          let e = Elf;
+          let h = Human;
+          let party: Vec<&dyn Enchanter> = vec![&d, &h, &e];
+          for (spellcaster, roll) in party.iter().zip([0.3, 0.9, 0.1]) {
+              spellcaster.enchant(&mut it, roll);
+          }
+      }
+    output: |
+      Dwarf mutters incoherently. The Sword glows brightly.
+      Human mutters incoherently. The Sword fizzes, then turns into a worthless trinket.
+      Elf mutters incoherently. The Trinket glows brightly.
+
+  - type: text
+    title: MAC addresses
+    md: |
+      IP addresses route between networks; on the local network, Ethernet and Wi-Fi deliver **frames** to **MAC addresses**: 48 bits (6 bytes), written `aa:bb:cc:dd:ee:ff`, normally burned in by the manufacturer. They are not hierarchical: numerically close addresses can be on different continents.
+
+      Two bits of the **first byte** carry meaning:
+
+      - bit 1 (`0b10`): **locally administered** if set, universal (assigned by the manufacturer under an IEEE prefix) if clear. Addresses you invent in software must set it.
+      - bit 0 (`0b01`): **multicast** (a group address) if set, **unicast** (one device) if clear.
+
+      *Rust in Action*'s `macgen` wraps the bytes in a newtype and sets both bits with `|=`. Note one detail: by the IEEE definition, setting bit 0 makes the address **multicast**; its `is_unicast` method actually tests the multicast bit. A generated unicast address should set bit 1 and **clear** bit 0, as below.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::fmt;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct MacAddress([u8; 6]);
+
+      impl fmt::Display for MacAddress {
+          fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+              let o = &self.0;
+              write!(f, "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}", o[0], o[1], o[2], o[3], o[4], o[5])
+          }
+      }
+
+      impl MacAddress {
+          /// A locally administered unicast address from 6 random bytes.
+          fn local_unicast(mut octets: [u8; 6]) -> MacAddress {
+              octets[0] |= 0b0000_0010; // local
+              octets[0] &= !0b0000_0001; // unicast
+              MacAddress(octets)
+          }
+
+          fn is_local(&self) -> bool {
+              self.0[0] & 0b10 != 0
+          }
+
+          fn is_multicast(&self) -> bool {
+              self.0[0] & 0b01 != 0
+          }
+      }
+
+      fn main() {
+          // bytes from a simple generator, so the output is repeatable
+          let mut seed: u64 = 0x2545_F491_4F6C_DD1D;
+          let mut octets = [0u8; 6];
+          for b in octets.iter_mut() {
+              seed ^= seed << 13;
+              seed ^= seed >> 7;
+              seed ^= seed << 17;
+              *b = seed as u8;
+          }
+          let mac = MacAddress::local_unicast(octets);
+          println!("mac: {mac} local={} multicast={}", mac.is_local(), mac.is_multicast());
+
+          let broadcast = MacAddress([0xff; 6]);
+          println!("{broadcast} local={} multicast={}", broadcast.is_local(), broadcast.is_multicast());
+      }
+    output: |
+      mac: e6:e0:b7:36:8e:c1 local=true multicast=false
+      ff:ff:ff:ff:ff:ff local=true multicast=true
+
+  - type: text
+    title: Protocols as state machines
+    md: |
+      A network connection moves through **states**: connecting, sending, waiting for a reply, closed. *Rust in Action* models this with an enum, a `loop` and a `match` that computes the next state. Because each state is a variant that can carry data, impossible combinations (a reply buffer while not yet connected) cannot be represented. The match makes every transition explicit, and the compiler checks that every state is handled.
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      enum State {
+          Connecting { attempt: u32 },
+          Sending(String),
+          Waiting { sent: usize },
+          Done(String),
+          Failed(String),
+      }
+
+      // a pretend network: the first attempt fails, the second succeeds
+      fn try_connect(attempt: u32) -> bool {
+          attempt >= 2
+      }
+
+      fn main() {
+          let mut state = State::Connecting { attempt: 1 };
+          loop {
+              println!("{state:?}");
+              state = match state {
+                  State::Connecting { attempt } if attempt > 3 => State::Failed(String::from("gave up")),
+                  State::Connecting { attempt } => {
+                      if try_connect(attempt) {
+                          State::Sending(String::from("GET / HTTP/1.0\r\n\r\n"))
+                      } else {
+                          State::Connecting { attempt: attempt + 1 }
+                      }
+                  }
+                  State::Sending(request) => State::Waiting { sent: request.len() },
+                  State::Waiting { sent } => State::Done(format!("200 OK after sending {sent} bytes")),
+                  State::Done(_) | State::Failed(_) => break,
+              };
+          }
+      }
+    output: |
+      Connecting { attempt: 1 }
+      Connecting { attempt: 2 }
+      Sending("GET / HTTP/1.0\r\n\r\n")
+      Waiting { sent: 18 }
+      Done("200 OK after sending 18 bytes")
+
+  - type: playground
+    id: ch23-play-error
+    title: "An error type for a port scanner"
+    lang: rust
+    md: |
+      `parse_target("host:port")` must return `Result<(String, u16), TargetError>`. Define `TargetError` with variants `MissingPort`, `BadPort(ParseIntError)` and `EmptyHost`, implement `Display` and `From<ParseIntError>`, and use `?` for the port.
+    task: "Print `Ok((\"example.com\", 443))`, `missing :port`, `bad port: invalid digit found in string`, `empty host`."
+    code: |
+      use std::fmt;
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      enum TargetError {
+          // TODO
+      }
+
+      // TODO: impl Display and From<ParseIntError>
+
+      fn parse_target(s: &str) -> Result<(String, u16), TargetError> {
+          todo!()
+      }
+
+      fn main() {
+          println!("{:?}", parse_target("example.com:443"));
+          for bad in ["example.com", "example.com:https", ":80"] {
+              match parse_target(bad) {
+                  Ok(t) => println!("unexpected {t:?}"),
+                  Err(e) => println!("{e}"),
+              }
+          }
+      }
+    starter_ok: compile_error
+    expected_output: |
+      Ok(("example.com", 443))
+      missing :port
+      bad port: invalid digit found in string
+      empty host
+    solution_code: |
+      use std::fmt;
+      use std::num::ParseIntError;
+
+      #[derive(Debug)]
+      enum TargetError {
+          MissingPort,
+          BadPort(ParseIntError),
+          EmptyHost,
+      }
+
+      impl fmt::Display for TargetError {
+          fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+              match self {
+                  TargetError::MissingPort => write!(f, "missing :port"),
+                  TargetError::BadPort(e) => write!(f, "bad port: {e}"),
+                  TargetError::EmptyHost => write!(f, "empty host"),
+              }
+          }
+      }
+
+      impl From<ParseIntError> for TargetError {
+          fn from(e: ParseIntError) -> Self {
+              TargetError::BadPort(e)
+          }
+      }
+
+      fn parse_target(s: &str) -> Result<(String, u16), TargetError> {
+          let (host, port) = s.rsplit_once(':').ok_or(TargetError::MissingPort)?;
+          if host.is_empty() {
+              return Err(TargetError::EmptyHost);
+          }
+          let port: u16 = port.parse()?;
+          Ok((host.to_string(), port))
+      }
+
+      fn main() {
+          println!("{:?}", parse_target("example.com:443"));
+          for bad in ["example.com", "example.com:https", ":80"] {
+              match parse_target(bad) {
+                  Ok(t) => println!("unexpected {t:?}"),
+                  Err(e) => println!("{e}"),
+              }
+          }
+      }
+    hints:
+      - "`s.rsplit_once(':').ok_or(TargetError::MissingPort)?` handles the missing colon."
+      - "With `impl From<ParseIntError> for TargetError`, `port.parse()?` converts the error for you."
+
+  - type: exercise
+    id: ch23-ex-net
+    exercise_dir: ch23-net
+    title: "A connection library"
+    difficulty: hard
+    goal: "Design a library error type that wraps several downstream errors, a MAC address type, and a connection state machine with checked transitions."
+    behavior: |
+      Errors:
+      - `pub enum NetError { Io(io::Error), Addr(AddrParseError), Port(ParseIntError), Protocol(String) }` with `Display` (`"io: ..."`, `"address: ..."`, `"port: ..."`, `"protocol: ..."`), `std::error::Error` (with `source` returning the wrapped error for the first three) and `From` for the three wrapped types.
+      - `pub fn parse_endpoint(s: &str) -> Result<SocketAddr, NetError>`: `"IP:PORT"` for IPv4 only, split at the last `:`; uses `?` for both parts.
+      MAC:
+      - `pub struct Mac(pub [u8; 6])` with `Display` (lowercase, colon-separated), `pub fn parse(s: &str) -> Result<Mac, NetError>` (six two-digit hex groups separated by `:` or `-`; anything else is a `Protocol` error), `is_local`, `is_multicast`, and `pub fn local_unicast(bytes: [u8; 6]) -> Mac`.
+      State machine:
+      - `pub enum Conn { Closed, SynSent, Established { sent: usize, received: usize }, FinWait }` and `pub enum Event { Open, SynAck, Send(usize), Recv(usize), Close, Ack }`.
+      - `pub fn step(state: Conn, event: Event) -> Result<Conn, NetError>`: Closed + Open → SynSent; SynSent + SynAck → Established {0, 0}; Established + Send(n)/Recv(n) adds to the counters; Established + Close → FinWait; FinWait + Ack → Closed. Every other pair is `Protocol("<state> cannot handle <event>")` using the `Debug` names, e.g. `"Closed cannot handle Send(5)"`.
+    examples:
+      - input: "parse_endpoint(\"10.0.0.1:x\")"
+        output: "Err(NetError::Port(..)), displayed as \"port: invalid digit found in string\""
+      - input: "Mac::parse(\"AA-bb-01-02-03-04\").unwrap().to_string()"
+        output: "\"aa:bb:01:02:03:04\""
+    hints:
+      - "`parse_endpoint`: `let (ip, port) = s.rsplit_once(':').ok_or_else(|| NetError::Protocol(...))?; let ip: Ipv4Addr = ip.parse()?; let port: u16 = port.parse()?;`"
+      - "Mac parsing: `s.split(|c| c == ':' || c == '-')`, check there are six parts of length 2, then `u8::from_str_radix(part, 16)`."
+      - "Derive `Debug` on `Conn` and `Event` so the error message can use `{:?}`; for the state name only, a small `fn name(&self) -> &'static str` helps."
+    rust:
+      starter: |
+        use std::error::Error;
+        use std::fmt;
+        use std::io;
+        use std::net::{AddrParseError, Ipv4Addr, SocketAddr};
+        use std::num::ParseIntError;
+
+        #[derive(Debug)]
+        pub enum NetError {
+            Io(io::Error),
+            Addr(AddrParseError),
+            Port(ParseIntError),
+            Protocol(String),
+        }
+
+        // TODO: Display, Error, From x3
+
+        pub fn parse_endpoint(s: &str) -> Result<SocketAddr, NetError> {
+            todo!()
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        pub struct Mac(pub [u8; 6]);
+
+        impl Mac {
+            pub fn parse(s: &str) -> Result<Mac, NetError> {
+                todo!()
+            }
+            pub fn is_local(&self) -> bool {
+                todo!()
+            }
+            pub fn is_multicast(&self) -> bool {
+                todo!()
+            }
+            pub fn local_unicast(bytes: [u8; 6]) -> Mac {
+                todo!()
+            }
+        }
+
+        // TODO: Display for Mac
+
+        #[derive(Debug, PartialEq)]
+        pub enum Conn {
+            Closed,
+            SynSent,
+            Established { sent: usize, received: usize },
+            FinWait,
+        }
+
+        #[derive(Debug)]
+        pub enum Event {
+            Open,
+            SynAck,
+            Send(usize),
+            Recv(usize),
+            Close,
+            Ack,
+        }
+
+        pub fn step(state: Conn, event: Event) -> Result<Conn, NetError> {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn endpoints() {
+            let a = parse_endpoint("127.0.0.1:8080").unwrap();
+            assert_eq!(a.port(), 8080);
+            assert!(matches!(parse_endpoint("300.0.0.1:80"), Err(NetError::Addr(_))));
+            let e = parse_endpoint("10.0.0.1:x").unwrap_err();
+            assert!(matches!(e, NetError::Port(_)));
+            assert_eq!(e.to_string(), "port: invalid digit found in string");
+            assert!(e.source().is_some());
+            assert!(matches!(parse_endpoint("no-port"), Err(NetError::Protocol(_))));
+        }
+
+        #[test]
+        fn io_errors_convert() {
+            fn open() -> Result<(), NetError> {
+                std::fs::File::open("/definitely/missing")?;
+                Ok(())
+            }
+            let e = open().unwrap_err();
+            assert!(matches!(e, NetError::Io(_)));
+            assert!(e.to_string().starts_with("io: "));
+            let p = NetError::Protocol(String::from("x"));
+            assert_eq!(p.to_string(), "protocol: x");
+            assert!(p.source().is_none());
+        }
+
+        #[test]
+        fn macs() {
+            let m = Mac::parse("AA-bb-01-02-03-04").unwrap();
+            assert_eq!(m.to_string(), "aa:bb:01:02:03:04");
+            assert!(m.is_local());
+            assert!(!m.is_multicast());
+            assert!(Mac::parse("01:00:5e:00:00:fb").unwrap().is_multicast());
+            for bad in ["aa:bb:cc", "aa:bb:cc:dd:ee:gg", "aabbccddeeff", "a:bb:cc:dd:ee:ff0"] {
+                assert!(matches!(Mac::parse(bad), Err(NetError::Protocol(_))), "{bad}");
+            }
+            let g = Mac::local_unicast([0xff; 6]);
+            assert!(g.is_local() && !g.is_multicast());
+            assert_eq!(g.0[0], 0xfe);
+            assert_eq!(&g.0[1..], &[0xff; 5]);
+        }
+
+        #[test]
+        fn happy_path() {
+            let mut s = Conn::Closed;
+            for e in [Event::Open, Event::SynAck, Event::Send(10), Event::Recv(200), Event::Send(5)] {
+                s = step(s, e).unwrap();
+            }
+            assert_eq!(s, Conn::Established { sent: 15, received: 200 });
+            let s = step(s, Event::Close).unwrap();
+            assert_eq!(s, Conn::FinWait);
+            assert_eq!(step(s, Event::Ack).unwrap(), Conn::Closed);
+        }
+
+        #[test]
+        fn illegal_transitions() {
+            let e = step(Conn::Closed, Event::Send(5)).unwrap_err();
+            assert_eq!(e.to_string(), "protocol: Closed cannot handle Send(5)");
+            assert!(step(Conn::SynSent, Event::Close).is_err());
+            assert!(step(Conn::FinWait, Event::Open).is_err());
+            let e = step(Conn::Established { sent: 1, received: 2 }, Event::Open).unwrap_err();
+            assert_eq!(e.to_string(), "protocol: Established cannot handle Open");
+        }
+      solution: |
+        use std::error::Error;
+        use std::fmt;
+        use std::io;
+        use std::net::{AddrParseError, Ipv4Addr, SocketAddr};
+        use std::num::ParseIntError;
+
+        #[derive(Debug)]
+        pub enum NetError {
+            Io(io::Error),
+            Addr(AddrParseError),
+            Port(ParseIntError),
+            Protocol(String),
+        }
+
+        impl fmt::Display for NetError {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match self {
+                    NetError::Io(e) => write!(f, "io: {e}"),
+                    NetError::Addr(e) => write!(f, "address: {e}"),
+                    NetError::Port(e) => write!(f, "port: {e}"),
+                    NetError::Protocol(m) => write!(f, "protocol: {m}"),
+                }
+            }
+        }
+
+        impl Error for NetError {
+            fn source(&self) -> Option<&(dyn Error + 'static)> {
+                match self {
+                    NetError::Io(e) => Some(e),
+                    NetError::Addr(e) => Some(e),
+                    NetError::Port(e) => Some(e),
+                    NetError::Protocol(_) => None,
+                }
+            }
+        }
+
+        impl From<io::Error> for NetError {
+            fn from(e: io::Error) -> Self {
+                NetError::Io(e)
+            }
+        }
+
+        impl From<AddrParseError> for NetError {
+            fn from(e: AddrParseError) -> Self {
+                NetError::Addr(e)
+            }
+        }
+
+        impl From<ParseIntError> for NetError {
+            fn from(e: ParseIntError) -> Self {
+                NetError::Port(e)
+            }
+        }
+
+        pub fn parse_endpoint(s: &str) -> Result<SocketAddr, NetError> {
+            let (ip, port) = s
+                .rsplit_once(':')
+                .ok_or_else(|| NetError::Protocol(format!("{s:?} has no port")))?;
+            let ip: Ipv4Addr = ip.parse()?;
+            let port: u16 = port.parse()?;
+            Ok(SocketAddr::from((ip, port)))
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        pub struct Mac(pub [u8; 6]);
+
+        impl Mac {
+            pub fn parse(s: &str) -> Result<Mac, NetError> {
+                let bad = || NetError::Protocol(format!("{s:?} is not a MAC address"));
+                let parts: Vec<&str> = s.split(|c| c == ':' || c == '-').collect();
+                if parts.len() != 6 || parts.iter().any(|p| p.len() != 2) {
+                    return Err(bad());
+                }
+                let mut bytes = [0u8; 6];
+                for (b, p) in bytes.iter_mut().zip(&parts) {
+                    *b = u8::from_str_radix(p, 16).map_err(|_| bad())?;
+                }
+                Ok(Mac(bytes))
+            }
+            pub fn is_local(&self) -> bool {
+                self.0[0] & 0b10 != 0
+            }
+            pub fn is_multicast(&self) -> bool {
+                self.0[0] & 0b01 != 0
+            }
+            pub fn local_unicast(mut bytes: [u8; 6]) -> Mac {
+                bytes[0] = (bytes[0] | 0b10) & !0b01;
+                Mac(bytes)
+            }
+        }
+
+        impl fmt::Display for Mac {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let parts: Vec<String> = self.0.iter().map(|b| format!("{b:02x}")).collect();
+                write!(f, "{}", parts.join(":"))
+            }
+        }
+
+        #[derive(Debug, PartialEq)]
+        pub enum Conn {
+            Closed,
+            SynSent,
+            Established { sent: usize, received: usize },
+            FinWait,
+        }
+
+        impl Conn {
+            fn name(&self) -> &'static str {
+                match self {
+                    Conn::Closed => "Closed",
+                    Conn::SynSent => "SynSent",
+                    Conn::Established { .. } => "Established",
+                    Conn::FinWait => "FinWait",
+                }
+            }
+        }
+
+        #[derive(Debug)]
+        pub enum Event {
+            Open,
+            SynAck,
+            Send(usize),
+            Recv(usize),
+            Close,
+            Ack,
+        }
+
+        pub fn step(state: Conn, event: Event) -> Result<Conn, NetError> {
+            match (state, event) {
+                (Conn::Closed, Event::Open) => Ok(Conn::SynSent),
+                (Conn::SynSent, Event::SynAck) => Ok(Conn::Established { sent: 0, received: 0 }),
+                (Conn::Established { sent, received }, Event::Send(n)) => Ok(Conn::Established { sent: sent + n, received }),
+                (Conn::Established { sent, received }, Event::Recv(n)) => Ok(Conn::Established { sent, received: received + n }),
+                (Conn::Established { .. }, Event::Close) => Ok(Conn::FinWait),
+                (Conn::FinWait, Event::Ack) => Ok(Conn::Closed),
+                (s, e) => Err(NetError::Protocol(format!("{} cannot handle {:?}", s.name(), e))),
+            }
+        }
+    solution_explain: "With the three `From` impls, `?` turns `AddrParseError` and `ParseIntError` into `NetError` without any `map_err`. Matching on the pair `(state, event)` lists every legal transition in one place, and the final arm turns everything else into an error instead of a silent no-op."
+
+  - type: quiz
+    id: ch23-quiz-errors
+    title: Check yourself
+    questions:
+      - type: single
+        q: "Why does `?` on an AddrParseError fail in a function returning `Result<T, io::Error>`?"
+        options: ["? only works on io errors", "There is no From<AddrParseError> for io::Error", "AddrParseError is not an error", "It does not fail"]
+        answer: 1
+        explanation: "? converts with From."
+      - type: single
+        q: "What is the drawback of returning `Box<dyn Error>` from a library?"
+        options: ["It is slow", "Callers lose the concrete error type and must downcast to match on it", "It cannot be printed", "It does not work with ?"]
+        answer: 1
+        explanation: "Fine for applications."
+      - type: multi
+        q: "What makes a custom error enum work smoothly with `?`?"
+        options: ["impl Display", "impl std::error::Error", "impl From<Downstream> for MyError", "impl Clone"]
+        answer: [0, 1, 2]
+        explanation: "From does the conversion; Display and Error make it a proper error."
+      - type: single
+        q: "Which bit of a MAC address's first byte marks a multicast address?"
+        options: ["bit 0 (0b01)", "bit 1 (0b10)", "bit 7", "none"]
+        answer: 0
+        explanation: "Bit 1 marks locally administered addresses."
+      - type: single
+        q: "Why model a protocol as an enum state machine?"
+        options: ["It is faster", "Each state carries only its own data and match forces every transition to be handled", "Enums are required by TCP", "To save memory only"]
+        answer: 1
+        explanation: "Impossible states become unrepresentable."
+
+  - type: summary
+    points:
+      - "`?` converts errors with From; mixing error types needs a common target."
+      - "`Box<dyn Error>` is quick for applications; libraries define an error enum."
+      - "A custom error implements Display, Error (with source) and From for each wrapped error."
+      - "MAC addresses are 6 bytes; bit 1 of the first byte means local, bit 0 means multicast."
+      - "Enums with a loop and match model protocol states and transitions explicitly."
+terms:
+  - term: error type
+    def: "A type, usually an enum, that represents the ways an operation can fail."
+  - term: source
+    def: "The Error trait method that returns the lower-level error that caused this one."
+  - term: MAC address
+    def: "A 48-bit hardware address used by Ethernet and Wi-Fi on the local network."
+  - term: multicast
+    def: "Addressed to a group of devices rather than a single one (unicast)."
+  - term: state machine
+    def: "A model in which a system is in one of a fixed set of states and events cause transitions."

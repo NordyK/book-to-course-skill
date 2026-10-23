@@ -1,0 +1,10 @@
+{
+  "title": "Patterns in Depth",
+  "summary": "Every place a pattern can appear, refutable and irrefutable patterns, and the full pattern syntax: literals, ranges, multiple patterns, destructuring of structs, enums, tuples, slices and references, ignoring with _ and .., match guards and @ bindings.",
+  "goals": [
+    "List every place Rust accepts a pattern, from match arms to function parameters",
+    "Tell refutable from irrefutable patterns and know where each is allowed",
+    "Destructure nested structs, enums, tuples, arrays, slices and references",
+    "Use ranges, |, _, .., match guards and @ bindings to write precise matches"
+  ]
+}

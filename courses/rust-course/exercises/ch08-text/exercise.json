@@ -1,0 +1,17 @@
+{
+  "title": "Text utilities",
+  "language": "rust",
+  "command": [
+    "cargo",
+    "test",
+    "--offline"
+  ],
+  "timeout": 120,
+  "starter": [
+    "src/lib.rs",
+    "Cargo.toml"
+  ],
+  "tests": [
+    "src/tests.rs"
+  ]
+}
