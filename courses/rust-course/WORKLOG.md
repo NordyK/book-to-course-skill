@@ -57,3 +57,6 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
   then every starter "passes".
 - Chapter 5 done (Structs): 3 lessons + 10-question test; exercises ch05-structs, ch05-bank-account (verified);
   3 playgrounds verified. `verify_codeblocks.py` compares stderr for blocks labelled "Standard error" (dbg!).
+- Chapter 6 done (Enums and Pattern Matching): 3 lessons + 10-question test; exercises ch06-commands (stack
+  machine), ch06-config (let...else parsing), both verified; 3 playgrounds verified. A playground whose starter
+  already prints the target output gets no expected_output (the verifier rejects that), only a task.

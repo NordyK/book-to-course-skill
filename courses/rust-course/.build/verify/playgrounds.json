@@ -102,5 +102,17 @@
  "ch05-play-update": {
   "solution_code": "struct User {\n    username: String,\n    sign_in_count: u64,\n}\n\nfn main() {\n    let user1 = User { username: String::from(\"ferris\"), sign_in_count: 2 };\n    let user2 = User { username: String::from(\"other\"), ..user1 };\n    println!(\"{} ({} sign-ins)\", user1.username, user1.sign_in_count);\n    println!(\"{} ({} sign-ins)\", user2.username, user2.sign_in_count);\n}\n",
   "starter_ok": "compile_error"
+ },
+ "ch06-play-let-else": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch06-play-shapes": {
+  "solution_code": "enum Shape {\n    Circle(f64),\n    Rectangle { width: f64, height: f64 },\n}\n\nimpl Shape {\n    fn describe(&self) -> String {\n        match self {\n            Shape::Circle(r) => format!(\"circle with radius {r}\"),\n            Shape::Rectangle { width, height } => format!(\"rectangle {width} x {height}\"),\n        }\n    }\n}\n\nfn main() {\n    let shapes = [Shape::Circle(1.0), Shape::Rectangle { width: 2.0, height: 3.5 }];\n    for s in &shapes {\n        println!(\"{}\", s.describe());\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch06-play-traffic": {
+  "solution_code": "#[derive(Debug, Clone, Copy)]\nenum Light {\n    Red,\n    Yellow,\n    Green,\n}\n\nimpl Light {\n    fn next(self) -> Light {\n        match self {\n            Light::Red => Light::Green,\n            Light::Green => Light::Yellow,\n            Light::Yellow => Light::Red,\n        }\n    }\n\n    fn wait_seconds(self) -> u32 {\n        match self {\n            Light::Red => 30,\n            Light::Yellow => 5,\n            Light::Green => 45,\n        }\n    }\n}\n\nfn main() {\n    let mut light = Light::Red;\n    for _ in 0..4 {\n        println!(\"{light:?} {}s\", light.wait_seconds());\n        light = light.next();\n    }\n}\n",
+  "starter_ok": "run"
  }
 }
