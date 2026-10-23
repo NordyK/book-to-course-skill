@@ -1,0 +1,401 @@
+title: "Environment variables and standard error"
+summary: "A case-insensitive search developed test-first, reading the IGNORE_CASE environment variable, standard output versus standard error, eprintln!, and redirecting output. Ends with the whole minigrep library as an exercise."
+minutes: 40
+source:
+  chapter: ch12
+  sections: ["TRPL 12.5 Working with Environment Variables", "TRPL 12.5 Writing a Failing Test for the Case-Insensitive search Function", "TRPL 12.5 Implementing the search_case_insensitive Function", "TRPL 12.6 Writing Error Messages to Standard Error Instead of Standard Output", "TRPL 12.6 Checking Where Errors Are Written", "TRPL 12.6 Printing Errors to Standard Error", "PR ch18 Input and Output", "PR ch18 Readers and Writers", "PR ch18 Other Reader and Writer Types", "PR ch2 Writing and Running Unit Tests"]
+blocks:
+  - type: text
+    md: |
+      A last feature: an option for **case-insensitive** search, controlled by an **environment variable**. Users can set it once in their shell session and every search uses it. Again, the test comes first; there are now two tests, so give them distinct names:
+
+  - type: code
+    lang: rust
+    file: src/lib.rs
+    code: |
+      #[cfg(test)]
+      mod tests {
+          use super::*;
+
+          #[test]
+          fn case_sensitive() {
+              let query = "duct";
+              let contents = "\
+      Rust:
+      safe, fast, productive.
+      Pick three.
+      Duct tape.";
+
+              assert_eq!(vec!["safe, fast, productive."], search(query, contents));
+          }
+
+          #[test]
+          fn case_insensitive() {
+              let query = "rUsT";
+              let contents = "\
+      Rust:
+      safe, fast, productive.
+      Pick three.
+      Trust me.";
+
+              assert_eq!(
+                  vec!["Rust:", "Trust me."],
+                  search_case_insensitive(query, contents)
+              );
+          }
+      }
+    explain: "The `Duct tape.` line checks that the old search stays case-sensitive."
+
+  - type: code
+    lang: rust
+    code: |
+      pub fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+          let query = query.to_lowercase();
+          let mut results = Vec::new();
+
+          for line in contents.lines() {
+              if line.to_lowercase().contains(&query) {
+                  results.push(line);
+              }
+          }
+
+          results
+      }
+
+      fn main() {
+          let contents = "Rust:\nsafe, fast, productive.\nPick three.\nTrust me.";
+          println!("{:?}", search_case_insensitive("rUsT", contents));
+      }
+    output: "[\"Rust:\", \"Trust me.\"]"
+    explain: "`to_lowercase` returns a new `String`, so `query` is now owned, and `contains` needs `&query`. The results are still the **original** lines, borrowed from `contents`, not the lowercased copies."
+
+  - type: text
+    title: Reading the environment variable
+    md: |
+      Add a field to `Config` and set it from the environment with **`env::var`**, which returns `Result<String, VarError>`. Only whether the variable is set matters, not its value, so use `is_ok()`:
+
+      ```rust
+      pub struct Config {
+          pub query: String,
+          pub file_path: String,
+          pub ignore_case: bool,
+      }
+
+      // in Config::build:
+      let ignore_case = env::var("IGNORE_CASE").is_ok();
+
+      // in run:
+      let results = if config.ignore_case {
+          search_case_insensitive(&config.query, &contents)
+      } else {
+          search(&config.query, &contents)
+      };
+      ```
+
+  - type: code
+    lang: bash
+    code: |
+      $ cargo run -- to poem.txt
+      Are you nobody, too?
+      How dreary to be somebody!
+
+      $ IGNORE_CASE=1 cargo run -- to poem.txt
+      Are you nobody, too?
+      How dreary to be somebody!
+      To tell your name the livelong day
+      To an admiring bog!
+    explain: "In PowerShell, set it with `$Env:IGNORE_CASE=1; cargo run -- to poem.txt` and remove it with `Remove-Item Env:IGNORE_CASE`. Many tools accept both: an argument overrides the environment variable."
+
+  - type: text
+    title: Standard output and standard error
+    md: |
+      Terminals provide two output streams. **Standard output** (`stdout`) is for the program's results; **standard error** (`stderr`) is for error messages and diagnostics. Keeping them apart lets a user redirect results to a file while still seeing errors on screen. `println!` writes to stdout; **`eprintln!`** writes to stderr.
+
+      Right now minigrep prints its error messages with `println!`. See the problem:
+
+  - type: code
+    lang: bash
+    code: |
+      $ cargo run > output.txt
+      $ cat output.txt
+      Problem parsing arguments: not enough arguments
+    explain: "`>` redirects stdout to a file. The user sees nothing on screen, and the error message ended up in the file where results belong."
+
+  - type: text
+    md: |
+      Change the two error messages in `main` to `eprintln!`:
+
+      ```rust
+      let config = Config::build(&args).unwrap_or_else(|err| {
+          eprintln!("Problem parsing arguments: {err}");
+          process::exit(1);
+      });
+
+      if let Err(e) = minigrep::run(config) {
+          eprintln!("Application error: {e}");
+          process::exit(1);
+      }
+      ```
+
+  - type: code
+    lang: bash
+    code: |
+      $ cargo run > output.txt
+      Problem parsing arguments: not enough arguments
+
+      $ cargo run -- to poem.txt > output.txt
+      $ cat output.txt
+      Are you nobody, too?
+      How dreary to be somebody!
+    explain: "Errors on screen, results in the file: what users expect from command-line tools."
+
+  - type: callout
+    kind: tip
+    title: "From Programming Rust: write to any Write"
+    md: "`println!` always goes to stdout. For testable output, write to anything that implements the `std::io::Write` trait: `fn run<W: Write>(config: &Config, out: &mut W)`. In `main` pass `&mut std::io::stdout()`; in tests pass a `Vec<u8>` and check its contents. `writeln!(out, \"{line}\")?` works like `println!` but returns a `Result`."
+
+  - type: code
+    lang: rust
+    code: |
+      use std::io::{self, Write};
+
+      fn report<W: Write>(lines: &[&str], out: &mut W) -> io::Result<()> {
+          for (i, line) in lines.iter().enumerate() {
+              writeln!(out, "{}: {line}", i + 1)?;
+          }
+          Ok(())
+      }
+
+      fn main() -> io::Result<()> {
+          let mut buffer: Vec<u8> = Vec::new();
+          report(&["frog", "bog"], &mut buffer)?;
+          assert_eq!(String::from_utf8(buffer).unwrap(), "1: frog\n2: bog\n");
+
+          report(&["printed for real"], &mut io::stdout())?;
+          Ok(())
+      }
+    output: "1: printed for real"
+
+  - type: exercise
+    id: ch12-ex-minigrep
+    exercise_dir: ch12-minigrep
+    title: "The minigrep library"
+    difficulty: hard
+    goal: "Write the whole tested library half of minigrep: Config::build with an option and environment variable, search, search_case_insensitive, and run writing to any Write."
+    behavior: |
+      - `pub struct Config { pub query: String, pub file_path: String, pub ignore_case: bool }`.
+      - `pub fn build(args: &[String], ignore_case_env: bool) -> Result<Config, &'static str>`: `args[1]` and `args[2]` are query and path (fewer: `Err("not enough arguments")`). An optional `args[3]` may be `"-i"` (ignore case) or `"-s"` (case-sensitive, overriding the environment); anything else is `Err("unknown option")`. Without an option, `ignore_case` comes from `ignore_case_env`. (The real `main` passes `env::var("IGNORE_CASE").is_ok()`; passing it in keeps `build` testable.)
+      - `pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str>` and `pub fn search_case_insensitive<'a>(...)` as in the lessons.
+      - `pub fn run_on<W: std::io::Write>(config: &Config, contents: &str, out: &mut W) -> std::io::Result<usize>`: writes each matching line followed by `\n` and returns how many lines matched.
+    examples:
+      - input: "build(&[\"mg\", \"to\", \"poem.txt\", \"-i\"], false)"
+        output: "Ok(Config { query: \"to\", file_path: \"poem.txt\", ignore_case: true })"
+      - input: "search_case_insensitive(\"rUsT\", \"Rust:\\nTrust me.\")"
+        output: "[\"Rust:\", \"Trust me.\"]"
+    hints:
+      - "Option parsing: `match args.get(3).map(|s| s.as_str()) { None => ignore_case_env, Some(\"-i\") => true, Some(\"-s\") => false, Some(_) => return Err(\"unknown option\") }`."
+      - "`run_on`: choose the search function with `if config.ignore_case { ... } else { ... }`, then `writeln!(out, \"{line}\")?` for each result."
+      - "Return `Ok(results.len())`."
+    rust:
+      starter: |
+        use std::io::{self, Write};
+
+        #[derive(Debug, PartialEq)]
+        pub struct Config {
+            pub query: String,
+            pub file_path: String,
+            pub ignore_case: bool,
+        }
+
+        impl Config {
+            pub fn build(args: &[String], ignore_case_env: bool) -> Result<Config, &'static str> {
+                todo!()
+            }
+        }
+
+        pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+            todo!()
+        }
+
+        pub fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+            todo!()
+        }
+
+        pub fn run_on<W: Write>(config: &Config, contents: &str, out: &mut W) -> io::Result<usize> {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        const POEM: &str = "\
+        I'm nobody! Who are you?
+        Are you nobody, too?
+        Then there's a pair of us - don't tell!
+        They'd banish us, you know.
+
+        How dreary to be somebody!
+        How public, like a frog
+        To tell your name the livelong day
+        To an admiring bog!";
+
+        fn args(v: &[&str]) -> Vec<String> {
+            v.iter().map(|s| s.to_string()).collect()
+        }
+
+        #[test]
+        fn builds_config() {
+            let c = Config::build(&args(&["mg", "to", "poem.txt"]), false).unwrap();
+            assert_eq!(c, Config { query: "to".into(), file_path: "poem.txt".into(), ignore_case: false });
+            assert!(Config::build(&args(&["mg", "to", "poem.txt"]), true).unwrap().ignore_case, "env var respected");
+        }
+
+        #[test]
+        fn options_override_env() {
+            assert!(Config::build(&args(&["mg", "to", "p", "-i"]), false).unwrap().ignore_case);
+            assert!(!Config::build(&args(&["mg", "to", "p", "-s"]), true).unwrap().ignore_case);
+        }
+
+        #[test]
+        fn build_errors() {
+            assert_eq!(Config::build(&args(&["mg", "to"]), false), Err("not enough arguments"));
+            assert_eq!(Config::build(&args(&["mg", "to", "p", "-x"]), false), Err("unknown option"));
+        }
+
+        #[test]
+        fn case_sensitive() {
+            let contents = "Rust:\nsafe, fast, productive.\nPick three.\nDuct tape.";
+            assert_eq!(search("duct", contents), vec!["safe, fast, productive."]);
+            assert_eq!(search("frog", POEM), vec!["How public, like a frog"]);
+        }
+
+        #[test]
+        fn case_insensitive() {
+            let contents = "Rust:\nsafe, fast, productive.\nPick three.\nTrust me.";
+            assert_eq!(search_case_insensitive("rUsT", contents), vec!["Rust:", "Trust me."]);
+        }
+
+        #[test]
+        fn run_writes_matches() {
+            let mut out: Vec<u8> = Vec::new();
+            let c = Config { query: "to".into(), file_path: "poem.txt".into(), ignore_case: true };
+            let n = run_on(&c, POEM, &mut out).unwrap();
+            assert_eq!(n, 4);
+            assert_eq!(
+                String::from_utf8(out).unwrap(),
+                "Are you nobody, too?\nHow dreary to be somebody!\nTo tell your name the livelong day\nTo an admiring bog!\n"
+            );
+        }
+
+        #[test]
+        fn run_with_no_matches() {
+            let mut out: Vec<u8> = Vec::new();
+            let c = Config { query: "monomorphization".into(), file_path: "p".into(), ignore_case: false };
+            assert_eq!(run_on(&c, POEM, &mut out).unwrap(), 0);
+            assert!(out.is_empty());
+        }
+      solution: |
+        use std::io::{self, Write};
+
+        #[derive(Debug, PartialEq)]
+        pub struct Config {
+            pub query: String,
+            pub file_path: String,
+            pub ignore_case: bool,
+        }
+
+        impl Config {
+            pub fn build(args: &[String], ignore_case_env: bool) -> Result<Config, &'static str> {
+                if args.len() < 3 {
+                    return Err("not enough arguments");
+                }
+                let query = args[1].clone();
+                let file_path = args[2].clone();
+                let ignore_case = match args.get(3).map(|s| s.as_str()) {
+                    None => ignore_case_env,
+                    Some("-i") => true,
+                    Some("-s") => false,
+                    Some(_) => return Err("unknown option"),
+                };
+                Ok(Config { query, file_path, ignore_case })
+            }
+        }
+
+        pub fn search<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+            let mut results = Vec::new();
+            for line in contents.lines() {
+                if line.contains(query) {
+                    results.push(line);
+                }
+            }
+            results
+        }
+
+        pub fn search_case_insensitive<'a>(query: &str, contents: &'a str) -> Vec<&'a str> {
+            let query = query.to_lowercase();
+            let mut results = Vec::new();
+            for line in contents.lines() {
+                if line.to_lowercase().contains(&query) {
+                    results.push(line);
+                }
+            }
+            results
+        }
+
+        pub fn run_on<W: Write>(config: &Config, contents: &str, out: &mut W) -> io::Result<usize> {
+            let results = if config.ignore_case {
+                search_case_insensitive(&config.query, contents)
+            } else {
+                search(&config.query, contents)
+            };
+            for line in &results {
+                writeln!(out, "{line}")?;
+            }
+            Ok(results.len())
+        }
+    solution_explain: "With this library, `main.rs` only has to collect the arguments, call `Config::build(&args, env::var(\"IGNORE_CASE\").is_ok())`, read the file, and call `run_on(&config, &contents, &mut io::stdout())`, printing any error with `eprintln!`. Every decision is tested; only plumbing is left untested."
+
+  - type: quiz
+    id: ch12-quiz-env
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What does `env::var(\"IGNORE_CASE\").is_ok()` return when the variable is set to `0`?"
+        options: ["false", "true", "It panics", "Err"]
+        answer: 1
+        explanation: "Only whether it is set matters in this design."
+      - type: single
+        q: "Why should error messages go to stderr?"
+        options: ["They are printed faster", "So results redirected with `>` to a file do not contain errors, and errors still reach the screen", "stdout cannot print errors", "It is required by Cargo"]
+        answer: 1
+        explanation: "The two streams can be redirected separately."
+      - type: single
+        q: "Which macro writes to standard error?"
+        options: ["`println!`", "`eprintln!`", "`dbg!` only", "`error!`"]
+        answer: 1
+        explanation: "(`dbg!` also writes to stderr, but it is for debugging.)"
+      - type: single
+        q: "In `search_case_insensitive`, what does the function return?"
+        options: ["Lowercased copies of the lines", "The original lines from contents", "The query", "Line numbers"]
+        answer: 1
+        explanation: "Only the comparison uses lowercase."
+      - type: single
+        q: "Why take `out: &mut W` with `W: Write` instead of calling `println!`?"
+        options: ["It is faster", "Tests can pass a Vec<u8> and check exactly what was written", "println! cannot print slices", "To avoid lifetimes"]
+        answer: 1
+        explanation: "Output becomes testable."
+
+  - type: summary
+    points:
+      - "`env::var(\"NAME\")` reads an environment variable; `is_ok()` checks whether it is set."
+      - "Lowercase both sides to search case-insensitively, but return the original lines."
+      - "stdout is for results, stderr for errors; use `eprintln!` for errors."
+      - "Writing to a generic `W: Write` makes output testable."
+terms:
+  - term: environment variable
+    def: "A named value set in the shell that programs can read, like IGNORE_CASE."
+  - term: standard error (stderr)
+    def: "The output stream for error messages, separate from standard output."
+  - term: eprintln!
+    def: "A macro like println! that writes to standard error."
+  - term: Write trait
+    def: "std::io::Write, implemented by anything bytes can be written to: stdout, files, Vec<u8>."

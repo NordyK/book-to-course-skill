@@ -1,0 +1,200 @@
+{
+  "title": "Refactoring: modularity and error handling",
+  "summary": "Separation of concerns for binary projects, extracting a Config struct with a build constructor that returns Result, exiting cleanly with process::exit, a run function returning Box<dyn Error>, and moving the logic into lib.rs.",
+  "minutes": 35,
+  "source": {
+    "chapter": "ch12",
+    "sections": [
+      "TRPL 12.3 Refactoring to Improve Modularity and Error Handling",
+      "TRPL 12.3 Separation of Concerns for Binary Projects",
+      "TRPL 12.3 Extracting the Argument Parser",
+      "TRPL 12.3 Grouping Configuration Values",
+      "TRPL 12.3 The Trade-Offs of Using clone",
+      "TRPL 12.3 Creating a Constructor for Config",
+      "TRPL 12.3 Fixing the Error Handling",
+      "TRPL 12.3 Returning a Result Instead of Calling panic!",
+      "TRPL 12.3 Calling Config::build and Handling Errors",
+      "TRPL 12.3 Extracting Logic from main",
+      "TRPL 12.3 Returning Errors from the run Function",
+      "TRPL 12.3 Splitting Code into a Library Crate"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "The Rust community has a standard shape for command-line programs, called **separation of concerns for binary projects**:\n\n- Split the program into `main.rs` and `lib.rs` and put the program's logic in `lib.rs`.\n- Keep argument parsing small enough to stay in `main.rs` while it is simple; move it to `lib.rs` when it grows.\n- `main` should be left with only: calling the parser, setting up configuration, calling a `run` function in `lib.rs`, and handling the error if `run` returns one.\n\n`main` cannot be tested directly; everything in `lib.rs` can. This lesson reshapes minigrep step by step.\n"
+    },
+    {
+      "type": "stepper",
+      "title": "From a long main to Config::build",
+      "steps": [
+        {
+          "title": "1. Extract the parser",
+          "md": "Move parsing into a function that returns both values. `main` now says *what* it wants, not *how* to get it.",
+          "code": "fn parse_config(args: &[String]) -> (&str, &str) {\n    let query = &args[1];\n    let file_path = &args[2];\n    (query, file_path)\n}\n"
+        },
+        {
+          "title": "2. Group the values in a struct",
+          "md": "The two values belong together: they are the program's configuration. A struct gives them names. Owning `String`s with `clone` keeps lifetimes simple; for two short strings the copy cost is negligible. Chapter 13 removes the clones.",
+          "code": "struct Config {\n    query: String,\n    file_path: String,\n}\n\nfn parse_config(args: &[String]) -> Config {\n    let query = args[1].clone();\n    let file_path = args[2].clone();\n    Config { query, file_path }\n}\n"
+        },
+        {
+          "title": "3. Make it a constructor",
+          "md": "A function that creates a `Config` belongs to `Config`. It is called `build` rather than `new`, because programmers expect `new` never to fail.",
+          "code": "impl Config {\n    fn build(args: &[String]) -> Result<Config, &'static str> {\n        if args.len() < 3 {\n            return Err(\"not enough arguments\");\n        }\n        let query = args[1].clone();\n        let file_path = args[2].clone();\n        Ok(Config { query, file_path })\n    }\n}\n"
+        },
+        {
+          "title": "4. Handle the error in main",
+          "md": "`unwrap_or_else` runs the closure on `Err`. `process::exit(1)` stops the program immediately with a non-zero exit code, which tells shells and scripts that it failed. No panic message, no backtrace hint: just the problem.",
+          "code": "use std::process;\n\nlet config = Config::build(&args).unwrap_or_else(|err| {\n    println!(\"Problem parsing arguments: {err}\");\n    process::exit(1);\n});\n"
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ cargo run\nProblem parsing arguments: not enough arguments\n",
+      "explain": "Compare that with `index out of bounds: the len is 1 but the index is 1` from before."
+    },
+    {
+      "type": "callout",
+      "kind": "note",
+      "title": "Why &'static str?",
+      "md": "The error messages are string literals, which live for the whole program, so `&'static str` is the simplest error type here. A larger program would use an error enum, as in chapter 9."
+    },
+    {
+      "type": "text",
+      "title": "Extracting run",
+      "md": "Next, move everything that is not configuration or error handling into a `run` function. It returns `Result<(), Box<dyn Error>>`: `Ok(())` when everything worked, otherwise **any** error (chapter 9). With that return type, `expect` becomes `?`:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/lib.rs",
+      "code": "use std::error::Error;\nuse std::fs;\n\npub struct Config {\n    pub query: String,\n    pub file_path: String,\n}\n\nimpl Config {\n    pub fn build(args: &[String]) -> Result<Config, &'static str> {\n        if args.len() < 3 {\n            return Err(\"not enough arguments\");\n        }\n        let query = args[1].clone();\n        let file_path = args[2].clone();\n        Ok(Config { query, file_path })\n    }\n}\n\npub fn run(config: Config) -> Result<(), Box<dyn Error>> {\n    let contents = fs::read_to_string(config.file_path)?;\n    println!(\"With text:\\n{contents}\");\n    Ok(())\n}\n",
+      "explain": "The struct, its fields, `build` and `run` are `pub` so the binary crate can use them. Returning `Ok(())` is the idiomatic way to say \"done, nothing to return\"."
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/main.rs",
+      "code": "use std::env;\nuse std::process;\n\nuse minigrep::Config;\n\nfn main() {\n    let args: Vec<String> = env::args().collect();\n\n    let config = Config::build(&args).unwrap_or_else(|err| {\n        println!(\"Problem parsing arguments: {err}\");\n        process::exit(1);\n    });\n\n    println!(\"Searching for {}\", config.query);\n    println!(\"In file {}\", config.file_path);\n\n    if let Err(e) = minigrep::run(config) {\n        println!(\"Application error: {e}\");\n        process::exit(1);\n    }\n}\n",
+      "explain": "`main.rs` is a separate crate that uses the library by its package name, `minigrep`. `run` returns `()` on success, so there is nothing to unwrap: `if let Err(e)` handles only the failure. (Lesson 4 changes these `println!` calls to `eprintln!`.)"
+    },
+    {
+      "type": "svg",
+      "caption": "After the refactor: `main.rs` only parses, calls and reports. All the logic is in `lib.rs`, where it can be tested.",
+      "svg": "<svg viewBox='0 0 520 200' xmlns='http://www.w3.org/2000/svg' font-family='ui-monospace, monospace' font-size='13'>\n  <g fill='none' stroke='currentColor' stroke-width='1'>\n    <rect x='20' y='30' width='200' height='150' rx='6'/>\n    <rect x='300' y='30' width='200' height='150' rx='6'/>\n    <path d='M220 80 H296 M290 76 L296 80 L290 84' stroke-width='1.5'/>\n    <path d='M300 140 H224 M230 136 L224 140 L230 144' stroke-width='1.5' stroke-dasharray='4 3'/>\n  </g>\n  <g fill='currentColor'>\n    <text x='30' y='22' font-family='sans-serif' font-weight='600'>src/main.rs (binary)</text>\n    <text x='310' y='22' font-family='sans-serif' font-weight='600'>src/lib.rs (library)</text>\n    <text x='32' y='60'>collect args</text>\n    <text x='32' y='84'>Config::build</text>\n    <text x='32' y='108'>call run(config)</text>\n    <text x='32' y='132'>print error,</text>\n    <text x='32' y='150'>process::exit(1)</text>\n    <text x='312' y='60'>pub struct Config</text>\n    <text x='312' y='84'>Config::build</text>\n    <text x='312' y='108'>pub fn run</text>\n    <text x='312' y='132'>pub fn search</text>\n    <text x='312' y='156'>#[cfg(test)] tests</text>\n    <text x='232' y='72' font-size='11'>calls</text>\n    <text x='232' y='158' font-size='11'>Err(e)</text>\n  </g>\n</svg>\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch12-play-config",
+      "title": "Config::build with three arguments",
+      "lang": "rust",
+      "md": "Extend `Config::build` with an optional third argument `--ignore-case` (in position 3). Any other extra argument is an error: `\"unknown option: <arg>\"`. More than four arguments is `\"too many arguments\"`.\n",
+      "task": "Print `frog/poem.txt/false`, `frog/poem.txt/true`, `error: unknown option: -x` and `error: too many arguments`.",
+      "code": "struct Config {\n    query: String,\n    file_path: String,\n    ignore_case: bool,\n}\n\nimpl Config {\n    fn build(args: &[String]) -> Result<Config, String> {\n        if args.len() < 3 {\n            return Err(String::from(\"not enough arguments\"));\n        }\n        let query = args[1].clone();\n        let file_path = args[2].clone();\n        let ignore_case = false;\n        Ok(Config { query, file_path, ignore_case })\n    }\n}\n\nfn main() {\n    let runs = [\n        vec![\"minigrep\", \"frog\", \"poem.txt\"],\n        vec![\"minigrep\", \"frog\", \"poem.txt\", \"--ignore-case\"],\n        vec![\"minigrep\", \"frog\", \"poem.txt\", \"-x\"],\n        vec![\"minigrep\", \"frog\", \"poem.txt\", \"--ignore-case\", \"more\"],\n    ];\n    for run in runs {\n        let args: Vec<String> = run.iter().map(|s| s.to_string()).collect();\n        match Config::build(&args) {\n            Ok(c) => println!(\"{}/{}/{}\", c.query, c.file_path, c.ignore_case),\n            Err(e) => println!(\"error: {e}\"),\n        }\n    }\n}\n",
+      "expected_output": "frog/poem.txt/false\nfrog/poem.txt/true\nerror: unknown option: -x\nerror: too many arguments\n",
+      "hints": [
+        "Check `args.len() > 4` first.",
+        "`args.get(3)` is an `Option<&String>`; `.map(|s| s.as_str())` lets you match on string literals.",
+        "`Some(other) => return Err(format!(\"unknown option: {other}\"))` inside the match."
+      ]
+    },
+    {
+      "type": "quiz",
+      "id": "ch12-quiz-refactor",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "multi",
+          "q": "What should stay in `main` after separating concerns?",
+          "options": [
+            "Calling the argument parser",
+            "Calling `run`",
+            "Handling the error `run` returns",
+            "The search algorithm"
+          ],
+          "answer": [
+            0,
+            1,
+            2
+          ],
+          "explanation": "The logic goes in lib.rs, where it can be tested."
+        },
+        {
+          "type": "single",
+          "q": "Why is the constructor called `build` and not `new`?",
+          "options": [
+            "`new` is a keyword",
+            "Programmers expect `new` never to fail; this one returns a Result",
+            "Cargo requires it",
+            "No reason"
+          ],
+          "answer": 1,
+          "explanation": "A naming convention."
+        },
+        {
+          "type": "single",
+          "q": "What does `process::exit(1)` do?",
+          "options": [
+            "Panics",
+            "Ends the program immediately with exit code 1",
+            "Exits the current function",
+            "Restarts main"
+          ],
+          "answer": 1,
+          "explanation": "A non-zero code signals failure to the shell."
+        },
+        {
+          "type": "single",
+          "q": "Why does `run` return `Result<(), Box<dyn Error>>`?",
+          "options": [
+            "So `?` works for any error type, such as io::Error",
+            "Box is faster",
+            "To return the file contents",
+            "It must, for every function in lib.rs"
+          ],
+          "answer": 0,
+          "explanation": "Any error converts into Box<dyn Error>."
+        },
+        {
+          "type": "single",
+          "q": "How does `main.rs` refer to `Config` in `lib.rs`?",
+          "options": [
+            "`use crate::Config;`",
+            "`use minigrep::Config;` (the package name)",
+            "`mod lib;`",
+            "`use super::Config;`"
+          ],
+          "answer": 1,
+          "explanation": "The binary is a separate crate that depends on the library."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Keep `main.rs` thin; put logic in `lib.rs` where it can be tested.",
+        "Group related values in a struct, like `Config`.",
+        "A fallible constructor is called `build` and returns `Result`.",
+        "Report errors with a message and `process::exit(1)` instead of panicking.",
+        "`run` returns `Result<(), Box<dyn Error>>` so it can use `?` on any error."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "separation of concerns",
+      "def": "Splitting a program so each part has one job; for CLI tools, parsing and error reporting in main.rs, logic in lib.rs."
+    },
+    {
+      "term": "process::exit",
+      "def": "Ends the program immediately with the given exit code."
+    },
+    {
+      "term": "exit code",
+      "def": "A number a program returns to the operating system; 0 means success, non-zero failure."
+    }
+  ]
+}

@@ -75,3 +75,6 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
 - Chapter 11 done (Writing Automated Tests): writing tests (asserts, should_panic, Result tests), running them
   (filters, ignore, threads, output), organizing (unit/private, tests/, common/mod.rs, doc tests); 10-question test;
   exercises ch11-tested (tests as a spec) and ch11-unit (private helpers under test), verified; 1 playground.
+- Chapter 12 done (minigrep project): args and files, refactor to Config::build/run/lib.rs, TDD search, IGNORE_CASE +
+  eprintln! + writing to any Write; 10-question test; exercise ch12-minigrep (whole tested library), verified;
+  3 playgrounds (args are simulated, since the console cannot pass real arguments).
