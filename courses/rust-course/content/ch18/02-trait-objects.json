@@ -1,0 +1,278 @@
+{
+  "title": "Trait objects: values of different types",
+  "summary": "The GUI example, dyn Trait behind a pointer, generics versus trait objects, static and dynamic dispatch, vtables and fat pointers, dyn compatibility rules, downcasting with Any, and supertraits.",
+  "minutes": 40,
+  "source": {
+    "chapter": "ch18",
+    "sections": [
+      "TRPL 18.2 Using Trait Objects to Abstract over Shared Behavior",
+      "TRPL 18.2 Defining a Trait for Common Behavior",
+      "TRPL 18.2 Implementing the Trait",
+      "TRPL 18.2 Performing Dynamic Dispatch",
+      "TRPL 18.2 Trait Objects and Type Inference",
+      "PR ch11 Trait Objects",
+      "PR ch11 Trait Object Layout",
+      "PR ch11 Generic Functions vs Trait Objects",
+      "PR ch11 Which to Use",
+      "PR ch11 Subtraits",
+      "CR Day 3 Trait Objects",
+      "CR Day 3 dyn Trait",
+      "RiA 8.4 Trait objects"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "A vector holds one type. But sometimes a collection must hold **different** types that share behavior: a GUI library draws buttons, text fields and images, and users of the library will add types the library authors never saw. With an enum you must list every variant up front. With **trait objects** you do not.\n\n*The Rust Programming Language* sketches such a library. Everything on screen implements a `Draw` trait, and a `Screen` keeps a list of things to draw:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "pub trait Draw {\n    fn draw(&self) -> String;\n}\n\npub struct Screen {\n    pub components: Vec<Box<dyn Draw>>,\n}\n\nimpl Screen {\n    pub fn run(&self) {\n        for component in self.components.iter() {\n            println!(\"{}\", component.draw());\n        }\n    }\n}\n\npub struct Button {\n    pub width: u32,\n    pub height: u32,\n    pub label: String,\n}\n\nimpl Draw for Button {\n    fn draw(&self) -> String {\n        format!(\"[ {} ] ({}x{})\", self.label, self.width, self.height)\n    }\n}\n\n// a type the library user writes\nstruct SelectBox {\n    width: u32,\n    options: Vec<String>,\n}\n\nimpl Draw for SelectBox {\n    fn draw(&self) -> String {\n        format!(\"<{}> (width {})\", self.options.join(\"|\"), self.width)\n    }\n}\n\nfn main() {\n    let screen = Screen {\n        components: vec![\n            Box::new(SelectBox {\n                width: 75,\n                options: vec![String::from(\"Yes\"), String::from(\"Maybe\"), String::from(\"No\")],\n            }),\n            Box::new(Button { width: 50, height: 10, label: String::from(\"OK\") }),\n        ],\n    };\n    screen.run();\n}\n",
+      "output": "<Yes|Maybe|No> (width 75)\n[ OK ] (50x10)\n",
+      "explain": "`Box<dyn Draw>` reads \"a box holding some type that implements `Draw`\". The `Screen` never learns the concrete types. In the book, `draw` returns nothing and would paint on screen; here it returns text so you can see the result."
+    },
+    {
+      "type": "text",
+      "title": "dyn Trait",
+      "md": "A **trait object** is written `dyn Trait`. It always sits **behind a pointer**: `&dyn Draw`, `Box<dyn Draw>`, `Rc<dyn Draw>`. The pointer is needed because different implementing types have different sizes, and a value of unknown size cannot live directly in a variable or a vector slot.\n\nCompare with a generic version:\n\n```rust\npub struct Screen<T: Draw> {\n    pub components: Vec<T>,\n}\n```\n\nThis compiles too, but a `Screen<Button>` can hold **only** buttons. Generics fix one type per use; trait objects allow a mix at run time.\n"
+    },
+    {
+      "type": "table",
+      "title": "Generics or trait objects?",
+      "headers": [
+        "",
+        "Generics `<T: Trait>` / `impl Trait`",
+        "Trait objects `dyn Trait`"
+      ],
+      "rows": [
+        [
+          "dispatch",
+          "**static**: the method is chosen at compile time",
+          "**dynamic**: looked up at run time"
+        ],
+        [
+          "mixing types in one collection",
+          "no",
+          "yes"
+        ],
+        [
+          "speed",
+          "fastest; calls can be inlined",
+          "an indirect call; no inlining"
+        ],
+        [
+          "code size",
+          "one copy per type (monomorphization)",
+          "one copy"
+        ],
+        [
+          "compile time",
+          "longer with many types",
+          "shorter"
+        ],
+        [
+          "typical use",
+          "algorithms, containers, performance-critical code",
+          "plugins, heterogeneous collections, callbacks, `Box<dyn Error>`"
+        ]
+      ]
+    },
+    {
+      "type": "stepper",
+      "title": "Dynamic dispatch: what is inside a &dyn Draw",
+      "steps": [
+        {
+          "title": "A fat pointer",
+          "md": "A `&dyn Draw` is two machine words: a pointer to the data, and a pointer to a **vtable** (virtual method table) for the concrete type. `Box<dyn Draw>` is the same, with ownership.",
+          "code": "&dyn Draw  =  ( data: *const (),  vtable: &'static VTable )\n"
+        },
+        {
+          "title": "One vtable per (type, trait) pair",
+          "md": "The compiler generates a table for each type used as that trait object: the size and alignment of the type, its `drop` function, and a pointer to each trait method.",
+          "code": "VTable for Button as Draw:\n    size, align, drop_in_place::<Button>,\n    draw: <Button as Draw>::draw\n"
+        },
+        {
+          "title": "Calling a method",
+          "md": "`component.draw()` loads the `draw` entry from the vtable and calls it with the data pointer as `self`. That is one extra memory load and an indirect call, which also prevents inlining."
+        },
+        {
+          "title": "*Rust in Action*'s view",
+          "md": "A trait object trades a little speed for flexibility. In most programs the cost is negligible; in a hot inner loop, prefer generics."
+        }
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::mem::size_of;\n\ntrait Shape {\n    fn area(&self) -> f64;\n}\n\nfn main() {\n    println!(\"&u8:         {} bytes\", size_of::<&u8>());\n    println!(\"&[u8]:       {} bytes\", size_of::<&[u8]>());\n    println!(\"&dyn Shape:  {} bytes\", size_of::<&dyn Shape>());\n    println!(\"Box<dyn Shape>: {} bytes\", size_of::<Box<dyn Shape>>());\n}\n",
+      "output": "&u8:         8 bytes\n&[u8]:       16 bytes\n&dyn Shape:  16 bytes\nBox<dyn Shape>: 16 bytes\n",
+      "explain": "Like a slice reference (address and length), a trait object reference is a fat pointer (address and vtable)."
+    },
+    {
+      "type": "text",
+      "title": "Dyn compatibility",
+      "md": "Not every trait can be used as `dyn Trait`. The compiler must be able to build a vtable, so the trait must be **dyn compatible** (formerly called *object safe*). The main rules for each method:\n\n- it must not return `Self` (the concrete type is unknown, so its size is unknown);\n- it must not have generic type parameters (a vtable cannot hold infinitely many copies).\n\n`Clone` breaks the first rule (`fn clone(&self) -> Self`), so `Box<dyn Clone>` is an error. A method can opt out with `where Self: Sized`: it then is not callable on trait objects, but the rest of the trait is.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "pub struct Screen {\n    pub components: Vec<Box<dyn Clone>>,\n}\n\nfn main() {}\n",
+      "output": "error[E0038]: the trait `Clone` is not dyn compatible\n --> src/main.rs:2:29\n  |\n2 |     pub components: Vec<Box<dyn Clone>>,\n  |                             ^^^^^^^^^ `Clone` is not dyn compatible\n  |\n  = note: the trait is not dyn compatible because it requires `Self: Sized`\n  = note: for a trait to be dyn compatible it needs to allow building a vtable\n          for more information, visit <https://doc.rust-lang.org/reference/items/traits.html#dyn-compatibility>\n",
+      "output_label": "Compiler output"
+    },
+    {
+      "type": "text",
+      "title": "Supertraits and downcasting",
+      "md": "A trait can require another: `trait Shape: Debug { ... }` means every `Shape` is also `Debug`, so a `&dyn Shape` can be printed with `{:?}`. This is a **supertrait**, *Programming Rust*'s \"subtrait\" relationship.\n\nSometimes you need the concrete type back from a trait object. **`std::any::Any`** supports that: `Box<dyn Any>` can be `downcast::<T>()`, returning `Ok(Box<T>)` if the value really is a `T`. Needing it often is a sign that an enum would fit better.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::any::Any;\nuse std::fmt::Debug;\n\ntrait Shape: Debug {\n    fn area(&self) -> f64;\n    fn as_any(&self) -> &dyn Any;\n}\n\n#[derive(Debug)]\nstruct Circle(f64);\n#[derive(Debug)]\nstruct Square(f64);\n\nimpl Shape for Circle {\n    fn area(&self) -> f64 {\n        3.14159 * self.0 * self.0\n    }\n    fn as_any(&self) -> &dyn Any {\n        self\n    }\n}\n\nimpl Shape for Square {\n    fn area(&self) -> f64 {\n        self.0 * self.0\n    }\n    fn as_any(&self) -> &dyn Any {\n        self\n    }\n}\n\nfn main() {\n    let shapes: Vec<Box<dyn Shape>> = vec![Box::new(Circle(1.0)), Box::new(Square(2.0))];\n    let total: f64 = shapes.iter().map(|s| s.area()).sum();\n    println!(\"{shapes:?} total area {total:.2}\");\n\n    for s in &shapes {\n        if let Some(sq) = s.as_any().downcast_ref::<Square>() {\n            println!(\"found a square with side {}\", sq.0);\n        }\n    }\n}\n",
+      "output": "[Circle(1.0), Square(2.0)] total area 7.14\nfound a square with side 2\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch18-play-plugins",
+      "title": "A plugin list",
+      "lang": "rust",
+      "md": "Write a `Plugin` trait with `fn name(&self) -> String` and `fn run(&self, input: i64) -> i64`. Implement it for `Double` and for `AddN(i64)`, put them in a `Vec<Box<dyn Plugin>>`, and run the input through every plugin in order, printing each step.\n",
+      "task": "Print `double: 5 -> 10`, `add 7: 10 -> 17`, `double: 17 -> 34`.",
+      "code": "// trait Plugin { ... }\n\nstruct Double;\nstruct AddN(i64);\n\nfn main() {\n    // let plugins: Vec<Box<dyn Plugin>> = vec![...];\n    let mut value = 5;\n    // for p in &plugins { ... }\n    println!(\"{value}\");\n}\n",
+      "expected_output": "double: 5 -> 10\nadd 7: 10 -> 17\ndouble: 17 -> 34\n34\n",
+      "hints": [
+        "`trait Plugin { fn name(&self) -> String; fn run(&self, input: i64) -> i64; }`",
+        "`vec![Box::new(Double), Box::new(AddN(7)), Box::new(Double)]` with the type annotation `Vec<Box<dyn Plugin>>`."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch18-ex-dyn",
+      "exercise_dir": "ch18-dyn",
+      "title": "A shape registry",
+      "difficulty": "medium",
+      "goal": "Store different types behind dyn Trait, use a supertrait, and know when generics are the better tool.",
+      "behavior": "- `pub trait Shape: std::fmt::Debug { fn area(&self) -> f64; fn name(&self) -> &'static str; fn scale(&mut self, k: f64); }`.\n- Implement it for `pub struct Circle { pub r: f64 }` (`\"circle\"`) and `pub struct Rect { pub w: f64, pub h: f64 }` (`\"rect\"`), both deriving `Debug`.\n- `pub struct Registry { shapes: Vec<Box<dyn Shape>> }` with `new`, `pub fn add(&mut self, s: Box<dyn Shape>)`, `pub fn total_area(&self) -> f64`, `pub fn largest(&self) -> Option<&dyn Shape>` (the first on a tie), `pub fn scale_all(&mut self, k: f64)` and `pub fn count_by_name(&self, name: &str) -> usize`.\n- A **generic** helper `pub fn sum_areas<T: Shape>(items: &[T]) -> f64` for slices of one type (static dispatch).\n",
+      "examples": [
+        {
+          "input": "registry with Circle { r: 1.0 } and Rect { w: 2.0, h: 3.0 }: total_area()",
+          "output": "about 9.14"
+        },
+        {
+          "input": "largest().unwrap().name()",
+          "output": "\"rect\""
+        }
+      ],
+      "hints": [
+        "`scale` for a circle multiplies `r` by `k`; for a rect, both sides (so the area grows by `k * k`).",
+        "`largest`: iterate and keep the reference with the bigger area; return `Some(best.as_ref())` (`&Box<dyn Shape>` → `&dyn Shape`).",
+        "`scale_all` needs `iter_mut()`."
+      ],
+      "solution_explain": "The registry mixes circles and rectangles, so it needs `dyn Shape`. `sum_areas` takes a slice of one type, so a generic is the better fit: static dispatch, inlinable. `Debug` as a supertrait lets you print any `&dyn Shape`."
+    },
+    {
+      "type": "quiz",
+      "id": "ch18-quiz-dyn",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Why must `dyn Trait` be behind a pointer like `Box` or `&`?",
+          "options": [
+            "For speed",
+            "Different implementing types have different sizes, so the size of dyn Trait is unknown",
+            "Traits are always on the heap",
+            "It need not be"
+          ],
+          "answer": 1,
+          "explanation": "A pointer has a fixed size."
+        },
+        {
+          "type": "single",
+          "q": "Which can hold both a Button and a SelectBox?",
+          "options": [
+            "`Vec<T>` with `T: Draw`",
+            "`Vec<Box<dyn Draw>>`",
+            "`Vec<impl Draw>`",
+            "`[Draw]`"
+          ],
+          "answer": 1,
+          "explanation": "Generics fix one type."
+        },
+        {
+          "type": "single",
+          "q": "What is a vtable?",
+          "options": [
+            "A table of variables",
+            "A per-type table of method pointers used for dynamic dispatch",
+            "A vector of traits",
+            "A compiler error"
+          ],
+          "answer": 1,
+          "explanation": "The trait object's second pointer points to it."
+        },
+        {
+          "type": "single",
+          "q": "Why is `dyn Clone` not allowed?",
+          "options": [
+            "Clone is unsafe",
+            "`clone` returns Self, whose size is unknown behind a trait object",
+            "Clone has no methods",
+            "It is allowed"
+          ],
+          "answer": 1,
+          "explanation": "The trait is not dyn compatible."
+        },
+        {
+          "type": "single",
+          "q": "Which is usually faster in a hot loop?",
+          "options": [
+            "Trait objects",
+            "Generics",
+            "They are always identical",
+            "Neither"
+          ],
+          "answer": 1,
+          "explanation": "Static dispatch can be inlined."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "`dyn Trait` behind a pointer holds any type implementing the trait; collections can mix types.",
+        "Trait objects use dynamic dispatch through a vtable; generics use static dispatch.",
+        "A `&dyn Trait` is a fat pointer: data plus vtable.",
+        "Only dyn compatible traits can be trait objects: no methods returning `Self` or with generic parameters.",
+        "Supertraits add requirements (`trait Shape: Debug`); `Any` allows downcasting when truly needed."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "trait object",
+      "def": "A value of type dyn Trait behind a pointer, standing for any type that implements the trait."
+    },
+    {
+      "term": "dynamic dispatch",
+      "def": "Choosing which method implementation to call at run time, through a vtable."
+    },
+    {
+      "term": "static dispatch",
+      "def": "Choosing the method at compile time, as with generics."
+    },
+    {
+      "term": "vtable",
+      "def": "A table of function pointers for one type's implementation of a trait."
+    },
+    {
+      "term": "dyn compatible",
+      "def": "A trait that can be made into a trait object (formerly object safe)."
+    },
+    {
+      "term": "supertrait",
+      "def": "A trait required by another trait, as in trait Shape: Debug."
+    }
+  ]
+}

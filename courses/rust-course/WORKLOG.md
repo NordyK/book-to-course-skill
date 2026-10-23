@@ -98,3 +98,5 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
   Future/Poll/Waker/Pin/Unpin/streams/async traits; 10-question test; exercise ch17-futures (block_on, YieldN, Flag,
   join), verified; 3 playgrounds. Every runnable async example is std-only (no tokio/trpl offline); trpl code from
   the book is shown as unrun snippets.
+
+- 2026-10-23: ch18 Trait Objects and OOP done (3 lessons + test: OOP features and composition, dyn Trait/vtables/dyn compatibility/supertraits/Any, state pattern vs type-state). Exercises ch18-dyn, ch18-state; playgrounds ch18-play-plugins, ch18-play-typestate. 40 exercises verified.

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created": "2026-10-23T02:32:57+00:00",
-  "updated": "2026-10-23T04:17:59+00:00",
+  "updated": "2026-10-23T04:22:09+00:00",
   "book": {
     "title": "Rust: From First Program to Systems Programming",
     "author": "Merged from 5 books (see .build/plan.md)",
@@ -169,8 +169,8 @@
       "title": "Trait Objects and OOP in Rust",
       "words": 14862,
       "file": "chapters/ch18.md",
-      "status": "pending",
-      "lessons_built": 0,
+      "status": "done",
+      "lessons_built": 4,
       "note": ""
     },
     {
@@ -316,6 +316,10 @@
     {
       "at": "2026-10-23T04:17:59+00:00",
       "msg": "ch17 → done"
+    },
+    {
+      "at": "2026-10-23T04:22:09+00:00",
+      "msg": "ch18 → done"
     }
   ]
 }

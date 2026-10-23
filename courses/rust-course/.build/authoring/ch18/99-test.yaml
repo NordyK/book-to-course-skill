@@ -1,0 +1,58 @@
+title: "Chapter test: Trait Objects and Object-Oriented Rust"
+kind: test
+summary: Ten questions on OOP in Rust, trait objects and the state pattern. You need 70% to pass; you can retry and your best score is kept.
+blocks:
+  - type: quiz
+    id: ch18-test
+    pass_score: 0.7
+    questions:
+      - type: single
+        q: "Which OOP feature does Rust not have for structs?"
+        options: ["Encapsulation", "Methods", "Inheritance", "Polymorphism"]
+        answer: 2
+        explanation: "Use traits and composition."
+      - type: single
+        q: "How do you share behavior between types without inheritance?"
+        options: ["Copy and paste", "Default methods in a trait", "Global variables", "Macros only"]
+        answer: 1
+        explanation: "Plus composition for data."
+      - type: single
+        q: "Which compiles and holds values of several types?"
+        options: ["`let v: Vec<dyn Draw> = ...`", "`let v: Vec<Box<dyn Draw>> = ...`", "`let v: Vec<Draw> = ...`", "`let v: Vec<T> = ...`"]
+        answer: 1
+        explanation: "dyn Trait needs a pointer."
+      - type: single
+        q: "How big is `&dyn Trait` on a 64-bit machine?"
+        options: ["8 bytes", "16 bytes", "It depends on the type", "0 bytes"]
+        answer: 1
+        explanation: "Data pointer plus vtable pointer."
+      - type: single
+        q: "A trait has `fn duplicate(&self) -> Self;`. Can it be used as dyn Trait?"
+        options: ["Yes", "No, returning Self makes it not dyn compatible (unless the method has `where Self: Sized`)", "Only with Box", "Only with Rc"]
+        answer: 1
+        explanation: "Same reason as Clone."
+      - type: single
+        q: "Which dispatch does `fn draw_all<T: Draw>(items: &[T])` use?"
+        options: ["Dynamic", "Static", "None", "Both"]
+        answer: 1
+        explanation: "Generics are monomorphized."
+      - type: single
+        q: "What does `trait Shape: Debug` mean?"
+        options: ["Shape inherits Debug's data", "Every type implementing Shape must also implement Debug", "Shape is a Debug", "Debug implements Shape"]
+        answer: 1
+        explanation: "Debug is a supertrait."
+      - type: single
+        q: "In the state pattern, which line moves the old state out of the Post?"
+        options: ["`self.state.as_ref()`", "`self.state.take()`", "`self.state.clone()`", "`&self.state`"]
+        answer: 1
+        explanation: "take leaves None behind."
+      - type: single
+        q: "What is the main advantage of type-state over state objects?"
+        options: ["Less code always", "Invalid transitions become compile errors", "It works with run-time data", "It uses dynamic dispatch"]
+        answer: 1
+        explanation: "Make invalid states unrepresentable."
+      - type: multi
+        q: "Good uses of trait objects:"
+        options: ["A list of UI widgets of different types", "`Box<dyn Error>` as a catch-all error", "A tight numeric inner loop", "User-supplied plugins"]
+        answer: [0, 1, 3]
+        explanation: "In hot loops prefer generics."
