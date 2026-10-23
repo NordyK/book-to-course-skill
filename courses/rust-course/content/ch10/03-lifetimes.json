@@ -1,0 +1,289 @@
+{
+  "title": "Validating references with lifetimes",
+  "summary": "Dangling references and the borrow checker, lifetime annotations in functions, what 'a really promises, lifetimes in structs, the three elision rules, 'static, and combining lifetimes with generics.",
+  "minutes": 40,
+  "source": {
+    "chapter": "ch10",
+    "sections": [
+      "TRPL 10.3 Validating References with Lifetimes",
+      "TRPL 10.3 Dangling References",
+      "TRPL 10.3 The Borrow Checker",
+      "TRPL 10.3 Generic Lifetimes in Functions",
+      "TRPL 10.3 Lifetime Annotation Syntax",
+      "TRPL 10.3 In Function Signatures",
+      "TRPL 10.3 Relationships",
+      "TRPL 10.3 In Struct Definitions",
+      "TRPL 10.3 Lifetime Elision",
+      "TRPL 10.3 In Method Definitions",
+      "TRPL 10.3 The Static Lifetime",
+      "TRPL 10.3 Generic Type Parameters, Trait Bounds, and Lifetimes",
+      "PR ch5 References",
+      "CR Day 3 Lifetimes",
+      "CR Day 3 Lifetime Elision",
+      "CR Day 3 Lifetimes in Data Structures"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Every reference has a **lifetime**: the part of the program during which it is valid. Most of the time lifetimes are inferred, just as most types are. Occasionally the compiler cannot work out how the lifetimes of several references relate, and you must tell it with **lifetime annotations**. They never change how long anything lives; they only **describe** relationships so the compiler can check them.\n\nThe purpose is to prevent **dangling references**: a reference to data that no longer exists.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let r;\n    {\n        let x = 5;\n        r = &x;\n    }\n    println!(\"r: {r}\");\n}\n",
+      "output": "error[E0597]: `x` does not live long enough\n --> src/main.rs:5:13\n  |\n4 |         let x = 5;\n  |             - binding `x` declared here\n5 |         r = &x;\n  |             ^^ borrowed value does not live long enough\n6 |     }\n  |     - `x` dropped here while still borrowed\n7 |     println!(\"r: {r}\");\n  |                   - borrow later used here\n",
+      "output_label": "Compiler output",
+      "explain": "`x` is dropped at the inner `}`, but `r` is still used after it. The **borrow checker** compares scopes: the reference's lifetime must not outlast the data it points to."
+    },
+    {
+      "type": "svg",
+      "svg": "<svg viewBox=\"0 0 480 190\" xmlns=\"http://www.w3.org/2000/svg\" font-family=\"ui-monospace, monospace\" font-size=\"13\">\n  <rect x=\"70\" y=\"20\" width=\"200\" height=\"150\" rx=\"6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/>\n  <text x=\"280\" y=\"38\" fill=\"currentColor\">'a: r</text>\n  <rect x=\"90\" y=\"56\" width=\"150\" height=\"62\" rx=\"6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-dasharray=\"5 3\"/>\n  <text x=\"250\" y=\"80\" fill=\"currentColor\">'b: x</text>\n  <text x=\"20\" y=\"40\" fill=\"currentColor\">let r;</text>\n  <text x=\"100\" y=\"78\" fill=\"currentColor\">let x = 5;</text>\n  <text x=\"100\" y=\"102\" fill=\"currentColor\">r = &amp;x;</text>\n  <text x=\"20\" y=\"150\" fill=\"currentColor\">use r</text>\n  <text x=\"90\" y=\"150\" fill=\"currentColor\">&#8592; x is already gone</text>\n</svg>\n",
+      "caption": "`r` lives in the outer box (lifetime `'a`), `x` only in the dashed inner one (`'b`). Using `r` after the inner box ends would follow a reference into freed memory."
+    },
+    {
+      "type": "text",
+      "title": "When the compiler needs help",
+      "md": "Here is a function that returns the longer of two string slices:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn longest(x: &str, y: &str) -> &str {\n    if x.len() > y.len() { x } else { y }\n}\n\nfn main() {\n    println!(\"{}\", longest(\"abcd\", \"xyz\"));\n}\n",
+      "output": "error[E0106]: missing lifetime specifier\n --> src/main.rs:1:33\n  |\n1 | fn longest(x: &str, y: &str) -> &str {\n  |               ----     ----     ^ expected named lifetime parameter\n  |\n  = help: this function's return type contains a borrowed value, but the signature does not say whether it is borrowed from `x` or `y`\nhelp: consider introducing a named lifetime parameter\n  |\n1 | fn longest<'a>(x: &'a str, y: &'a str) -> &'a str {\n  |           ++++     ++          ++          ++\n",
+      "output_label": "Compiler output",
+      "explain": "The returned reference comes from `x` or from `y`, decided at run time. The caller needs to know how long the result stays valid, and the compiler checks each function by its signature alone, so the signature must say it."
+    },
+    {
+      "type": "text",
+      "title": "Lifetime annotation syntax",
+      "md": "Lifetime parameters start with an apostrophe and are usually short: `'a`. They go after the `&`: `&'a str`, `&'a mut i32`. Like type parameters, they are declared in angle brackets after the function name:\n\n```rust\nfn longest<'a>(x: &'a str, y: &'a str) -> &'a str {\n    if x.len() > y.len() { x } else { y }\n}\n```\n\nRead it as: \"for some lifetime `'a`, both arguments live at least as long as `'a`, and the result is valid for `'a` too.\" When called, `'a` becomes the **shorter** of the two arguments' lifetimes. The result can be used only while **both** inputs are still valid.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn longest<'a>(x: &'a str, y: &'a str) -> &'a str {\n    if x.len() > y.len() { x } else { y }\n}\n\nfn main() {\n    let string1 = String::from(\"long string is long\");\n    let result;\n    {\n        let string2 = String::from(\"xyz\");\n        result = longest(string1.as_str(), string2.as_str());\n    }\n    println!(\"The longest string is {result}\");\n}\n",
+      "output": "error[E0597]: `string2` does not live long enough\n  --> src/main.rs:10:44\n   |\n 9 |         let string2 = String::from(\"xyz\");\n   |             ------- binding `string2` declared here\n10 |         result = longest(string1.as_str(), string2.as_str());\n   |                                            ^^^^^^^ borrowed value does not live long enough\n11 |     }\n   |     - `string2` dropped here while still borrowed\n12 |     println!(\"The longest string is {result}\");\n   |                                      ------ borrow later used here\n",
+      "output_label": "Compiler output",
+      "explain": "You can see that `result` would point to `string1`, which is still alive. The compiler cannot: by the signature, the result may borrow from `string2`, which is dropped at the `}`. Move the `println!` inside the inner block and it compiles."
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "title": "Annotations describe; they do not extend",
+      "md": "Writing `'a` does not make any value live longer. It states a relationship (\"the output borrows from these inputs\") that the compiler then enforces at every call. If a parameter has nothing to do with the result, leave it out: `fn first<'a>(x: &'a str, y: &str) -> &'a str` returns `x` and lets `y` have any lifetime."
+    },
+    {
+      "type": "text",
+      "md": "A function cannot return a reference to a value it created itself, whatever the annotations say, because that value is dropped when the function returns. Return an owned value instead:\n\n```rust\nfn make() -> String {          // not -> &str\n    String::from(\"really long string\")\n}\n```\n"
+    },
+    {
+      "type": "text",
+      "title": "Lifetimes in structs",
+      "md": "A struct may hold references, but then every reference field needs a lifetime, declared on the struct. The annotation means \"an instance of this struct cannot outlive the data it borrows\":\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "struct ImportantExcerpt<'a> {\n    part: &'a str,\n}\n\nimpl<'a> ImportantExcerpt<'a> {\n    fn level(&self) -> i32 {\n        3\n    }\n\n    fn announce_and_return_part(&self, announcement: &str) -> &str {\n        println!(\"Attention please: {announcement}\");\n        self.part\n    }\n}\n\nfn main() {\n    let novel = String::from(\"Call me Ishmael. Some years ago...\");\n    let first_sentence = novel.split('.').next().unwrap();\n    let i = ImportantExcerpt { part: first_sentence };\n    println!(\"{} (level {})\", i.part, i.level());\n    println!(\"{}\", i.announce_and_return_part(\"an excerpt\"));\n}\n",
+      "output": "Call me Ishmael (level 3)\nAttention please: an excerpt\nCall me Ishmael\n",
+      "explain": "`novel` outlives `i`, so this is fine. Notice that `announce_and_return_part` needs no annotations: the elision rules below fill them in."
+    },
+    {
+      "type": "text",
+      "title": "Lifetime elision",
+      "md": "Early Rust required annotations on every reference in a signature. The common patterns were so predictable that the compiler now fills them in using three **elision rules**. If the rules leave an output lifetime undecided, you get error E0106 and must annotate.\n"
+    },
+    {
+      "type": "stepper",
+      "title": "The three elision rules",
+      "steps": [
+        {
+          "title": "Rule 1: each input reference gets its own lifetime",
+          "md": "`fn f(x: &str, y: &str)` is read as `fn f<'a, 'b>(x: &'a str, y: &'b str)`.",
+          "code": "fn first_word(s: &str) -> &str\n// becomes\nfn first_word<'a>(s: &'a str) -> &str\n"
+        },
+        {
+          "title": "Rule 2: one input lifetime is given to all outputs",
+          "md": "With exactly one input lifetime, the output must borrow from it. `first_word` is now complete; no annotation needed.",
+          "code": "fn first_word<'a>(s: &'a str) -> &'a str\n"
+        },
+        {
+          "title": "Rule 3: in methods, outputs get self's lifetime",
+          "md": "If one input is `&self` or `&mut self`, its lifetime goes to all outputs. That is why `announce_and_return_part(&self, announcement: &str) -> &str` compiled: the result borrows from `self`.",
+          "code": "fn part(&self, other: &str) -> &str\n// becomes\nfn part<'b>(&'a self, other: &'b str) -> &'a str\n"
+        },
+        {
+          "title": "longest is left undecided",
+          "md": "Two input lifetimes, no `self`: rule 2 and rule 3 do not apply, the output has no lifetime, and you must write `'a`.",
+          "code": "fn longest<'a, 'b>(x: &'a str, y: &'b str) -> &str   // ??? -> E0106\n"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "The 'static lifetime",
+      "md": "`'static` means \"can live for the whole program\". All string literals are `&'static str`, because their text is stored in the program's binary. When the compiler suggests adding `'static`, it is usually wrong advice for your situation: the real fix is generally an owned value or a correct relationship between lifetimes. `T: 'static` as a bound (common with threads) means \"T holds no short-lived references\"; owned types such as `String` satisfy it.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::fmt::Display;\n\nfn longest_with_an_announcement<'a, T>(x: &'a str, y: &'a str, ann: T) -> &'a str\nwhere\n    T: Display,\n{\n    println!(\"Announcement! {ann}\");\n    if x.len() > y.len() { x } else { y }\n}\n\nfn main() {\n    let s: &'static str = \"I have a static lifetime.\";\n    println!(\"{}\", longest_with_an_announcement(s, \"short\", 42));\n}\n",
+      "output": "Announcement! 42\nI have a static lifetime.\n",
+      "explain": "Lifetime parameters and type parameters share the same angle brackets; lifetimes come first."
+    },
+    {
+      "type": "playground",
+      "id": "ch10-play-lifetimes",
+      "title": "Fix the signatures",
+      "lang": "rust",
+      "md": "These two functions do not compile because their return lifetimes are ambiguous. Add the right annotations. `pick_first` always returns its first argument, so its second parameter should **not** be tied to the result: the `main` below depends on that.\n",
+      "task": "Make it compile; it prints `apple` and `banana`.",
+      "code": "fn pick_first(a: &str, b: &str) -> &str {\n    println!(\"ignoring {}\", b.len());\n    a\n}\n\nfn longer(a: &str, b: &str) -> &str {\n    if b.len() > a.len() { b } else { a }\n}\n\nfn main() {\n    let keep = String::from(\"apple\");\n    let chosen;\n    {\n        let temp = String::from(\"kiwi\");\n        chosen = pick_first(&keep, &temp);\n    }\n    println!(\"{chosen}\");\n    println!(\"{}\", longer(\"pear\", \"banana\"));\n}\n",
+      "expected_output": "ignoring 4\napple\nbanana\n",
+      "hints": [
+        "`fn pick_first<'a>(a: &'a str, b: &str) -> &'a str`",
+        "If you tie `b` to `'a` as well, `chosen` would be limited by `temp`, which is dropped too early."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch10-ex-lifetimes",
+      "exercise_dir": "ch10-lifetimes",
+      "title": "Borrowing parsers",
+      "difficulty": "hard",
+      "goal": "Write functions and a struct that return and hold references into their input, with correct lifetime annotations.",
+      "behavior": "- `pub fn longest_word<'a>(text: &'a str) -> &'a str`: the longest whitespace-separated word (the first on a tie), or `\"\"` for no words. (Elision would work here; write it out.)\n- `pub fn longer_of<'a>(a: &'a str, b: &'a str) -> &'a str`: the longer string, `a` on a tie.\n- `pub fn after_prefix<'a>(text: &'a str, prefix: &str) -> Option<&'a str>`: the part after `prefix` if `text` starts with it. The prefix must **not** be tied to the result.\n- `pub struct Tokens<'a> { rest: &'a str }` with `pub fn new(text: &'a str) -> Self` and `pub fn next_token(&mut self) -> Option<&'a str>`, returning the next comma-separated piece, trimmed, until the text is used up. Empty pieces are skipped.\n",
+      "examples": [
+        {
+          "input": "longest_word(\"a quick brown fox\")",
+          "output": "\"quick\""
+        },
+        {
+          "input": "after_prefix(\"key=value\", \"key=\")",
+          "output": "Some(\"value\")"
+        },
+        {
+          "input": "Tokens::new(\" a, b ,,c\") (repeated next_token)",
+          "output": "Some(\"a\"), Some(\"b\"), Some(\"c\"), None"
+        }
+      ],
+      "hints": [
+        "`text.split_whitespace()` yields words; keep one when `w.len() > best.len()`.",
+        "`text.strip_prefix(prefix)` already returns `Option<&str>`.",
+        "In `next_token`: loop; if `rest` is empty return `None`; split with `match self.rest.split_once(',')`, set `self.rest` to the remainder, trim the piece, and return it if non-empty.",
+        "The return type is `Option<&'a str>`, not `Option<&str>`: the token borrows from the original text, not from `self`. That lets callers keep tokens while calling `next_token` again."
+      ],
+      "solution_explain": "`next_token` returns `Option<&'a str>`: tokens borrow from the original text, not from the `Tokens` value. With the elided `Option<&str>` they would borrow from `&mut self` (rule 3), and the last test could not hold `first` while calling `next_token` again. This is the same design as the standard library's `split` iterators."
+    },
+    {
+      "type": "quiz",
+      "id": "ch10-quiz-lifetimes",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "What does `fn longest<'a>(x: &'a str, y: &'a str) -> &'a str` promise?",
+          "options": [
+            "Both strings live forever",
+            "The result is valid as long as both inputs are",
+            "The result lives longer than the inputs",
+            "x and y have the same length"
+          ],
+          "answer": 1,
+          "explanation": "'a is the overlap of the two input lifetimes."
+        },
+        {
+          "type": "truefalse",
+          "q": "Adding a lifetime annotation can make a value live longer.",
+          "answer": false,
+          "explanation": "Annotations only describe relationships for the compiler to check."
+        },
+        {
+          "type": "single",
+          "q": "Why does `fn first_word(s: &str) -> &str` need no annotation?",
+          "options": [
+            "Strings are special",
+            "Elision: one input lifetime is given to the output",
+            "It returns an owned value",
+            "Because of 'static"
+          ],
+          "answer": 1,
+          "explanation": "Rules 1 and 2."
+        },
+        {
+          "type": "single",
+          "q": "Which signature needs an explicit lifetime?",
+          "options": [
+            "`fn f(&self) -> &str`",
+            "`fn f(s: &str) -> &str`",
+            "`fn f(a: &str, b: &str) -> &str`",
+            "`fn f(a: &str, b: &str) -> String`"
+          ],
+          "answer": 2,
+          "explanation": "Two input lifetimes, no self, and a borrowed output."
+        },
+        {
+          "type": "single",
+          "q": "What type do string literals have?",
+          "options": [
+            "`String`",
+            "`&'static str`",
+            "`&'a str`",
+            "`str`"
+          ],
+          "answer": 1,
+          "explanation": "Their text is stored in the binary for the whole run."
+        },
+        {
+          "type": "single",
+          "q": "`struct Parser<'a> { input: &'a str }` means...",
+          "options": [
+            "A Parser owns its input",
+            "A Parser cannot outlive the string it borrows",
+            "input is static",
+            "Parser must be generic over types"
+          ],
+          "answer": 1,
+          "explanation": "The struct borrows; it must not outlive the data."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "A lifetime is the span during which a reference is valid; the borrow checker rejects references that would outlive their data.",
+        "Annotations like `'a` relate the lifetimes of inputs and outputs; they never change how long values live.",
+        "Structs holding references need lifetime parameters and cannot outlive what they borrow.",
+        "Elision rules: each input gets a lifetime; a single input lifetime goes to outputs; in methods, `self`'s lifetime goes to outputs.",
+        "`'static` lives for the whole program; string literals have it. It is rarely the right fix for a lifetime error."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "lifetime",
+      "def": "The region of code during which a reference is guaranteed to be valid."
+    },
+    {
+      "term": "lifetime annotation",
+      "def": "A name like 'a that relates the lifetimes of references in a signature or struct."
+    },
+    {
+      "term": "borrow checker",
+      "def": "The part of the compiler that checks every borrow is valid for as long as it is used."
+    },
+    {
+      "term": "lifetime elision",
+      "def": "Rules that let the compiler infer lifetimes in common signatures so you need not write them."
+    },
+    {
+      "term": "'static",
+      "def": "The lifetime of the entire program run; string literals have it."
+    },
+    {
+      "term": "dangling reference",
+      "def": "A reference to memory that has been freed; Rust rejects these at compile time."
+    }
+  ]
+}

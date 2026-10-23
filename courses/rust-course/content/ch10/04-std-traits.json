@@ -1,0 +1,288 @@
+{
+  "title": "The standard traits",
+  "summary": "The traits every Rust type plugs into: derivable ones (Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default), Display, From and Into, TryFrom, AsRef, Drop, and operator overloading with Add, Neg, Index and friends.",
+  "minutes": 40,
+  "source": {
+    "chapter": "ch10",
+    "sections": [
+      "TRPL Appendix C Derivable Traits",
+      "PR ch12 Operator Overloading",
+      "PR ch12 Arithmetic and Bitwise Operators",
+      "PR ch12 Equivalence Comparisons",
+      "PR ch12 Ordered Comparisons",
+      "PR ch12 Index and IndexMut",
+      "PR ch13 Utility Traits",
+      "PR ch13 Drop",
+      "PR ch13 Clone",
+      "PR ch13 Copy",
+      "PR ch13 Default",
+      "PR ch13 AsRef and AsMut",
+      "PR ch13 From and Into",
+      "PR ch13 TryFrom and TryInto",
+      "CR Day 2 Standard Library Traits",
+      "CR Day 2 Comparisons",
+      "CR Day 2 Operators",
+      "CR Day 2 From and Into",
+      "CR Day 2 Default"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Much of the standard library works through traits. `println!(\"{}\")` needs `Display`, `==` needs `PartialEq`, `+` needs `Add`, sorting needs `Ord`, `HashMap` keys need `Hash` and `Eq`. Implement these traits for your types and they work with all of that code. *Programming Rust* calls this making your types \"first-class citizens\".\n"
+    },
+    {
+      "type": "table",
+      "title": "Derivable traits",
+      "headers": [
+        "Trait",
+        "Gives you",
+        "Derive needs every field to have it"
+      ],
+      "rows": [
+        [
+          "`Debug`",
+          "`{:?}` and `{:#?}` formatting",
+          "yes"
+        ],
+        [
+          "`Clone`",
+          "`.clone()`: an explicit deep copy",
+          "yes"
+        ],
+        [
+          "`Copy`",
+          "implicit copy on assignment instead of a move (requires `Clone`)",
+          "yes, and no heap data: no String, Vec, Box"
+        ],
+        [
+          "`PartialEq` / `Eq`",
+          "`==` and `!=`; `Eq` promises `x == x` always (not true for floats: NaN)",
+          "yes"
+        ],
+        [
+          "`PartialOrd` / `Ord`",
+          "`<`, `>`, `sort()`, `max()`; derive compares fields in order, enum variants in declaration order",
+          "yes"
+        ],
+        [
+          "`Hash`",
+          "use as a `HashMap` key or in a `HashSet` (with `Eq`)",
+          "yes"
+        ],
+        [
+          "`Default`",
+          "`Type::default()`: zero, empty, false for each field",
+          "yes"
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]\nenum Priority {\n    #[default]\n    Low,\n    Medium,\n    High,\n}\n\n#[derive(Debug, Clone, PartialEq, Default)]\nstruct Task {\n    title: String,\n    priority: Priority,\n    done: bool,\n}\n\nfn main() {\n    let mut ps = vec![Priority::High, Priority::Low, Priority::Medium];\n    ps.sort();\n    println!(\"{ps:?}\");\n    println!(\"{}\", Priority::High > Priority::Medium);\n\n    let t = Task { title: String::from(\"write tests\"), ..Default::default() };\n    let copy = t.clone();\n    println!(\"{t:?}\");\n    println!(\"{}\", t == copy);\n}\n",
+      "output": "[Low, Medium, High]\ntrue\nTask { title: \"write tests\", priority: Low, done: false }\ntrue\n",
+      "explain": "`#[default]` picks the variant `Default` returns. `..Default::default()` fills the remaining fields. `Task` cannot be `Copy` because it holds a `String`."
+    },
+    {
+      "type": "text",
+      "title": "Display",
+      "md": "`Debug` is for programmers; `Display` is for users, and it is never derived because only you know how your type should read. Implement its `fmt` method with `write!`. Implementing `Display` also gives you `.to_string()` through the blanket impl from lesson 2.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::fmt;\n\nstruct Money {\n    cents: i64,\n}\n\nimpl fmt::Display for Money {\n    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {\n        let sign = if self.cents < 0 { \"-\" } else { \"\" };\n        let c = self.cents.abs();\n        write!(f, \"{sign}${}.{:02}\", c / 100, c % 100)\n    }\n}\n\nfn main() {\n    let price = Money { cents: 1999 };\n    println!(\"{price}\");\n    println!(\"{}\", Money { cents: -5 });\n    let s: String = price.to_string();\n    println!(\"{} characters\", s.len());\n}\n",
+      "output": "$19.99\n-$0.05\n6 characters\n"
+    },
+    {
+      "type": "text",
+      "title": "From and Into",
+      "md": "`From<T>` says \"this type can be built from a `T`\", infallibly. Implement `From` and you get **`Into` for free** (another blanket impl), so both of these work:\n\n```rust\nlet c = Celsius::from(Fahrenheit(212.0));\nlet c: Celsius = Fahrenheit(212.0).into();\n```\n\n`?` uses `From` to convert errors, as you saw in chapter 9. When a conversion can fail, implement **`TryFrom`** instead, with an associated `Error` type; you then get `try_into()`.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "#[derive(Debug)]\nstruct Celsius(f64);\nstruct Fahrenheit(f64);\n\nimpl From<Fahrenheit> for Celsius {\n    fn from(f: Fahrenheit) -> Self {\n        Celsius((f.0 - 32.0) * 5.0 / 9.0)\n    }\n}\n\n#[derive(Debug)]\nstruct Even(u32);\n\nimpl TryFrom<u32> for Even {\n    type Error = String;\n\n    fn try_from(n: u32) -> Result<Self, Self::Error> {\n        if n % 2 == 0 { Ok(Even(n)) } else { Err(format!(\"{n} is odd\")) }\n    }\n}\n\nfn print_temp(t: impl Into<Celsius>) {\n    let c: Celsius = t.into();\n    println!(\"{:.1} °C\", c.0);\n}\n\nfn main() {\n    println!(\"{:?}\", Celsius::from(Fahrenheit(212.0)));\n    print_temp(Fahrenheit(98.6));\n    let e: Result<Even, _> = 8u32.try_into();\n    println!(\"{e:?}\");\n    println!(\"{:?}\", Even::try_from(7));\n}\n",
+      "output": "Celsius(100.0)\n37.0 °C\nOk(Even(8))\nErr(\"7 is odd\")\n",
+      "explain": "`impl Into<Celsius>` in a parameter accepts anything convertible, a common API style. Implement `From`, not `Into`: you get both."
+    },
+    {
+      "type": "text",
+      "title": "AsRef and Drop",
+      "md": "**`AsRef<T>`** means \"can cheaply lend a `&T`\". Functions use it to accept many argument types: `std::fs::read_to_string` takes `impl AsRef<Path>`, so a `&str`, a `String` and a `PathBuf` all work.\n\n**`Drop`** runs code when a value goes out of scope: closing a file, releasing a lock, printing a message. You cannot call `drop` methods yourself; use `std::mem::drop(value)` (in the prelude as `drop`) to drop early. Chapter 15 returns to `Drop` with smart pointers.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "struct Noisy(&'static str);\n\nimpl Drop for Noisy {\n    fn drop(&mut self) {\n        println!(\"dropping {}\", self.0);\n    }\n}\n\nfn shout<S: AsRef<str>>(s: S) -> String {\n    s.as_ref().to_uppercase()\n}\n\nfn main() {\n    let _a = Noisy(\"a\");\n    {\n        let _b = Noisy(\"b\");\n        println!(\"inner scope ends\");\n    }\n    let c = Noisy(\"c\");\n    drop(c);\n    println!(\"{} {}\", shout(\"hi\"), shout(String::from(\"there\")));\n    println!(\"main ends\");\n}\n",
+      "output": "inner scope ends\ndropping b\ndropping c\nHI THERE\nmain ends\ndropping a\n",
+      "explain": "Values are dropped in reverse order of declaration at the end of their scope. `drop(c)` moves `c` into the function, which drops it right away."
+    },
+    {
+      "type": "text",
+      "title": "Operator overloading",
+      "md": "Operators are trait methods in disguise. `a + b` is `Add::add(a, b)`, `-a` is `Neg::neg(a)`, `a += b` is `AddAssign::add_assign(&mut a, b)`, and `v[i]` is `*Index::index(&v, i)`. All live in `std::ops`. Implement them for your own types where the meaning is obvious, such as vectors in maths, money, or matrices:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::ops::{Add, AddAssign, Mul, Neg, Index};\n\n#[derive(Debug, Clone, Copy, PartialEq)]\nstruct V2 {\n    x: f64,\n    y: f64,\n}\n\nimpl Add for V2 {\n    type Output = V2;\n    fn add(self, o: V2) -> V2 {\n        V2 { x: self.x + o.x, y: self.y + o.y }\n    }\n}\n\nimpl Mul<f64> for V2 {\n    type Output = V2;\n    fn mul(self, k: f64) -> V2 {\n        V2 { x: self.x * k, y: self.y * k }\n    }\n}\n\nimpl Neg for V2 {\n    type Output = V2;\n    fn neg(self) -> V2 {\n        V2 { x: -self.x, y: -self.y }\n    }\n}\n\nimpl AddAssign for V2 {\n    fn add_assign(&mut self, o: V2) {\n        self.x += o.x;\n        self.y += o.y;\n    }\n}\n\nimpl Index<usize> for V2 {\n    type Output = f64;\n    fn index(&self, i: usize) -> &f64 {\n        match i {\n            0 => &self.x,\n            1 => &self.y,\n            _ => panic!(\"V2 index out of range: {i}\"),\n        }\n    }\n}\n\nfn main() {\n    let a = V2 { x: 1.0, y: 2.0 };\n    let b = V2 { x: 0.5, y: -1.0 };\n    let mut c = a + b * 2.0;\n    println!(\"{c:?}\");\n    c += -a;\n    println!(\"{c:?} {} {}\", c[0], c[1]);\n}\n",
+      "output": "V2 { x: 2.0, y: 0.0 }\nV2 { x: 1.0, y: -2.0 } 1 -2\n",
+      "explain": "`Output` is an associated type: the result of `V2 * f64` could be any type you choose. `Mul<f64>` takes the right-hand type as a generic parameter, so `V2` could also implement `Mul<V2>` separately. Deriving `Copy` lets `a` be used after `a + ...` moved it."
+    },
+    {
+      "type": "callout",
+      "kind": "warning",
+      "title": "Overload only where it reads naturally",
+      "md": "*Programming Rust* advises keeping operators for types where they mean what readers expect. `+` on two money values is clear; `+` that appends a user to a database is not. Comparison operators come from `PartialEq` and `PartialOrd`, usually derived."
+    },
+    {
+      "type": "exercise",
+      "id": "ch10-ex-std-traits",
+      "exercise_dir": "ch10-std-traits",
+      "title": "A Money type that fits in",
+      "difficulty": "hard",
+      "goal": "Make a type first-class by implementing Display, Default, From, TryFrom, Add, Sub, Neg, AddAssign and Sum, and deriving comparisons.",
+      "behavior": "`pub struct Money { pub cents: i64 }` (derive `Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default` is already written).\n- `Display`: `\"$12.30\"`, `\"-$0.05\"`, `\"$0.00\"` (dollars, a dot, two-digit cents).\n- `From<i64>` (whole dollars): `Money::from(3)` is 300 cents.\n- `TryFrom<&str>` with `type Error = String`: parses `\"12.30\"`, `\"-0.05\"` or `\"7\"` (no cents). Exactly two digits after a dot if a dot is present. Anything else gives `Err(format!(\"bad amount: {s}\"))`.\n- `Add`, `Sub`, `Neg` (all `Output = Money`) and `AddAssign`.\n- `std::iter::Sum` so `vec_of_money.into_iter().sum::<Money>()` works: `fn sum<I: Iterator<Item = Money>>(iter: I) -> Money`.\n",
+      "examples": [
+        {
+          "input": "Money::from(3) + Money { cents: 45 }",
+          "output": "Money { cents: 345 } (prints $3.45)"
+        },
+        {
+          "input": "Money::try_from(\"-0.05\")",
+          "output": "Ok(Money { cents: -5 })"
+        },
+        {
+          "input": "Money::try_from(\"1.5\")",
+          "output": "Err(\"bad amount: 1.5\")"
+        }
+      ],
+      "hints": [
+        "Display: `let sign = if self.cents < 0 { \"-\" } else { \"\" }; let c = self.cents.abs(); write!(f, \"{sign}${}.{:02}\", c / 100, c % 100)`.",
+        "TryFrom: strip a leading `-` with `strip_prefix`, then `split_once('.')`. Check the cents part has length 2 and all digits; parse dollars as `i64` with `.map_err(|_| err())?`.",
+        "Sum: `iter.fold(Money::default(), |a, b| a + b)`."
+      ],
+      "solution_explain": "Storing cents in an `i64` avoids floating-point rounding, which is why money is almost never an `f64`. Each trait plugs `Money` into a piece of the language or standard library: formatting, conversions, operators, and `Iterator::sum`."
+    },
+    {
+      "type": "quiz",
+      "id": "ch10-quiz-std",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Why can't a struct with a `String` field derive `Copy`?",
+          "options": [
+            "Strings are immutable",
+            "Copy is only for types with no heap data to duplicate; a String owns heap memory",
+            "Copy cannot be derived",
+            "Strings are not Clone"
+          ],
+          "answer": 1,
+          "explanation": "A bitwise copy would make two owners of one heap buffer."
+        },
+        {
+          "type": "single",
+          "q": "You implement `From<A> for B`. What else do you get?",
+          "options": [
+            "Nothing",
+            "`Into<B> for A`",
+            "`From<B> for A`",
+            "`Display for B`"
+          ],
+          "answer": 1,
+          "explanation": "A blanket impl provides Into."
+        },
+        {
+          "type": "single",
+          "q": "What does `a + b` call for a type that implements `Add`?",
+          "options": [
+            "`a.plus(b)`",
+            "`Add::add(a, b)`",
+            "`a.add_assign(b)`",
+            "`Sum::sum`"
+          ],
+          "answer": 1,
+          "explanation": "Operators are trait methods."
+        },
+        {
+          "type": "single",
+          "q": "In what order are `x` then `y` (declared in that order in one scope) dropped?",
+          "options": [
+            "x, then y",
+            "y, then x",
+            "At random",
+            "Neither is dropped"
+          ],
+          "answer": 1,
+          "explanation": "Reverse order of declaration."
+        },
+        {
+          "type": "multi",
+          "q": "Which traits must a type implement to be a `HashMap` key?",
+          "options": [
+            "`Hash`",
+            "`Eq`",
+            "`Display`",
+            "`Copy`"
+          ],
+          "answer": [
+            0,
+            1
+          ],
+          "explanation": "Keys are hashed and compared for equality."
+        },
+        {
+          "type": "single",
+          "q": "Why does `f64` implement `PartialOrd` but not `Ord`?",
+          "options": [
+            "Floats are too big",
+            "NaN is not ordered with anything, so a total order does not exist",
+            "Ord is only for integers by design",
+            "It does implement Ord"
+          ],
+          "answer": 1,
+          "explanation": "That is why `v.sort()` does not work on a `Vec<f64>`."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Derive `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Hash` and `Default` when they make sense.",
+        "Implement `Display` by hand for user-facing output; it gives `to_string()` too.",
+        "Implement `From` (and get `Into`); use `TryFrom` for fallible conversions.",
+        "`AsRef` lets functions accept many argument types; `Drop` runs cleanup at end of scope.",
+        "Operators come from `std::ops` traits like `Add`, `Neg`, `AddAssign` and `Index`, usually with an associated `Output` type."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "derive",
+      "def": "An attribute (#[derive(...)]) that generates a trait implementation from a type's fields."
+    },
+    {
+      "term": "Display",
+      "def": "The trait for user-facing formatting with {}; implemented by hand."
+    },
+    {
+      "term": "From / Into",
+      "def": "Infallible conversion traits; implementing From<T> for U also gives Into<U> for T."
+    },
+    {
+      "term": "TryFrom",
+      "def": "A conversion trait that can fail, returning Result<Self, Self::Error>."
+    },
+    {
+      "term": "Drop",
+      "def": "A trait whose drop method runs when a value goes out of scope."
+    },
+    {
+      "term": "operator overloading",
+      "def": "Implementing std::ops traits so operators like + and [] work with your types."
+    }
+  ]
+}

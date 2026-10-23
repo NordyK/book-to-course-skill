@@ -68,3 +68,7 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
 - Chapter 9 done (Error Handling): panic!/backtraces, Result + combinators + ? + custom error enums + Box<dyn Error>,
   when to panic + validation types, 10-question test; exercises ch09-errors, ch09-validated (verified); 3 playgrounds
   verified. `verify_codeblocks.py` lets a `fn main() -> Result` block exit non-zero (its stdout must still match).
+- Chapter 10 done (Generics, Traits and Lifetimes): generics + const generics + monomorphization, traits (defaults,
+  orphan rule, bounds, where, impl Trait, blanket impls, associated types), lifetimes (elision rules, structs,
+  'static), standard traits (derives, Display, From/TryFrom, AsRef, Drop, operator overloading); 12-question test;
+  exercises ch10-generics, ch10-traits, ch10-lifetimes, ch10-std-traits (verified); 3 playgrounds verified.

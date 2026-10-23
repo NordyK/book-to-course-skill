@@ -1,0 +1,10 @@
+{
+  "title": "Generics, Traits and Lifetimes",
+  "summary": "Writing code once for many types: generic functions and types, traits as shared behavior and as bounds, lifetimes that tell the compiler how references relate, and the standard traits every Rust type plugs into.",
+  "goals": [
+    "Write generic functions, structs, enums and methods, and explain monomorphization",
+    "Define and implement traits, use default methods, trait bounds, where clauses and impl Trait",
+    "Annotate lifetimes when the compiler cannot infer them, and know the elision rules",
+    "Implement the standard traits Display, Default, From, PartialEq, PartialOrd and the operator traits"
+  ]
+}

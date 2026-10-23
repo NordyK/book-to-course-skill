@@ -146,5 +146,17 @@
  "ch09-play-try-new": {
   "solution_code": "struct Percent(u8);\n\nimpl Percent {\n    fn try_new(value: u8) -> Result<Percent, String> {\n        if value > 100 {\n            return Err(format!(\"{value} is more than 100\"));\n        }\n        Ok(Percent(value))\n    }\n}\n\nfn main() {\n    for v in [42, 120] {\n        match Percent::try_new(v) {\n            Ok(p) => println!(\"ok: {}%\", p.0),\n            Err(e) => println!(\"error: {e}\"),\n        }\n    }\n}\n",
   "starter_ok": "compile_error"
+ },
+ "ch10-play-generic-stack": {
+  "solution_code": "struct Stack<T> {\n    items: Vec<T>,\n}\n\nimpl<T> Stack<T> {\n    fn new() -> Self {\n        Stack { items: Vec::new() }\n    }\n    fn push(&mut self, item: T) {\n        self.items.push(item);\n    }\n    fn len(&self) -> usize {\n        self.items.len()\n    }\n    fn peek(&self) -> Option<&T> {\n        self.items.last()\n    }\n}\n\nfn main() {\n    let mut nums = Stack::new();\n    nums.push(1);\n    nums.push(3);\n    println!(\"{:?}\", nums.peek());\n\n    let mut words = Stack::new();\n    words.push(\"a\");\n    words.push(\"b\");\n    println!(\"{:?}\", words.peek());\n    println!(\"{}\", words.len());\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch10-play-lifetimes": {
+  "solution_code": "fn pick_first<'a>(a: &'a str, b: &str) -> &'a str {\n    println!(\"ignoring {}\", b.len());\n    a\n}\n\nfn longer<'a>(a: &'a str, b: &'a str) -> &'a str {\n    if b.len() > a.len() { b } else { a }\n}\n\nfn main() {\n    let keep = String::from(\"apple\");\n    let chosen;\n    {\n        let temp = String::from(\"kiwi\");\n        chosen = pick_first(&keep, &temp);\n    }\n    println!(\"{chosen}\");\n    println!(\"{}\", longer(\"pear\", \"banana\"));\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch10-play-trait": {
+  "solution_code": "struct Circle { r: f64 }\nstruct Rect { w: f64, h: f64 }\n\ntrait Area {\n    fn area(&self) -> f64;\n\n    fn describe(&self) -> String {\n        format!(\"area = {:.2}\", self.area())\n    }\n}\n\nimpl Area for Circle {\n    fn area(&self) -> f64 {\n        std::f64::consts::PI * self.r * self.r\n    }\n}\n\nimpl Area for Rect {\n    fn area(&self) -> f64 {\n        self.w * self.h\n    }\n}\n\nfn total_area<T: Area>(shapes: &[T]) -> f64 {\n    let mut total = 0.0;\n    for s in shapes {\n        total += s.area();\n    }\n    total\n}\n\nfn main() {\n    println!(\"{}\", Circle { r: 1.0 }.describe());\n    println!(\"{}\", Rect { w: 2.0, h: 3.0 }.describe());\n    let rects = [Rect { w: 2.0, h: 3.0 }, Rect { w: 1.0, h: 6.0 }];\n    println!(\"{:.2}\", total_area(&rects));\n}\n",
+  "starter_ok": "compile_error"
  }
 }

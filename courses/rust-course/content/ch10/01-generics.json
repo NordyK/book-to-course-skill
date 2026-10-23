@@ -1,0 +1,257 @@
+{
+  "title": "Generic data types",
+  "summary": "Removing duplication with type parameters: generic functions, structs, enums and methods, methods for one concrete type, const generics, and why generics cost nothing at run time.",
+  "minutes": 30,
+  "source": {
+    "chapter": "ch10",
+    "sections": [
+      "TRPL 10 Removing Duplication by Extracting a Function",
+      "TRPL 10.1 Generic Data Types",
+      "TRPL 10.1 In Function Definitions",
+      "TRPL 10.1 In Struct Definitions",
+      "TRPL 10.1 In Enum Definitions",
+      "TRPL 10.1 In Method Definitions",
+      "TRPL 10.1 Performance of Code Using Generics",
+      "PR ch11 Generic Functions and Type Parameters",
+      "CR Day 2 Generic Functions",
+      "CR Day 2 Generic Data Types",
+      "CR Day 2 Const Generics"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "You already use generics every day: `Vec<T>`, `Option<T>` and `Result<T, E>` work for any `T`. In this chapter you write your own. The goal is the same as for functions: **write a piece of logic once** and reuse it, here across many **types** instead of many values.\n\n*The Rust Programming Language* starts with plain duplication. Two functions find the largest number and the largest character in a slice; their bodies are identical, only the types differ:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn largest_i32(list: &[i32]) -> &i32 {\n    let mut largest = &list[0];\n    for item in list {\n        if item > largest {\n            largest = item;\n        }\n    }\n    largest\n}\n\nfn largest_char(list: &[char]) -> &char {\n    let mut largest = &list[0];\n    for item in list {\n        if item > largest {\n            largest = item;\n        }\n    }\n    largest\n}\n\nfn main() {\n    println!(\"{}\", largest_i32(&[34, 50, 25, 100, 65]));\n    println!(\"{}\", largest_char(&['y', 'm', 'a', 'q']));\n}\n",
+      "output": "100\ny\n"
+    },
+    {
+      "type": "text",
+      "title": "A generic function",
+      "md": "To merge them, give the function a **type parameter** in angle brackets after its name, conventionally a short name like `T`, and use it where the concrete type was:\n\n```rust\nfn largest<T>(list: &[T]) -> &T {\n```\n\nRead it as \"`largest` is generic over some type `T`; it takes a slice of `T` and returns a reference to a `T`.\" But this alone does not compile:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn largest<T>(list: &[T]) -> &T {\n    let mut largest = &list[0];\n    for item in list {\n        if item > largest {\n            largest = item;\n        }\n    }\n    largest\n}\n\nfn main() {\n    println!(\"{}\", largest(&[34, 50, 25, 100, 65]));\n}\n",
+      "output": "error[E0369]: binary operation `>` cannot be applied to type `&T`\n --> src/main.rs:4:17\n  |\n4 |         if item > largest {\n  |            ---- ^ ------- &T\n  |            |\n  |            &T\n  |\nhelp: consider restricting type parameter `T` with trait `PartialOrd`\n  |\n1 | fn largest<T: std::cmp::PartialOrd>(list: &[T]) -> &T {\n  |             ++++++++++++++++++++++\n",
+      "output_label": "Compiler output",
+      "explain": "Inside the body, the compiler only lets you do with `T` what is true of **every** possible `T`. Not every type can be compared with `>`. The help line shows the fix: a **trait bound** saying `T` must be comparable. Lesson 2 explains traits; for now, copy the bound."
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn largest<T: PartialOrd>(list: &[T]) -> &T {\n    let mut largest = &list[0];\n    for item in list {\n        if item > largest {\n            largest = item;\n        }\n    }\n    largest\n}\n\nfn main() {\n    println!(\"{}\", largest(&[34, 50, 25, 100, 65]));\n    println!(\"{}\", largest(&['y', 'm', 'a', 'q']));\n    println!(\"{}\", largest(&[1.5, -2.0, 0.25]));\n    println!(\"{}\", largest(&[\"pear\", \"apple\", \"zucchini\"]));\n}\n",
+      "output": "100\ny\n1.5\nzucchini\n",
+      "explain": "One function, four types. The compiler infers `T` from the argument at each call."
+    },
+    {
+      "type": "text",
+      "title": "Generic structs and enums",
+      "md": "Structs can have type parameters too. Declare them after the struct name and use them in the fields:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "#[derive(Debug)]\nstruct Point<T> {\n    x: T,\n    y: T,\n}\n\n#[derive(Debug)]\nstruct Pair<T, U> {\n    left: T,\n    right: U,\n}\n\nfn main() {\n    let integer = Point { x: 5, y: 10 };\n    let float = Point { x: 1.0, y: 4.0 };\n    let mixed = Pair { left: 5, right: \"five\" };\n    println!(\"{integer:?}\\n{float:?}\\n{mixed:?}\");\n}\n",
+      "output": "Point { x: 5, y: 10 }\nPoint { x: 1.0, y: 4.0 }\nPair { left: 5, right: \"five\" }\n",
+      "explain": "With one parameter, `x` and `y` must be the **same** type: `Point { x: 5, y: 4.0 }` is a type mismatch. Use two parameters, as in `Pair<T, U>`, when they may differ. Many type parameters make code hard to read; if you need a lot, the type may want splitting."
+    },
+    {
+      "type": "text",
+      "md": "Enums are the same. You already know the two most important generic enums from the standard library:\n\n```rust\nenum Option<T> { Some(T), None }\nenum Result<T, E> { Ok(T), Err(E) }\n```\n"
+    },
+    {
+      "type": "text",
+      "title": "Generic methods",
+      "md": "To write methods for a generic struct, declare the parameter after `impl` too: `impl<T> Point<T>`. The first `<T>` introduces the name; the second uses it. You can also write an `impl` block for one **concrete** type: those methods exist only for that type.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "struct Point<T> {\n    x: T,\n    y: T,\n}\n\nimpl<T> Point<T> {\n    fn x(&self) -> &T {\n        &self.x\n    }\n}\n\n// only for Point<f64>: other Points do not have this method\nimpl Point<f64> {\n    fn distance_from_origin(&self) -> f64 {\n        (self.x.powi(2) + self.y.powi(2)).sqrt()\n    }\n}\n\nfn main() {\n    let p = Point { x: 3.0, y: 4.0 };\n    println!(\"x = {}, distance = {}\", p.x(), p.distance_from_origin());\n    let q = Point { x: 3, y: 4 };\n    println!(\"x = {}\", q.x());\n    // q.distance_from_origin(); // error: no method for Point<{integer}>\n}\n",
+      "output": "x = 3, distance = 5\nx = 3"
+    },
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Methods with their own parameters",
+      "md": "A method can introduce type parameters of its own, separate from the struct's. *The Rust Programming Language* shows `fn mixup<X2, Y2>(self, other: Point<X2, Y2>) -> Point<X1, Y2>`, which takes `x` from one point and `y` from another, possibly of different types."
+    },
+    {
+      "type": "text",
+      "title": "Const generics",
+      "md": "Type parameters stand for types. **Const generics** stand for values, usually array lengths: `[T; N]` is generic over the number `N`. Declare one with `const N: usize`:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn sum<const N: usize>(values: [i32; N]) -> i32 {\n    let mut total = 0;\n    for v in values {\n        total += v;\n    }\n    total\n}\n\nstruct Buffer<const N: usize> {\n    data: [u8; N],\n}\n\nfn main() {\n    println!(\"{}\", sum([1, 2, 3]));\n    println!(\"{}\", sum([10; 5]));\n    let b = Buffer::<4> { data: [0; 4] };\n    println!(\"buffer of {} bytes\", b.data.len());\n}\n",
+      "output": "6\n50\nbuffer of 4 bytes\n"
+    },
+    {
+      "type": "stepper",
+      "title": "Monomorphization: what the compiler does with generics",
+      "steps": [
+        {
+          "title": "You write one generic definition",
+          "md": "The compiler type-checks it once, using only what the bounds promise about `T`.",
+          "code": "fn largest<T: PartialOrd>(list: &[T]) -> &T { /* ... */ }\n"
+        },
+        {
+          "title": "It collects every concrete use",
+          "md": "Your program calls `largest` with `i32` and with `char`.",
+          "code": "largest(&[34, 50, 25]);   // T = i32\nlargest(&['y', 'm']);     // T = char\n"
+        },
+        {
+          "title": "It stamps out one copy per type",
+          "md": "Behind the scenes there are now two ordinary, specialized functions. This is **monomorphization** (\"making single-form\"). The same happens to `Option<i32>` and `Option<f64>`.",
+          "code": "fn largest_i32(list: &[i32]) -> &i32 { /* ... */ }\nfn largest_char(list: &[char]) -> &char { /* ... */ }\n"
+        },
+        {
+          "title": "No run-time cost",
+          "md": "Each copy is compiled and optimized for its type, so generic code runs exactly as fast as code you wrote by hand. The price is paid at compile time and in binary size. Chapter 18's trait objects make the opposite trade."
+        }
+      ]
+    },
+    {
+      "type": "playground",
+      "id": "ch10-play-generic-stack",
+      "title": "A generic Stack",
+      "lang": "rust",
+      "md": "`Stack` only holds `i32`. Make it generic over `T` so the same code works for strings, then add a `peek` method returning `Option<&T>`.\n",
+      "task": "Print `Some(3)`, `Some(\"b\")` and `2`.",
+      "code": "struct Stack {\n    items: Vec<i32>,\n}\n\nimpl Stack {\n    fn new() -> Self {\n        Stack { items: Vec::new() }\n    }\n    fn push(&mut self, item: i32) {\n        self.items.push(item);\n    }\n    fn len(&self) -> usize {\n        self.items.len()\n    }\n    // fn peek(&self) -> Option<&T>\n}\n\nfn main() {\n    let mut nums = Stack::new();\n    nums.push(1);\n    nums.push(3);\n    println!(\"{:?}\", nums.peek());\n\n    let mut words = Stack::new();\n    words.push(\"a\");\n    words.push(\"b\");\n    println!(\"{:?}\", words.peek());\n    println!(\"{}\", words.len());\n}\n",
+      "expected_output": "Some(3)\nSome(\"b\")\n2\n",
+      "hints": [
+        "`struct Stack<T> { items: Vec<T> }` and `impl<T> Stack<T> { ... }`.",
+        "Replace `i32` with `T` in `push`.",
+        "`self.items.last()` already returns `Option<&T>`."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch10-ex-generics",
+      "exercise_dir": "ch10-generics",
+      "title": "Generic helpers",
+      "difficulty": "medium",
+      "goal": "Write generic functions and a generic struct with bounds and a concrete-type impl.",
+      "behavior": "- `pub fn largest<T: PartialOrd>(list: &[T]) -> Option<&T>`: the largest element, or `None` for an empty slice.\n- `pub fn count_matching<T: PartialEq>(list: &[T], target: &T) -> usize`: how many elements equal `target`.\n- `pub struct Pair<T> { pub a: T, pub b: T }` with:\n  - `pub fn new(a: T, b: T) -> Self`\n  - `pub fn swap(self) -> Pair<T>` (a and b exchanged)\n  - `pub fn larger(&self) -> &T` where `T: PartialOrd` (the larger of the two; `a` on a tie). Put this one in its own `impl<T: PartialOrd> Pair<T>` block.\n- `impl Pair<f64> { pub fn mean(&self) -> f64 }`: only for floats.\n",
+      "examples": [
+        {
+          "input": "largest(&[3, 9, 2])",
+          "output": "Some(&9)"
+        },
+        {
+          "input": "count_matching(&[\"a\", \"b\", \"a\"], &\"a\")",
+          "output": "2"
+        },
+        {
+          "input": "Pair::new(1.0, 2.0).mean()",
+          "output": "1.5"
+        }
+      ],
+      "hints": [
+        "`let mut best = list.first()?;` gives `None` for an empty slice.",
+        "`list.iter().filter(|x| *x == target).count()` counts matches (or use a loop).",
+        "`impl<T: PartialOrd> Pair<T> { pub fn larger(&self) -> &T { if self.b > self.a { &self.b } else { &self.a } } }`"
+      ],
+      "solution_explain": "`swap` takes `self` by value so it can move both fields into the new pair without needing `T: Clone`. Putting `larger` in a block with a bound means `Pair<T>` can still hold types that cannot be compared; they just do not get that method."
+    },
+    {
+      "type": "quiz",
+      "id": "ch10-quiz-generics",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Why does `fn biggest<T>(a: T, b: T) -> T { if a > b { a } else { b } }` not compile?",
+          "options": [
+            "Generic functions cannot return T",
+            "Not every type supports `>`; T needs a `PartialOrd` bound",
+            "T must be written as `t`",
+            "Two parameters cannot share a type"
+          ],
+          "answer": 1,
+          "explanation": "A generic body may only use what every T can do."
+        },
+        {
+          "type": "single",
+          "q": "With `struct Point<T> { x: T, y: T }`, what is `Point { x: 1, y: 2.5 }`?",
+          "options": [
+            "A Point<f64>",
+            "A type error: x and y must be the same type",
+            "A Point<i32>",
+            "A Point<i32, f64>"
+          ],
+          "answer": 1,
+          "explanation": "Use two type parameters if they may differ."
+        },
+        {
+          "type": "single",
+          "q": "What does `impl Point<f32> { fn norm(&self) -> f32 { ... } }` mean?",
+          "options": [
+            "Every Point gets `norm`",
+            "Only `Point<f32>` values have `norm`",
+            "It converts points to f32",
+            "It is a syntax error"
+          ],
+          "answer": 1,
+          "explanation": "An impl for a concrete type adds methods only to that type."
+        },
+        {
+          "type": "single",
+          "q": "What is monomorphization?",
+          "options": [
+            "Checking generics at run time",
+            "Generating a specialized copy of generic code for each concrete type used",
+            "Converting all types to one type",
+            "A kind of trait object"
+          ],
+          "answer": 1,
+          "explanation": "It is why generics have no run-time cost."
+        },
+        {
+          "type": "fill",
+          "q": "Complete the header for methods on a generic struct: `impl___ Point<T> { ... }`",
+          "answer": [
+            "<T>"
+          ],
+          "explanation": "The first `<T>` declares the parameter."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Type parameters (`<T>`) let one function, struct, enum or method work for many types.",
+        "A generic body can only use what its bounds promise, such as `T: PartialOrd` for `>`.",
+        "`impl<T> Point<T>` adds methods for every T; `impl Point<f64>` only for that type.",
+        "Const generics (`const N: usize`) parameterize over values like array lengths.",
+        "Monomorphization makes generic code as fast as hand-written specialized code."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "generic",
+      "def": "Code written with type parameters so it works for many concrete types."
+    },
+    {
+      "term": "type parameter",
+      "def": "A placeholder for a type, like T in fn largest<T>(list: &[T]), filled in at each use."
+    },
+    {
+      "term": "monomorphization",
+      "def": "The compiler generating a specialized copy of generic code for each concrete type it is used with."
+    },
+    {
+      "term": "const generic",
+      "def": "A generic parameter that stands for a constant value, written const N: usize."
+    }
+  ]
+}

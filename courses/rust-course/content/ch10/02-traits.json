@@ -1,0 +1,283 @@
+{
+  "title": "Traits: defining shared behavior",
+  "summary": "Defining and implementing traits, default methods, the orphan rule, traits as parameters with impl Trait and bounds, where clauses, returning impl Trait, conditional and blanket implementations, and associated types.",
+  "minutes": 40,
+  "source": {
+    "chapter": "ch10",
+    "sections": [
+      "TRPL 10.2 Defining Shared Behavior with Traits",
+      "TRPL 10.2 Defining a Trait",
+      "TRPL 10.2 Implementing a Trait on a Type",
+      "TRPL 10.2 Using Default Implementations",
+      "TRPL 10.2 Using Traits as Parameters",
+      "TRPL 10.2 Trait Bound Syntax",
+      "TRPL 10.2 Clearer Trait Bounds with where Clauses",
+      "TRPL 10.2 Returning Types That Implement Traits",
+      "TRPL 10.2 Using Trait Bounds to Conditionally Implement Methods",
+      "PR ch11 Using Traits",
+      "PR ch11 Defining and Implementing Traits",
+      "PR ch11 Associated Types",
+      "PR ch11 Traits That Define Relationships Between Types",
+      "CR Day 2 Traits",
+      "CR Day 2 Trait Bounds",
+      "CR Day 2 impl Trait"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "A **trait** names a set of methods that types can provide. It is Rust's way to say \"any type that can do *this*\". Other languages call it an interface. Traits answer the question left open in the last lesson: what does `T: PartialOrd` mean? It means \"`T` implements the trait `PartialOrd`\", so values of `T` can be compared.\n\n*The Rust Programming Language* builds an aggregator that shows summaries of news articles and social media posts. Both should be able to `summarize()` themselves, so that behavior becomes a trait:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "pub trait Summary {\n    fn summarize(&self) -> String;\n}\n\npub struct NewsArticle {\n    pub headline: String,\n    pub location: String,\n    pub author: String,\n}\n\nimpl Summary for NewsArticle {\n    fn summarize(&self) -> String {\n        format!(\"{}, by {} ({})\", self.headline, self.author, self.location)\n    }\n}\n\npub struct SocialPost {\n    pub username: String,\n    pub content: String,\n    pub reposts: u32,\n}\n\nimpl Summary for SocialPost {\n    fn summarize(&self) -> String {\n        format!(\"{}: {}\", self.username, self.content)\n    }\n}\n\nfn main() {\n    let post = SocialPost {\n        username: String::from(\"horse_ebooks\"),\n        content: String::from(\"of course, as you probably already know, people\"),\n        reposts: 0,\n    };\n    let article = NewsArticle {\n        headline: String::from(\"Penguins win the Stanley Cup Championship!\"),\n        location: String::from(\"Pittsburgh, PA, USA\"),\n        author: String::from(\"Iceburgh\"),\n    };\n    println!(\"1 new post: {}\", post.summarize());\n    println!(\"New article: {}\", article.summarize());\n}\n",
+      "output": "1 new post: horse_ebooks: of course, as you probably already know, people\nNew article: Penguins win the Stanley Cup Championship!, by Iceburgh (Pittsburgh, PA, USA)\n",
+      "explain": "The trait declares the method signature, ending in `;`. Each `impl Summary for Type` block provides the body for that type. To call a trait method, the trait must be in scope: other crates would write `use aggregator::Summary;`."
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "title": "The orphan rule",
+      "md": "You can implement a trait for a type only if **the trait or the type is local** to your crate. You may implement your `Summary` for `Vec<T>`, and the standard `Display` for your `SocialPost`, but not `Display` for `Vec<T>`: both belong to the standard library. This rule (part of *coherence*) guarantees that two crates can never provide conflicting implementations."
+    },
+    {
+      "type": "text",
+      "title": "Default implementations",
+      "md": "A trait can give a method a **default body**. Implementors get it for free and may override it. Default methods may call other methods of the trait, even ones without a default, so a type can implement one small method and receive a lot of behavior:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "pub trait Summary {\n    fn summarize_author(&self) -> String;\n\n    fn summarize(&self) -> String {\n        format!(\"(Read more from {}...)\", self.summarize_author())\n    }\n}\n\npub struct SocialPost {\n    pub username: String,\n    pub content: String,\n}\n\nimpl Summary for SocialPost {\n    fn summarize_author(&self) -> String {\n        format!(\"@{}\", self.username)\n    }\n}\n\nfn main() {\n    let post = SocialPost {\n        username: String::from(\"horse_ebooks\"),\n        content: String::from(\"of course\"),\n    };\n    println!(\"1 new post: {}\", post.summarize());\n}\n",
+      "output": "1 new post: (Read more from @horse_ebooks...)"
+    },
+    {
+      "type": "text",
+      "title": "Traits as parameters",
+      "md": "The point of a trait is to write code that works with **any** type that has the behavior. There are several ways to say \"a parameter of some type that implements `Summary`\":\n\n```rust\n// impl Trait in argument position: short and clear\npub fn notify(item: &impl Summary) {\n    println!(\"Breaking news! {}\", item.summarize());\n}\n\n// the same thing as a trait bound on a generic parameter\npub fn notify<T: Summary>(item: &T) {\n    println!(\"Breaking news! {}\", item.summarize());\n}\n```\n\nThe long form is needed when two parameters must be the **same** type: `fn notify<T: Summary>(a: &T, b: &T)`. With `a: &impl Summary, b: &impl Summary` they may be different types.\n"
+    },
+    {
+      "type": "table",
+      "title": "Ways to write bounds",
+      "headers": [
+        "Syntax",
+        "Meaning"
+      ],
+      "rows": [
+        [
+          "`fn f(x: &impl Summary)`",
+          "x is some type implementing Summary"
+        ],
+        [
+          "`fn f<T: Summary>(x: &T)`",
+          "the same, with a name for the type"
+        ],
+        [
+          "`fn f<T: Summary + Display>(x: &T)`",
+          "T must implement both"
+        ],
+        [
+          "`fn f<T, U>(t: &T, u: &U) where T: Display + Clone, U: Clone + Debug`",
+          "a `where` clause: the same bounds, easier to read when there are many"
+        ],
+        [
+          "`fn f() -> impl Summary`",
+          "returns one concrete type that implements Summary, without naming it"
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::fmt::{Debug, Display};\n\nfn describe<T, U>(label: &T, value: &U) -> String\nwhere\n    T: Display,\n    U: Debug + PartialOrd<U> + Default,\n{\n    let sign = if *value > U::default() { \"above\" } else { \"not above\" };\n    format!(\"{label}: {value:?} is {sign} the default\")\n}\n\nfn main() {\n    println!(\"{}\", describe(&\"temperature\", &21.5));\n    println!(\"{}\", describe(&String::from(\"count\"), &0));\n}\n",
+      "output": "temperature: 21.5 is above the default\ncount: 0 is not above the default\n",
+      "explain": "The `where` clause moves bounds after the signature, so the function name, parameters and return type stay readable. `U::default()` calls a trait method that has no `self`: it is called on the type."
+    },
+    {
+      "type": "text",
+      "title": "Returning impl Trait",
+      "md": "`-> impl Summary` says \"this function returns some type that implements `Summary`\" without naming it. It shines with closures and iterators (chapter 13), whose types are long or cannot be written at all. One restriction: the function must return a **single** concrete type. Returning a `NewsArticle` in one branch and a `SocialPost` in another does not compile; chapter 18's trait objects (`Box<dyn Summary>`) handle that case.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn evens_up_to(n: u32) -> impl Iterator<Item = u32> {\n    (0..=n).filter(|x| x % 2 == 0)\n}\n\nfn main() {\n    let v: Vec<u32> = evens_up_to(10).collect();\n    println!(\"{v:?}\");\n}\n",
+      "output": "[0, 2, 4, 6, 8, 10]",
+      "explain": "The real return type is `Filter<RangeInclusive<u32>, {closure}>`, which you cannot name because closures have anonymous types. `impl Iterator<Item = u32>` hides it."
+    },
+    {
+      "type": "text",
+      "title": "Conditional and blanket implementations",
+      "md": "Bounds on an `impl` block make methods conditional, as you saw with `impl<T: PartialOrd> Pair<T>`. Bounds also let you implement a trait **for every type that implements another trait**. This is a **blanket implementation**. The standard library has this one:\n\n```rust\nimpl<T: Display> ToString for T {\n    // ...\n}\n```\n\nThat is why you can call `.to_string()` on any type that implements `Display`: integers, `char`, your own types once you implement `Display` for them.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "trait Shout {\n    fn shout(&self) -> String;\n}\n\n// every type that can be displayed can now shout\nimpl<T: std::fmt::Display> Shout for T {\n    fn shout(&self) -> String {\n        self.to_string().to_uppercase() + \"!\"\n    }\n}\n\nfn main() {\n    println!(\"{}\", \"hello\".shout());\n    println!(\"{}\", 42.shout());\n    println!(\"{}\", 'x'.shout());\n}\n",
+      "output": "HELLO!\n42!\nX!\n"
+    },
+    {
+      "type": "text",
+      "title": "Associated types",
+      "md": "Some traits need a type that each implementor chooses. `Iterator` is the main example: each iterator yields a different kind of item. The trait declares an **associated type** with `type Item;`, and each implementation sets it:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "struct Countdown {\n    n: u32,\n}\n\nimpl Iterator for Countdown {\n    type Item = u32;\n\n    fn next(&mut self) -> Option<Self::Item> {\n        if self.n == 0 {\n            None\n        } else {\n            self.n -= 1;\n            Some(self.n + 1)\n        }\n    }\n}\n\nfn main() {\n    for x in (Countdown { n: 3 }) {\n        print!(\"{x} \");\n    }\n    println!(\"liftoff\");\n    let total: u32 = Countdown { n: 4 }.sum();\n    println!(\"{total}\");\n}\n",
+      "output": "3 2 1 liftoff\n10\n",
+      "explain": "Implementing only `next` gives `Countdown` every other iterator method, such as `sum`, `map` and `filter`, through default methods. *Programming Rust* contrasts associated types with generic traits: a type has one `Iterator` implementation (one `Item`), but may implement `Add<i32>` and `Add<f64>` separately."
+    },
+    {
+      "type": "playground",
+      "id": "ch10-play-trait",
+      "title": "Your own trait",
+      "lang": "rust",
+      "md": "Define a trait `Area` with a method `fn area(&self) -> f64` and a default method `fn describe(&self) -> String` that returns `\"area = <area>\"` with two decimals. Implement `Area` for `Circle` and `Rect`, then make `total_area` work for any slice of one shape type.\n",
+      "task": "Print `area = 3.14`, `area = 6.00` and `12.00`.",
+      "code": "struct Circle { r: f64 }\nstruct Rect { w: f64, h: f64 }\n\n// trait Area { ... }\n\n// fn total_area<T: Area>(shapes: &[T]) -> f64\n\nfn main() {\n    println!(\"{}\", Circle { r: 1.0 }.describe());\n    println!(\"{}\", Rect { w: 2.0, h: 3.0 }.describe());\n    let rects = [Rect { w: 2.0, h: 3.0 }, Rect { w: 1.0, h: 6.0 }];\n    println!(\"{:.2}\", total_area(&rects));\n}\n",
+      "expected_output": "area = 3.14\narea = 6.00\n12.00\n",
+      "hints": [
+        "`trait Area { fn area(&self) -> f64; fn describe(&self) -> String { format!(\"area = {:.2}\", self.area()) } }`",
+        "`std::f64::consts::PI * self.r * self.r` for the circle.",
+        "`fn total_area<T: Area>(shapes: &[T]) -> f64` loops and adds `s.area()`."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch10-ex-traits",
+      "exercise_dir": "ch10-traits",
+      "title": "A trait-based scoreboard",
+      "difficulty": "medium",
+      "goal": "Define a trait with required and default methods, implement it for several types, and write generic functions with bounds and impl Trait.",
+      "behavior": "- `pub trait Scored { fn points(&self) -> u32; fn name(&self) -> String; fn label(&self) -> String }` where `label` has a **default** body returning `\"<name>: <points> pts\"`.\n- Implement `Scored` for `pub struct Player { pub name: String, pub points: u32 }` (uses the default label).\n- Implement it for `pub struct Team { pub name: String, pub members: Vec<Player> }`: points are the sum of the members' points; **override** `label` to return `\"Team <name>: <points> pts (<n> members)\"`.\n- `pub fn best<T: Scored>(items: &[T]) -> Option<&T>`: the item with the most points (the first on a tie), `None` if empty.\n- `pub fn report(item: &impl Scored) -> String`: `\"[\" + label + \"]\"`.\n",
+      "examples": [
+        {
+          "input": "Player { name: \"Ada\".into(), points: 7 }.label()",
+          "output": "\"Ada: 7 pts\""
+        },
+        {
+          "input": "team_of_two.label()",
+          "output": "\"Team Red: 12 pts (2 members)\""
+        }
+      ],
+      "hints": [
+        "`fn label(&self) -> String { format!(\"{}: {} pts\", self.name(), self.points()) }` inside the trait.",
+        "Team points: `self.members.iter().map(|p| p.points).sum()` or a loop.",
+        "In `best`, compare with `>` (strictly) so the first of equal items wins."
+      ],
+      "solution_explain": "`Player` implements only the two required methods and inherits `label`; `Team` overrides it. `best` is generic, so one function handles slices of players and slices of teams. `report` uses `impl Scored`, the short form of the same idea."
+    },
+    {
+      "type": "quiz",
+      "id": "ch10-quiz-traits",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which implementation does the orphan rule forbid in your crate?",
+          "options": [
+            "`impl MyTrait for Vec<i32>`",
+            "`impl Display for MyType`",
+            "`impl Display for Vec<i32>`",
+            "`impl MyTrait for MyType`"
+          ],
+          "answer": 2,
+          "explanation": "Both `Display` and `Vec` are foreign; at least one must be local."
+        },
+        {
+          "type": "single",
+          "q": "What is the difference between `fn f(a: &impl T, b: &impl T)` and `fn f<X: T>(a: &X, b: &X)`?",
+          "options": [
+            "None",
+            "In the second, a and b must be the same type",
+            "The first is slower",
+            "The second does not compile"
+          ],
+          "answer": 1,
+          "explanation": "A named parameter ties both arguments to one type."
+        },
+        {
+          "type": "single",
+          "q": "Why can you call `.to_string()` on an `i32`?",
+          "options": [
+            "i32 has a special method",
+            "A blanket `impl<T: Display> ToString for T`",
+            "Because of the prelude only",
+            "It is a macro"
+          ],
+          "answer": 1,
+          "explanation": "Anything that implements Display gets ToString."
+        },
+        {
+          "type": "single",
+          "q": "A function returns `impl Summary`. What is not allowed?",
+          "options": [
+            "Returning a NewsArticle",
+            "Returning a NewsArticle in one branch and a SocialPost in another",
+            "Calling summarize on the result",
+            "Using it in a let"
+          ],
+          "answer": 1,
+          "explanation": "It must be a single concrete type."
+        },
+        {
+          "type": "truefalse",
+          "q": "A default method in a trait may call another trait method that has no default body.",
+          "answer": true,
+          "explanation": "Implementors must provide that method, so the call is always valid."
+        },
+        {
+          "type": "single",
+          "q": "In `impl Iterator for Countdown`, what does `type Item = u32;` set?",
+          "options": [
+            "A generic parameter",
+            "The associated type: the type of items the iterator yields",
+            "A constant",
+            "A type alias for Countdown"
+          ],
+          "answer": 1,
+          "explanation": "`next` returns `Option<Self::Item>`."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "A trait declares methods; `impl Trait for Type` provides them.",
+        "Default methods give behavior for free and can be overridden.",
+        "The orphan rule: the trait or the type must be local to your crate.",
+        "Use `impl Trait`, `<T: Trait>`, `+` and `where` to accept any type with the behavior.",
+        "`-> impl Trait` returns one unnamed concrete type.",
+        "Blanket impls (`impl<T: Display> ToString for T`) and associated types (`type Item`) are how the standard library is built."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "trait",
+      "def": "A named set of methods that types can implement, used to define shared behavior and to bound generics."
+    },
+    {
+      "term": "trait bound",
+      "def": "A requirement that a type parameter implements a trait, like T: Display."
+    },
+    {
+      "term": "orphan rule",
+      "def": "You may implement a trait for a type only if the trait or the type is defined in your crate."
+    },
+    {
+      "term": "blanket implementation",
+      "def": "An implementation of a trait for every type that meets a bound, like impl<T: Display> ToString for T."
+    },
+    {
+      "term": "associated type",
+      "def": "A type declared inside a trait (type Item;) that each implementation chooses."
+    },
+    {
+      "term": "where clause",
+      "def": "A place after a signature to list trait bounds, for readability."
+    }
+  ]
+}
