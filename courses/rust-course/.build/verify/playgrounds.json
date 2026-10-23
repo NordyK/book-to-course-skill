@@ -242,5 +242,13 @@
  "ch18-play-typestate": {
   "solution_code": "struct Closed;\nstruct Open;\nstruct Locked {\n    code: u32,\n}\n\nimpl Closed {\n    fn open(self) -> Open {\n        Open\n    }\n    fn lock(self, code: u32) -> Locked {\n        Locked { code }\n    }\n}\n\nimpl Open {\n    fn close(self) -> Closed {\n        Closed\n    }\n}\n\nimpl Locked {\n    fn unlock(self, code: u32) -> Result<Closed, Locked> {\n        if code == self.code { Ok(Closed) } else { Err(self) }\n    }\n}\n\nfn main() {\n    let door = Closed;\n    let door = door.open();\n    println!(\"opened\");\n    let door = door.close();\n    println!(\"closed\");\n    let door = door.lock(1234);\n    println!(\"locked\");\n    let door = match door.unlock(1111) {\n        Ok(d) => d,\n        Err(still_locked) => {\n            println!(\"wrong code\");\n            still_locked.unlock(1234).ok().unwrap()\n        }\n    };\n    println!(\"unlocked\");\n    let _ = door;\n    // Open.lock(1); // does not compile\n}\n",
   "starter_ok": "compile_error"
+ },
+ "ch19-play-commands": {
+  "solution_code": "fn run(line: &str) -> String {\n    let words: Vec<&str> = line.split_whitespace().collect();\n    match words.as_slice() {\n        [\"go\", dir @ (\"north\" | \"south\" | \"east\" | \"west\")] => format!(\"going {dir}\"),\n        [\"take\", item] => format!(\"taking {item}\"),\n        [\"drop\", \"all\"] => String::from(\"dropping everything\"),\n        [\"wait\", n] if matches!(n.parse::<u32>(), Ok(1..=9)) => format!(\"waiting {n} turns\"),\n        _ => format!(\"unknown: {line}\"),\n    }\n}\n\nfn main() {\n    for line in [\"go north\", \"take lamp\", \"drop all\", \"wait 3\", \"wait 30\", \"dance\"] {\n        println!(\"{}\", run(line));\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch19-play-places": {
+  "solution_code": "fn main() {\n    let lines = [\"ana:12\", \"oops\", \"bob:7\", \"cy:x\"];\n    let mut scores: Vec<(&str, i32)> = Vec::new();\n\n    for (i, line) in lines.iter().enumerate() {\n        let Some((name, score)) = line.split_once(':') else {\n            continue;\n        };\n        if let Ok(score) = score.parse::<i32>() {\n            println!(\"{i} {name} {score}\");\n            scores.push((name, score));\n        }\n    }\n\n    let total: i32 = scores.iter().map(|&(_, s)| s).sum();\n    println!(\"total {total}\");\n}\n",
+  "starter_ok": "run"
  }
 }

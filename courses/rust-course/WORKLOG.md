@@ -100,3 +100,7 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
   the book is shown as unrun snippets.
 
 - 2026-10-23: ch18 Trait Objects and OOP done (3 lessons + test: OOP features and composition, dyn Trait/vtables/dyn compatibility/supertraits/Any, state pattern vs type-state). Exercises ch18-dyn, ch18-state; playgrounds ch18-play-plugins, ch18-play-typestate. 40 exercises verified.
+- Chapter 19 done (Patterns in Depth): every place patterns appear, refutability and let...else, full pattern syntax
+  (ranges, |, struct/enum/nested/slice destructuring, _ vs _x vs .., guards, @, & / ref / default binding modes);
+  10-question test; exercises ch19-patterns and ch19-simplify (Box<Expr> rewriting), verified; 2 playgrounds.
+  42 exercises verified in total.

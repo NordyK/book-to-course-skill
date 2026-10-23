@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created": "2026-10-23T02:32:57+00:00",
-  "updated": "2026-10-23T04:22:09+00:00",
+  "updated": "2026-10-23T04:26:21+00:00",
   "book": {
     "title": "Rust: From First Program to Systems Programming",
     "author": "Merged from 5 books (see .build/plan.md)",
@@ -178,8 +178,8 @@
       "title": "Patterns in Depth",
       "words": 14957,
       "file": "chapters/ch19.md",
-      "status": "pending",
-      "lessons_built": 0,
+      "status": "done",
+      "lessons_built": 3,
       "note": ""
     },
     {
@@ -320,6 +320,10 @@
     {
       "at": "2026-10-23T04:22:09+00:00",
       "msg": "ch18 → done"
+    },
+    {
+      "at": "2026-10-23T04:26:21+00:00",
+      "msg": "ch19 → done"
     }
   ]
 }

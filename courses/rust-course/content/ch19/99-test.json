@@ -1,0 +1,134 @@
+{
+  "title": "Chapter test: Patterns in Depth",
+  "kind": "test",
+  "summary": "Ten questions on where patterns appear, refutability and pattern syntax. You need 70% to pass; you can retry and your best score is kept.",
+  "blocks": [
+    {
+      "type": "quiz",
+      "id": "ch19-test",
+      "pass_score": 0.7,
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which accepts a refutable pattern?",
+          "options": [
+            "`let`",
+            "`for`",
+            "`while let`",
+            "function parameters"
+          ],
+          "answer": 2,
+          "explanation": "It stops the loop when the pattern fails."
+        },
+        {
+          "type": "single",
+          "q": "What does `let Some(x) = opt else { return; };` do when opt is None?",
+          "options": [
+            "Binds x to a default",
+            "Runs the else block, which returns",
+            "Panics",
+            "Compile error"
+          ],
+          "answer": 1,
+          "explanation": "The else block must diverge."
+        },
+        {
+          "type": "single",
+          "q": "Which arm matches the char 'q'?",
+          "options": [
+            "`'a'..='f'`",
+            "`'p' | 'r'`",
+            "`'n'..='z'`",
+            "`'Q'`"
+          ],
+          "answer": 2,
+          "explanation": "Ranges include both ends."
+        },
+        {
+          "type": "single",
+          "q": "What does `let Point { x, .. } = p;` bind?",
+          "options": [
+            "Nothing",
+            "x from p.x",
+            "All fields",
+            "A copy of p"
+          ],
+          "answer": 1,
+          "explanation": ".. ignores the remaining fields."
+        },
+        {
+          "type": "single",
+          "q": "Which matches a slice with at least two elements and binds the first and last?",
+          "options": [
+            "`[a, b]`",
+            "`[a, .., b]`",
+            "`(a, .., b)`",
+            "`[a, _, b]`"
+          ],
+          "answer": 1,
+          "explanation": "`[a, .., b]` needs at least two items."
+        },
+        {
+          "type": "single",
+          "q": "Why does `(.., x, ..)` not compile?",
+          "options": [
+            "x is unused",
+            "Two `..` make the position of x ambiguous",
+            "Tuples cannot use ..",
+            "x must be _"
+          ],
+          "answer": 1,
+          "explanation": ".. may appear once per tuple pattern."
+        },
+        {
+          "type": "single",
+          "q": "After `if let Some(_s) = s {}` with `s: Option<String>`, can you use s?",
+          "options": [
+            "Yes",
+            "No, the String was moved into _s",
+            "Only with clone",
+            "Only in the block"
+          ],
+          "answer": 1,
+          "explanation": "With `_` instead of `_s` it would not move."
+        },
+        {
+          "type": "single",
+          "q": "Does the compiler consider match guards when checking exhaustiveness?",
+          "options": [
+            "Yes, fully",
+            "No, so a catch-all arm is usually still needed",
+            "Only for integers",
+            "Only for enums"
+          ],
+          "answer": 1,
+          "explanation": "Guards are arbitrary expressions."
+        },
+        {
+          "type": "single",
+          "q": "What does `n @ 1..=9` give you in an arm?",
+          "options": [
+            "Only a test",
+            "A test that n is between 1 and 9, and the value bound to n",
+            "A range object",
+            "An iterator"
+          ],
+          "answer": 1,
+          "explanation": "@ binds the whole value."
+        },
+        {
+          "type": "single",
+          "q": "How can you match on a `&(i32, i32)` and get two `i32` values?",
+          "options": [
+            "`(x, y)` only",
+            "`&(x, y)`",
+            "`ref (x, y)`",
+            "`*(x, y)`"
+          ],
+          "answer": 1,
+          "explanation": "A & pattern matches the reference; `(x, y)` alone would bind `&i32`s."
+        }
+      ]
+    }
+  ]
+}
