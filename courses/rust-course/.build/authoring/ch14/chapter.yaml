@@ -1,0 +1,7 @@
+title: "Cargo and Crates.io"
+summary: "More of Cargo: release profiles, documentation comments and a convenient public API with pub use, publishing to crates.io, workspaces of several crates, installing binaries, and extending Cargo with custom commands."
+goals:
+  - Customize dev and release profiles in Cargo.toml
+  - Write documentation comments with examples and shape a public API with pub use re-exports
+  - Publish, version and yank a crate on crates.io
+  - Organize related crates in a workspace, and install and extend Cargo tools

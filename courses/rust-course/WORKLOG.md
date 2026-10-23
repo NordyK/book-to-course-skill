@@ -82,3 +82,6 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
   iterators (trait, iter/iter_mut/into_iter, consumers, adapters, laziness stepper, own Iterator), minigrep with
   iterators + zero-cost; 12-question test; exercises ch13-closures, ch13-iterators (verified); 4 playgrounds.
   Compiler *warnings* go in a separate `lang: text` block (the checks compile with warnings off).
+- Chapter 14 done (Cargo and Crates.io): profiles, doc comments + sections + //!, pub use re-exports, publishing and
+  yanking, SemVer/Cargo.lock, workspaces, cargo install, custom commands, fmt/clippy/fix; 8-question test;
+  exercise ch14-api (re-exports + doc example), verified; 1 playground.

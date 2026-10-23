@@ -1,0 +1,158 @@
+title: "Workspaces, installing binaries and extending Cargo"
+summary: "Cargo workspaces with a shared Cargo.lock and target directory, depending on sibling crates, running and testing one package, cargo install, and custom cargo subcommands, plus the everyday tools rustfmt, clippy and rust-analyzer."
+minutes: 25
+source:
+  chapter: ch14
+  sections: ["TRPL 14.3 Cargo Workspaces", "TRPL 14.3 Creating a Workspace", "TRPL 14.3 Creating the Second Package in the Workspace", "TRPL 14.3 Depending on an External Package", "TRPL 14.3 Adding a Test to a Workspace", "TRPL 14.4 Installing Binaries with cargo install", "TRPL 14.5 Extending Cargo with Custom Commands", "PR ch8 Workspaces", "PR ch8 More Nice Things", "TRPL Appendix D Useful Development Tools", "CR Day 1 Using Cargo"]
+blocks:
+  - type: text
+    md: |
+      As a project grows, you may want to split the library into several crates. A **workspace** is a set of packages that share one `Cargo.lock` and one `target` output directory. Shared output means dependencies are compiled once for the whole workspace, and a shared lock file means every crate uses the same versions of them.
+
+  - type: text
+    title: Creating a workspace
+    md: |
+      *The Rust Programming Language* builds a workspace with a binary and two libraries. The root has a `Cargo.toml` with a `[workspace]` section instead of a `[package]`:
+
+  - type: code
+    lang: toml
+    file: Cargo.toml
+    code: |
+      [workspace]
+      resolver = "3"
+      members = ["adder", "add_one"]
+    explain: "`cargo new adder` and `cargo new add_one --lib` inside the workspace directory add themselves to `members`. `resolver = \"3\"` selects the newest dependency-resolution algorithm, the default for edition 2024."
+
+  - type: code
+    lang: text
+    code: |
+      add
+      ├── Cargo.lock        (one for the whole workspace)
+      ├── Cargo.toml        ([workspace])
+      ├── add_one
+      │   ├── Cargo.toml
+      │   └── src
+      │       └── lib.rs
+      ├── adder
+      │   ├── Cargo.toml
+      │   └── src
+      │       └── main.rs
+      └── target            (one for the whole workspace)
+
+  - type: text
+    title: Depending on a sibling crate
+    md: |
+      Cargo does not assume crates in a workspace depend on each other. Say so with a **path dependency** in the binary's `Cargo.toml`:
+
+      ```toml
+      # adder/Cargo.toml
+      [dependencies]
+      add_one = { path = "../add_one" }
+      ```
+
+      ```rust
+      // adder/src/main.rs
+      fn main() {
+          let num = 10;
+          println!("Hello, world! {num} plus one is {}!", add_one::add_one(num));
+      }
+      ```
+
+  - type: code
+    lang: bash
+    code: |
+      $ cargo build                  # builds every member
+      $ cargo run -p adder           # run one package
+      Hello, world! 10 plus one is 11!
+      $ cargo test                   # tests every member
+      $ cargo test -p add_one        # tests one member
+
+  - type: callout
+    kind: note
+    title: External dependencies
+    md: "Each member lists its own external dependencies: adding `rand` to `add_one/Cargo.toml` does not let `adder` use it. But because there is one `Cargo.lock`, if both add `rand`, both get the same version. You can also declare shared versions once in `[workspace.dependencies]` and write `rand = { workspace = true }` in members."
+
+  - type: text
+    title: cargo install
+    md: |
+      `cargo install` downloads, builds and installs **binary** crates from crates.io, for tools you want to use, not for libraries. Binaries go to `$HOME/.cargo/bin`, which must be on your `PATH`:
+
+      ```bash
+      $ cargo install ripgrep
+      ...
+         Installed package `ripgrep v14.1.1` (executable `rg`)
+      $ rg --version
+      ```
+
+  - type: text
+    title: Custom Cargo commands
+    md: |
+      If an executable named `cargo-something` is on your `PATH`, you can run it as `cargo something`. That is how tools like `cargo-expand`, `cargo-watch` and `cargo-audit` plug into Cargo. `cargo --list` shows every available command, built-in or installed.
+
+  - type: table
+    title: Tools you will use every day
+    headers: ["Tool", "Command", "Does"]
+    rows:
+      - ["rustfmt", "`cargo fmt`", "formats code in the community style; ends style debates"]
+      - ["Clippy", "`cargo clippy`", "hundreds of lints for bugs, slow code and unidiomatic patterns"]
+      - ["rustfix", "`cargo fix`", "applies compiler suggestions automatically, also used for edition upgrades"]
+      - ["rust-analyzer", "your editor", "completion, go-to-definition, inline types and errors (Language Server Protocol)"]
+      - ["rustdoc", "`cargo doc --open`", "HTML documentation for your crate and its dependencies"]
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let x = 3.1415;
+          let r = 8.0;
+          println!("the area of the circle is {}", x * r * r);
+      }
+    output: "the area of the circle is 201.056"
+    explain: "This compiles and runs, but `cargo clippy` reports `error: approximate value of f{32, 64}::consts::PI found` and suggests `std::f64::consts::PI`. Clippy's lints catch things the compiler accepts but a reviewer would flag."
+
+  - type: quiz
+    id: ch14-quiz-workspaces
+    title: Check yourself
+    questions:
+      - type: multi
+        q: "What do workspace members share?"
+        options: ["One Cargo.lock", "One target directory", "Their source code", "Their external dependencies automatically"]
+        answer: [0, 1]
+        explanation: "Each member still lists its own dependencies."
+      - type: single
+        q: "How does `adder` use the `add_one` crate in the same workspace?"
+        options: ["Automatically", "`add_one = { path = \"../add_one\" }` in adder's Cargo.toml", "`mod add_one;`", "`cargo install add_one`"]
+        answer: 1
+        explanation: "A path dependency."
+      - type: single
+        q: "Which command runs only the `adder` package in a workspace?"
+        options: ["`cargo run adder`", "`cargo run -p adder`", "`cargo adder`", "`cargo run --bin-all`"]
+        answer: 1
+        explanation: "`-p` selects a package."
+      - type: single
+        q: "What does `cargo install ripgrep` install?"
+        options: ["A library dependency for the current project", "The `rg` binary into ~/.cargo/bin", "Source code into src/", "Nothing; it only downloads"]
+        answer: 1
+        explanation: "For binary crates only."
+      - type: single
+        q: "How can a program named `cargo-tree2` on your PATH be run?"
+        options: ["Only as cargo-tree2", "As `cargo tree2`", "It cannot", "As `cargo run tree2`"]
+        answer: 1
+        explanation: "Cargo looks for cargo-<name> executables."
+
+  - type: summary
+    points:
+      - "A workspace groups packages with one `Cargo.lock` and one `target` directory."
+      - "Members depend on each other through path dependencies; `-p name` runs or tests one."
+      - "`cargo install` installs binary crates into `~/.cargo/bin`."
+      - "Any `cargo-xyz` on your PATH runs as `cargo xyz`."
+      - "Use `cargo fmt`, `cargo clippy`, `cargo fix` and rust-analyzer as you work."
+terms:
+  - term: workspace
+    def: "A set of Cargo packages sharing one Cargo.lock and target directory."
+  - term: path dependency
+    def: "A dependency on a local crate given by its directory, like { path = \"../add_one\" }."
+  - term: cargo install
+    def: "Builds and installs a binary crate's executables into ~/.cargo/bin."
+  - term: Clippy
+    def: "Rust's linter, run with cargo clippy."

@@ -1,0 +1,418 @@
+title: "Release profiles, documentation and publishing"
+summary: "dev and release profiles and opt-level, documentation comments and their common sections, crate-level //! docs, re-exporting a convenient public API with pub use, and publishing, versioning and yanking on crates.io."
+minutes: 35
+source:
+  chapter: ch14
+  sections: ["TRPL 14 More About Cargo and Crates.io", "TRPL 14.1 Customizing Builds with Release Profiles", "TRPL 14.2 Publishing a Crate to Crates.io", "TRPL 14.2 Making Useful Documentation Comments", "TRPL 14.2 Commonly Used Sections", "TRPL 14.2 Documentation Comments as Tests", "TRPL 14.2 Commenting Contained Items", "TRPL 14.2 Exporting a Convenient Public API", "TRPL 14.2 Setting Up a Crates.io Account", "TRPL 14.2 Adding Metadata to a New Crate", "TRPL 14.2 Publishing to Crates.io", "TRPL 14.2 Publishing a New Version of an Existing Crate", "TRPL 14.2 Deprecating Versions from Crates.io with cargo yank", "PR ch8 Specifying Dependencies", "PR ch8 Versions", "PR ch8 Cargo.lock", "PR ch8 Publishing Crates to crates.io", "PR ch8 Build Profiles", "TRPL Appendix D Useful Development Tools"]
+blocks:
+  - type: text
+    md: |
+      Cargo builds with **profiles**: predefined sets of compiler settings. There are two main ones. `cargo build` uses the **`dev`** profile, tuned for fast compiles and good debugging; `cargo build --release` uses **`release`**, tuned for fast programs. You can override any setting in `Cargo.toml`:
+
+  - type: code
+    lang: toml
+    file: Cargo.toml
+    code: |
+      [profile.dev]
+      opt-level = 0     # the default: no optimization, fastest compile
+
+      [profile.release]
+      opt-level = 3     # the default: maximum optimization
+      # popular tweaks
+      lto = true        # link-time optimization across crates
+      codegen-units = 1 # slower to build, often a faster binary
+      panic = "abort"   # no unwinding (chapter 9)
+      debug = true      # keep debug info for profilers
+
+      [profile.dev.package."*"]
+      opt-level = 2     # optimize dependencies even in dev builds
+    explain: "`opt-level` ranges from 0 to 3 (plus `\"s\"` and `\"z\"` to optimize for size). Debug builds also check integer overflow and panic on it; release builds wrap instead (chapter 3). The full list is in the Cargo book."
+
+  - type: table
+    title: Profiles at a glance
+    headers: ["", "dev (`cargo build`, `cargo run`, `cargo test`)", "release (`--release`)"]
+    rows:
+      - ["opt-level", "0", "3"]
+      - ["debug info", "yes", "no"]
+      - ["overflow checks", "panic", "wrap"]
+      - ["debug_assert!", "checked", "removed"]
+      - ["typical use", "edit-compile-run loop", "benchmarks, shipping"]
+
+  - type: text
+    title: Documentation comments
+    md: |
+      Good documentation makes a crate usable. **Documentation comments** start with three slashes, `///`, support Markdown, and document the item that follows. `cargo doc` turns them into HTML, the same format as the standard library's docs; `cargo doc --open` builds docs for your crate and all its dependencies and opens them in a browser.
+
+  - type: code
+    lang: rust
+    file: src/lib.rs
+    code: |
+      //! # My Crate
+      //!
+      //! `my_crate` is a collection of utilities to make performing certain
+      //! calculations more convenient.
+
+      /// Adds one to the number given.
+      ///
+      /// # Examples
+      ///
+      /// ```
+      /// let arg = 5;
+      /// let answer = my_crate::add_one(arg);
+      ///
+      /// assert_eq!(6, answer);
+      /// ```
+      pub fn add_one(x: i32) -> i32 {
+          x + 1
+      }
+    explain: "`//!` documents the **enclosing** item, here the crate itself, and goes at the top of `src/lib.rs`. It is shown on the crate's front page. The example in `# Examples` is a doc test (chapter 11): `cargo test` runs it."
+
+  - type: table
+    title: Sections crate authors commonly use
+    headers: ["Heading", "Describes"]
+    rows:
+      - ["`# Examples`", "how to call it; doubles as a test"]
+      - ["`# Panics`", "the situations in which the function panics"]
+      - ["`# Errors`", "for functions returning `Result`: which errors, and when"]
+      - ["`# Safety`", "for `unsafe` functions: the invariants callers must uphold (chapter 20)"]
+
+  - type: callout
+    kind: tip
+    title: Intra-doc links
+    md: "Write ``[`Vec`]`` or ``[`Config::build`]`` in a doc comment and rustdoc turns it into a link to that item's page, checked at build time. Hidden lines in examples start with `# `: they run but are not shown, which keeps examples focused."
+
+  - type: text
+    title: A convenient public API with pub use
+    md: |
+      The module structure that is convenient for **you** while writing a crate is often not convenient for **users**. *The Rust Programming Language* has an `art` crate with types in `art::kinds` and functions in `art::utils`. Users would have to write:
+
+      ```rust
+      use art::kinds::PrimaryColor;
+      use art::utils::mix;
+      ```
+
+      They must know your internal layout, and the front page of the docs shows only two modules. **Re-exporting** with `pub use` at the top level fixes both, without moving any code:
+
+  - type: code
+    lang: rust
+    file: src/lib.rs
+    code: |
+      //! # Art
+      //!
+      //! A library for modeling artistic concepts.
+
+      pub use self::kinds::PrimaryColor;
+      pub use self::kinds::SecondaryColor;
+      pub use self::utils::mix;
+
+      pub mod kinds {
+          /// The primary colors according to the RYB color model.
+          pub enum PrimaryColor {
+              Red,
+              Yellow,
+              Blue,
+          }
+
+          /// The secondary colors according to the RYB color model.
+          pub enum SecondaryColor {
+              Orange,
+              Green,
+              Purple,
+          }
+      }
+
+      pub mod utils {
+          use crate::kinds::*;
+
+          /// Combines two primary colors in equal amounts to create
+          /// a secondary color.
+          pub fn mix(c1: PrimaryColor, c2: PrimaryColor) -> SecondaryColor {
+              // --snip--
+              SecondaryColor::Orange
+          }
+      }
+    explain: "Now users write `use art::{PrimaryColor, mix};`, and the docs front page lists the re-exports. The old paths still work. Libraries such as `serde` and `tokio` do this extensively."
+
+  - type: playground
+    id: ch14-play-reexport
+    title: "Flatten an API with pub use"
+    lang: rust
+    md: |
+      `main` wants to write `shapes::Circle` and `shapes::area`, but the items live deeper, in `shapes::kinds` and `shapes::math`. Add two `pub use` lines inside `mod shapes` so `main` compiles unchanged.
+    task: "Make it compile without editing main; it prints `78.54`."
+    code: |
+      mod shapes {
+          // add re-exports here
+
+          pub mod kinds {
+              pub struct Circle {
+                  pub r: f64,
+              }
+          }
+
+          pub mod math {
+              use super::kinds::Circle;
+
+              pub fn area(c: &Circle) -> f64 {
+                  std::f64::consts::PI * c.r * c.r
+              }
+          }
+      }
+
+      fn main() {
+          let c = shapes::Circle { r: 5.0 };
+          println!("{:.2}", shapes::area(&c));
+      }
+    starter_ok: compile_error
+    expected_output: "78.54"
+    solution_code: |
+      mod shapes {
+          pub use self::kinds::Circle;
+          pub use self::math::area;
+
+          pub mod kinds {
+              pub struct Circle {
+                  pub r: f64,
+              }
+          }
+
+          pub mod math {
+              use super::kinds::Circle;
+
+              pub fn area(c: &Circle) -> f64 {
+                  std::f64::consts::PI * c.r * c.r
+              }
+          }
+      }
+
+      fn main() {
+          let c = shapes::Circle { r: 5.0 };
+          println!("{:.2}", shapes::area(&c));
+      }
+    hints:
+      - "`pub use self::kinds::Circle;` inside `mod shapes`."
+      - "`pub use self::math::area;`"
+
+  - type: text
+    title: Publishing to crates.io
+    md: |
+      [crates.io](https://crates.io) is the community's package registry; `cargo` downloads dependencies from it. Publishing your own crate takes four steps:
+
+  - type: stepper
+    title: From local crate to crates.io
+    steps:
+      - title: "1. Log in"
+        md: "Create an account on crates.io (with a GitHub account), get an API token from your account settings, and store it locally. The token is a secret: never share it."
+        code: |
+          $ cargo login
+          please paste the token found on https://crates.io/me below
+      - title: "2. Add metadata"
+        md: "A crate needs a unique `name`, a `description` and a `license` (an SPDX identifier). `cargo publish` tells you what is missing."
+        code: |
+          [package]
+          name = "guessing_game"
+          version = "0.1.0"
+          edition = "2024"
+          description = "A fun game where you guess what number the computer has chosen."
+          license = "MIT OR Apache-2.0"
+      - title: "3. Publish"
+        md: "`cargo publish` packages and uploads the crate. **A publish is permanent**: the version can never be overwritten or deleted, so that every project depending on it keeps building."
+        code: |
+          $ cargo publish
+              Updating crates.io index
+             Packaging guessing_game v0.1.0 (file:///projects/guessing_game)
+             Verifying guessing_game v0.1.0 (file:///projects/guessing_game)
+             Uploaded guessing_game v0.1.0 to registry `crates-io`
+      - title: "4. New versions"
+        md: "Change `version` following **Semantic Versioning**: patch (`0.1.1`) for fixes, minor (`0.2.0`) for compatible additions (for 0.x crates, minor bumps may break), major (`1.0.0` → `2.0.0`) for breaking changes. Then `cargo publish` again."
+      - title: "5. Yanking"
+        md: "A broken version cannot be deleted, but it can be **yanked**: new projects will not pick it, while existing projects with it in their `Cargo.lock` keep working. `--undo` reverses it."
+        code: |
+          $ cargo yank --vers 1.0.1
+          $ cargo yank --vers 1.0.1 --undo
+
+  - type: callout
+    kind: key
+    title: How Cargo picks versions
+    md: "`rand = \"0.8.5\"` in `[dependencies]` means `^0.8.5`: any version compatible with 0.8.5, so at least 0.8.5 and below 0.9.0. `Cargo.lock` records the exact versions resolved, so builds are reproducible until you run `cargo update`. *Programming Rust* recommends committing `Cargo.lock` for applications; for libraries it is optional."
+
+  - type: exercise
+    id: ch14-ex-api
+    exercise_dir: ch14-api
+    title: "A convenient public API"
+    difficulty: easy
+    goal: "Re-export items with pub use so users can reach them from the crate root, and finish the mix function."
+    behavior: |
+      The crate has `pub mod kinds` (the two color enums) and `pub mod utils` (`mix`). The tests use `crate::PrimaryColor`, `crate::SecondaryColor` and `crate::mix` from the **root**, so:
+      - Add `pub use` re-exports at the crate root for `PrimaryColor`, `SecondaryColor` and `mix`.
+      - Implement `mix`: Red+Yellow is Orange, Yellow+Blue is Green, Red+Blue is Purple, in either order. Mixing a color with itself returns `None`, so `mix` returns `Option<SecondaryColor>`.
+      - Add a documentation comment to `mix` with an `# Examples` heading (the tests cannot check this, but do it anyway).
+    examples:
+      - input: "mix(PrimaryColor::Blue, PrimaryColor::Yellow)"
+        output: "Some(SecondaryColor::Green)"
+      - input: "mix(PrimaryColor::Red, PrimaryColor::Red)"
+        output: "None"
+    hints:
+      - "`pub use self::kinds::{PrimaryColor, SecondaryColor};` and `pub use self::utils::mix;` at the top of the file."
+      - "Match on the pair: `match (c1, c2) { (Red, Yellow) | (Yellow, Red) => Some(Orange), ... _ => None }` with `use PrimaryColor::*; use SecondaryColor::*;` inside the function."
+    rust:
+      starter: |
+        //! # Art
+        //!
+        //! A library for modeling artistic concepts.
+
+        // TODO: re-export PrimaryColor, SecondaryColor and mix here
+
+        pub mod kinds {
+            /// The primary colors according to the RYB color model.
+            #[derive(Debug, PartialEq, Clone, Copy)]
+            pub enum PrimaryColor {
+                Red,
+                Yellow,
+                Blue,
+            }
+
+            /// The secondary colors according to the RYB color model.
+            #[derive(Debug, PartialEq, Clone, Copy)]
+            pub enum SecondaryColor {
+                Orange,
+                Green,
+                Purple,
+            }
+        }
+
+        pub mod utils {
+            use crate::kinds::*;
+
+            pub fn mix(c1: PrimaryColor, c2: PrimaryColor) -> Option<SecondaryColor> {
+                todo!()
+            }
+        }
+      tests: |
+        use super::*;
+        use crate::{mix, PrimaryColor, SecondaryColor};
+
+        #[test]
+        fn mixes_pairs() {
+            assert_eq!(mix(PrimaryColor::Red, PrimaryColor::Yellow), Some(SecondaryColor::Orange));
+            assert_eq!(mix(PrimaryColor::Yellow, PrimaryColor::Blue), Some(SecondaryColor::Green));
+            assert_eq!(mix(PrimaryColor::Red, PrimaryColor::Blue), Some(SecondaryColor::Purple));
+        }
+
+        #[test]
+        fn order_does_not_matter() {
+            assert_eq!(mix(PrimaryColor::Blue, PrimaryColor::Red), Some(SecondaryColor::Purple));
+            assert_eq!(mix(PrimaryColor::Yellow, PrimaryColor::Red), Some(SecondaryColor::Orange));
+        }
+
+        #[test]
+        fn same_color_is_none() {
+            assert_eq!(mix(PrimaryColor::Blue, PrimaryColor::Blue), None);
+        }
+
+        #[test]
+        fn old_paths_still_work() {
+            assert_eq!(crate::utils::mix(crate::kinds::PrimaryColor::Red, crate::kinds::PrimaryColor::Yellow), Some(crate::kinds::SecondaryColor::Orange));
+        }
+      solution: |
+        //! # Art
+        //!
+        //! A library for modeling artistic concepts.
+
+        pub use self::kinds::{PrimaryColor, SecondaryColor};
+        pub use self::utils::mix;
+
+        pub mod kinds {
+            /// The primary colors according to the RYB color model.
+            #[derive(Debug, PartialEq, Clone, Copy)]
+            pub enum PrimaryColor {
+                Red,
+                Yellow,
+                Blue,
+            }
+
+            /// The secondary colors according to the RYB color model.
+            #[derive(Debug, PartialEq, Clone, Copy)]
+            pub enum SecondaryColor {
+                Orange,
+                Green,
+                Purple,
+            }
+        }
+
+        pub mod utils {
+            use crate::kinds::*;
+
+            /// Combines two different primary colors in equal amounts into a secondary color.
+            ///
+            /// Returns `None` when both colors are the same.
+            ///
+            /// # Examples
+            ///
+            /// ```
+            /// use ch14_api::{mix, PrimaryColor, SecondaryColor};
+            /// assert_eq!(mix(PrimaryColor::Red, PrimaryColor::Blue), Some(SecondaryColor::Purple));
+            /// ```
+            pub fn mix(c1: PrimaryColor, c2: PrimaryColor) -> Option<SecondaryColor> {
+                use PrimaryColor::*;
+                use SecondaryColor::*;
+                match (c1, c2) {
+                    (Red, Yellow) | (Yellow, Red) => Some(Orange),
+                    (Yellow, Blue) | (Blue, Yellow) => Some(Green),
+                    (Red, Blue) | (Blue, Red) => Some(Purple),
+                    _ => None,
+                }
+            }
+        }
+    solution_explain: "The re-exports add new public paths without moving code, so `crate::utils::mix` still works. The doc example uses the crate's name with dashes turned into underscores (`ch14_api`), because a doc test is compiled as an external user of the crate."
+
+  - type: quiz
+    id: ch14-quiz-profiles
+    title: Check yourself
+    questions:
+      - type: single
+        q: "Which profile does `cargo build --release` use?"
+        options: ["dev", "release", "test", "bench"]
+        answer: 1
+        explanation: "opt-level 3 by default."
+      - type: single
+        q: "What is the difference between `///` and `//!`?"
+        options: ["None", "`///` documents the next item; `//!` documents the enclosing item, such as the crate", "`//!` is a normal comment", "`///` is only for tests"]
+        answer: 1
+        explanation: "Put `//!` at the top of lib.rs for crate docs."
+      - type: single
+        q: "What does `pub use self::kinds::PrimaryColor;` at the crate root do?"
+        options: ["Moves the enum", "Makes it reachable as `my_crate::PrimaryColor` too", "Makes it private", "Copies the enum"]
+        answer: 1
+        explanation: "A re-export adds a public path."
+      - type: single
+        q: "You published version 1.0.1 with a serious bug. What can you do?"
+        options: ["Delete it", "Overwrite it with fixed code", "Yank it and publish 1.0.2", "Nothing"]
+        answer: 2
+        explanation: "Publishes are permanent; yanking prevents new uses."
+      - type: single
+        q: "`serde = \"1.0.190\"` allows which versions?"
+        options: ["Exactly 1.0.190", "Any 1.x at or above 1.0.190", "Any version", "Only 1.0.x"]
+        answer: 1
+        explanation: "Caret requirements allow compatible (same major) updates."
+
+  - type: summary
+    points:
+      - "Profiles (`dev`, `release`) set optimization and checks; override them in `[profile.*]`."
+      - "`///` documents items, `//!` the enclosing module or crate; `cargo doc --open` shows the HTML."
+      - "Common doc sections: Examples, Panics, Errors, Safety; examples are tested."
+      - "`pub use` re-exports give users a flat, convenient API without changing your layout."
+      - "`cargo publish` is permanent; use Semantic Versioning and `cargo yank` for bad versions."
+terms:
+  - term: profile
+    def: "A named set of build settings in Cargo, such as dev and release."
+  - term: opt-level
+    def: "How much the compiler optimizes, from 0 (none) to 3 (most)."
+  - term: re-export
+    def: "Making an item available at another path with pub use."
+  - term: crates.io
+    def: "The Rust community's public registry of crates."
+  - term: yank
+    def: "Marking a published crate version so new projects do not select it, without deleting it."
+  - term: Semantic Versioning
+    def: "Version numbers MAJOR.MINOR.PATCH where a major bump signals breaking changes."

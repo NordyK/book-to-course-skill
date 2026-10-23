@@ -186,5 +186,9 @@
  "ch13-play-closures": {
   "solution_code": "fn apply_discounts<F: Fn(f64) -> f64>(prices: &[f64], rule: F) -> Vec<f64> {\n    let mut out = Vec::new();\n    for &p in prices {\n        out.push(rule(p));\n    }\n    out\n}\n\nfn main() {\n    let prices = [50.0, 120.0, 200.0];\n    let coupon = 15.0;\n\n    let bulk = |p: f64| if p > 100.0 { p * 0.9 } else { p };\n    let fixed = |p: f64| (p - coupon).max(0.0);\n\n    println!(\"{:?}\", apply_discounts(&prices, bulk));\n    println!(\"{:?}\", apply_discounts(&prices, fixed));\n}\n",
   "starter_ok": "run"
+ },
+ "ch14-play-reexport": {
+  "solution_code": "mod shapes {\n    pub use self::kinds::Circle;\n    pub use self::math::area;\n\n    pub mod kinds {\n        pub struct Circle {\n            pub r: f64,\n        }\n    }\n\n    pub mod math {\n        use super::kinds::Circle;\n\n        pub fn area(c: &Circle) -> f64 {\n            std::f64::consts::PI * c.r * c.r\n        }\n    }\n}\n\nfn main() {\n    let c = shapes::Circle { r: 5.0 };\n    println!(\"{:.2}\", shapes::area(&c));\n}\n",
+  "starter_ok": "compile_error"
  }
 }
