@@ -1,0 +1,325 @@
+title: "Strings and UTF-8"
+summary: "Create and grow Strings, join them with + and format!, understand why s[0] does not compile, and work with text as bytes, chars or slices safely."
+minutes: 30
+source:
+  chapter: ch08
+  sections: ["TRPL 8.2 Storing UTF-8 Encoded Text with Strings", "TRPL 8.2 Creating a New String", "TRPL 8.2 Updating a String", "TRPL 8.2 Indexing into Strings", "TRPL 8.2 Slicing Strings", "TRPL 8.2 Methods for Iterating Over Strings", "PR ch17 Unicode", "PR ch17 Characters (char)", "PR ch17 String and str", "PR ch17 Formatting Values", "CR Day 2 String"]
+blocks:
+  - type: text
+    md: |
+      Strings trip up newcomers to Rust more than almost anything else, for three reasons: Rust makes possible errors visible, strings are more complicated than they look, and text is stored as **UTF-8**. This lesson goes through each.
+
+      Rust has one string type in the core language, the string slice `&str` (chapter 4). The standard library adds **`String`**: an owned, growable, UTF-8 encoded text buffer. Under the hood, a `String` is a wrapper around a `Vec<u8>` that guarantees the bytes are always valid UTF-8.
+
+  - type: code
+    lang: rust
+    title: Creating and growing
+    code: |
+      fn main() {
+          let mut s = String::new();
+          let data = "initial contents";
+          let s1 = data.to_string();               // &str -> String
+          let s2 = String::from("initial contents"); // the same
+          s.push_str("foo");                       // append a &str
+          s.push('!');                             // append one char
+          let hello = String::from("Dobrý den");   // any UTF-8 text
+          println!("{s} | {s1} | {s2} | {hello}");
+      }
+    output: "foo! | initial contents | initial contents | Dobrý den"
+
+  - type: text
+    title: Joining strings
+    md: |
+      `+` joins two strings, with a twist: it **takes ownership of the left side** and borrows the right side. Its signature is roughly `fn add(self, s: &str) -> String`. It reuses the left String's buffer and appends a copy of the right, which is efficient but means the left String is moved.
+
+      For anything more complicated, use `format!`, which works like `println!` but returns a `String` and takes no ownership:
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let s1 = String::from("Hello, ");
+          let s2 = String::from("world!");
+          let s3 = s1 + &s2; // s1 is moved here; s2 is only borrowed
+          println!("{s3} ({s2} still usable)");
+
+          let a = String::from("tic");
+          let b = String::from("tac");
+          let c = String::from("toe");
+          let game = format!("{a}-{b}-{c}");
+          println!("{game}; {a} {b} {c} are all still usable");
+      }
+    output: |
+      Hello, world! (world! still usable)
+      tic-tac-toe; tic tac toe are all still usable
+    explain: "`&s2` is a `&String`, but `+` wants a `&str`. The compiler converts it automatically (deref coercion)."
+
+  - type: text
+    title: Why s[0] does not compile
+    md: |
+      In many languages `s[0]` gives the first character. In Rust it is a compile error: `` the type `str` cannot be indexed by `{integer}` ``. To see why, look at how UTF-8 stores text. Each character takes **1 to 4 bytes**: ASCII letters take 1, most accented Latin, Greek, Cyrillic, Hebrew and Arabic letters take 2, most Chinese, Japanese and Korean characters take 3, and emoji take 4.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let hello = "Здравствуйте";
+          println!("{} chars, {} bytes", hello.chars().count(), hello.len());
+          println!("first two bytes: {:?}", &hello.as_bytes()[..2]);
+          println!("first char: {:?}", hello.chars().next());
+      }
+    output: |
+      12 chars, 24 bytes
+      first two bytes: [208, 151]
+      first char: Some('З')
+    explain: "`len()` is the length in **bytes**. The first letter, `З`, is two bytes, 208 and 151. If `hello[0]` returned a byte, it would return 208, which is not a character at all. Rather than return something surprising, Rust does not let you index a string by position. A second reason: indexing is expected to be instant, but finding the n-th character requires scanning from the start."
+
+  - type: callout
+    kind: key
+    title: Three ways to look at text
+    md: |
+      Ask yourself which you mean:
+      - **bytes**: `s.bytes()` or `s.as_bytes()`, the raw UTF-8 (`u8` values). Right for network protocols and file formats.
+      - **chars**: `s.chars()`, Unicode scalar values. Right for most text processing.
+      - **grapheme clusters**: what a person calls a "letter". The Hindi word नमस्ते is 18 bytes, 6 chars, but 4 graphemes. The standard library does not provide these; the `unicode-segmentation` crate does.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          for c in "Зд".chars() {
+              print!("{c} ");
+          }
+          println!();
+          for b in "Зд".bytes() {
+              print!("{b} ");
+          }
+          println!();
+          let s = "Здравствуйте";
+          println!("{}", &s[0..4]); // bytes 0..4: the first two letters
+      }
+    output: |
+      З д
+      208 151 208 180
+      Зд
+
+  - type: text
+    title: Slicing needs care
+    md: |
+      Byte-range slices work (`&s[0..4]`), but a range that cuts a character in half **panics** at run time: `&s[0..1]` on `"Здравствуйте"` fails with `byte index 1 is not a char boundary`. To slice by characters, find the byte position first, for example with `s.char_indices()`, which gives each character together with its byte offset.
+
+  - type: table
+    title: Useful String and &str methods
+    headers: ["Method", "Returns"]
+    rows:
+      - ["`len()`, `is_empty()`", "length in bytes; whether it is empty"]
+      - ["`chars()`, `bytes()`, `char_indices()`", "iterators over chars, bytes, (byte offset, char)"]
+      - ["`contains(p)`, `starts_with(p)`, `ends_with(p)`", "`bool`"]
+      - ["`find(p)`, `rfind(p)`", "`Option<usize>`: byte offset of the first / last match"]
+      - ["`split(p)`, `split_whitespace()`, `lines()`", "iterators over pieces"]
+      - ["`trim()`, `to_uppercase()`, `to_lowercase()`", "a trimmed `&str` / new `String`s"]
+      - ["`replace(from, to)`", "a new `String`"]
+      - ["`parse::<T>()`", "`Result<T, _>`: text to a number or other type"]
+
+  - type: playground
+    id: ch08-play-strings
+    title: "Initials and reversing"
+    lang: rust
+    md: |
+      Write `initials` (the first character of each word, uppercase, joined with dots: `"ada lovelace"` → `"A.L."`) and `reverse` (the characters in reverse order, which must work for non-ASCII text). Use `chars()`, never byte indexes.
+    task: "Print `A.L.`, `G.M.H.` and then `étêb`."
+    code: |
+      fn initials(name: &str) -> String {
+          String::new() // replace
+      }
+
+      fn reverse(s: &str) -> String {
+          String::new() // replace
+      }
+
+      fn main() {
+          println!("{}", initials("ada lovelace"));
+          println!("{}", initials("grace murray hopper"));
+          println!("{}", reverse("bêté"));
+      }
+    expected_output: |
+      A.L.
+      G.M.H.
+      étêb
+    solution_code: |
+      fn initials(name: &str) -> String {
+          let mut out = String::new();
+          for word in name.split_whitespace() {
+              if let Some(c) = word.chars().next() {
+                  out.push_str(&c.to_uppercase().to_string());
+                  out.push('.');
+              }
+          }
+          out
+      }
+
+      fn reverse(s: &str) -> String {
+          s.chars().rev().collect()
+      }
+
+      fn main() {
+          println!("{}", initials("ada lovelace"));
+          println!("{}", initials("grace murray hopper"));
+          println!("{}", reverse("bêté"));
+      }
+    hints:
+      - "`for word in name.split_whitespace()` and `word.chars().next()` gives the first char as an `Option<char>`."
+      - "`c.to_uppercase()` returns an iterator (some characters uppercase to several); `.to_string()` turns it into a String you can `push_str`."
+      - "`reverse`: `s.chars().rev().collect()` builds a String from the reversed chars."
+
+  - type: exercise
+    id: ch08-ex-strings
+    exercise_dir: ch08-text
+    title: "Text utilities"
+    difficulty: medium
+    goal: "Process text correctly whatever language it is in."
+    behavior: |
+      - `pub fn char_count(s: &str) -> usize`: the number of chars (not bytes).
+      - `pub fn pig_latin(word: &str) -> String`: from *The Rust Programming Language*'s exercise list. A word starting with a vowel gets `-hay` added (`apple` → `apple-hay`); otherwise the first char moves to the end with `ay` (`first` → `irst-fay`). Lowercase ASCII input.
+      - `pub fn truncate_chars(s: &str, max: usize) -> String`: at most `max` chars; if anything was cut, end with `…` (which counts toward `max`). `max` is at least 1.
+      - `pub fn word_count(s: &str) -> usize`: words separated by any whitespace.
+    examples:
+      - input: "char_count(\"héllo\")"
+        output: "5"
+      - input: "pig_latin(\"first\")"
+        output: "\"irst-fay\""
+      - input: "truncate_chars(\"Здравствуйте\", 5)"
+        output: "\"Здра…\""
+    hints:
+      - "`s.chars().count()`."
+      - "`pig_latin`: `let mut chars = word.chars(); let first = chars.next()`; the rest is `chars.as_str()`."
+      - "`truncate_chars`: if `char_count(s) <= max` return `s.to_string()`; else take `max - 1` chars with `s.chars().take(max - 1).collect::<String>()` and push `'…'`."
+    rust:
+      starter: |
+        /// Number of chars (Unicode scalar values).
+        pub fn char_count(s: &str) -> usize {
+            todo!()
+        }
+
+        /// apple -> apple-hay, first -> irst-fay.
+        pub fn pig_latin(word: &str) -> String {
+            todo!()
+        }
+
+        /// At most `max` chars, ending with '…' if anything was cut.
+        pub fn truncate_chars(s: &str, max: usize) -> String {
+            todo!()
+        }
+
+        /// Number of whitespace-separated words.
+        pub fn word_count(s: &str) -> usize {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn counting_chars() {
+            assert_eq!(char_count("héllo"), 5);
+            assert_eq!(char_count("Здравствуйте"), 12);
+            assert_eq!(char_count(""), 0);
+        }
+
+        #[test]
+        fn pig() {
+            assert_eq!(pig_latin("apple"), "apple-hay");
+            assert_eq!(pig_latin("first"), "irst-fay");
+            assert_eq!(pig_latin("e"), "e-hay");
+            assert_eq!(pig_latin("x"), "-xay");
+        }
+
+        #[test]
+        fn truncating() {
+            assert_eq!(truncate_chars("hello", 10), "hello", "short text is unchanged");
+            assert_eq!(truncate_chars("hello", 5), "hello", "exactly max");
+            assert_eq!(truncate_chars("hello world", 6), "hello…");
+            assert_eq!(truncate_chars("Здравствуйте", 5), "Здра…", "never cuts inside a character");
+        }
+
+        #[test]
+        fn words() {
+            assert_eq!(word_count("  the quick\tbrown\nfox "), 4);
+            assert_eq!(word_count(""), 0);
+        }
+      solution: |
+        /// Number of chars (Unicode scalar values).
+        pub fn char_count(s: &str) -> usize {
+            s.chars().count()
+        }
+
+        /// apple -> apple-hay, first -> irst-fay.
+        pub fn pig_latin(word: &str) -> String {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(c) if "aeiou".contains(c) => format!("{word}-hay"),
+                Some(c) => format!("{}-{c}ay", chars.as_str()),
+            }
+        }
+
+        /// At most `max` chars, ending with '…' if anything was cut.
+        pub fn truncate_chars(s: &str, max: usize) -> String {
+            if char_count(s) <= max {
+                return s.to_string();
+            }
+            let mut out: String = s.chars().take(max - 1).collect();
+            out.push('…');
+            out
+        }
+
+        /// Number of whitespace-separated words.
+        pub fn word_count(s: &str) -> usize {
+            s.split_whitespace().count()
+        }
+    solution_explain: "Everything goes through `chars()`, so no function can split a multi-byte character. `chars.as_str()` returns the not-yet-consumed rest of the string as a slice without copying."
+
+  - type: quiz
+    id: ch08-quiz-strings
+    title: Check yourself
+    questions:
+      - type: single
+        q: "After `let s3 = s1 + &s2;`, which are still usable?"
+        options: ["s1, s2, s3", "s2 and s3", "s1 and s3", "only s3"]
+        answer: 1
+        explanation: "`+` takes ownership of the left operand."
+      - type: single
+        q: "What is `\"héllo\".len()`?"
+        options: ["5", "6", "10", "It does not compile"]
+        answer: 1
+        explanation: "`é` is 2 bytes in UTF-8; `len` counts bytes."
+      - type: single
+        q: "Why is `s[0]` a compile error for a String?"
+        options: ["Strings are immutable", "A byte index may not be a whole character, and finding the n-th char is not instant", "Strings start at index 1", "You must use `s.get(0)`"]
+        answer: 1
+        explanation: "Rust refuses to give a surprising answer or hide a slow scan."
+      - type: single
+        q: "Which builds `\"x=1, y=2\"` from `let x = 1; let y = 2;` without moving anything?"
+        options: ["`\"x=\" + x + \", y=\" + y`", "`format!(\"x={x}, y={y}\")`", "`String::from(x, y)`", "`concat(x, y)`"]
+        answer: 1
+        explanation: "`format!` returns a new String and only borrows its arguments."
+      - type: truefalse
+        q: "`&\"día\"[0..2]` returns `\"dí\"`."
+        answer: false
+        explanation: "`í` is 2 bytes (bytes 1 and 2), so byte 2 is inside it and the slice panics."
+
+  - type: summary
+    points:
+      - "`String` is owned, growable UTF-8; `&str` is a borrowed slice of UTF-8."
+      - "Grow with `push_str` and `push`; join with `+` (moves the left side) or `format!` (moves nothing)."
+      - "UTF-8 characters take 1 to 4 bytes, so strings cannot be indexed by position, and `len()` counts bytes."
+      - "Choose `bytes()`, `chars()` or (with a crate) graphemes depending on what you mean by \"character\"."
+      - "Byte-range slices must fall on char boundaries or they panic."
+terms:
+  - term: UTF-8
+    def: "A text encoding that stores each Unicode character in 1 to 4 bytes; Rust strings always hold valid UTF-8."
+  - term: String
+    def: "An owned, growable UTF-8 text buffer (a wrapper around Vec<u8>)."
+  - term: "format!"
+    def: "A macro like println! that returns the formatted String instead of printing it."
+  - term: grapheme cluster
+    def: "What a reader perceives as one letter; may be several chars. Not in the standard library."

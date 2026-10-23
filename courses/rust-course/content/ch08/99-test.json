@@ -1,0 +1,136 @@
+{
+  "title": "Chapter test: Common Collections and Text",
+  "kind": "test",
+  "summary": "Ten questions on vectors, strings and maps. You need 70% to pass; you can retry and your best score is kept.",
+  "blocks": [
+    {
+      "type": "quiz",
+      "id": "ch08-test",
+      "pass_score": 0.7,
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which line creates an empty vector of strings?",
+          "options": [
+            "`let v = Vec::new();` with nothing else",
+            "`let v: Vec<String> = Vec::new();`",
+            "`let v = vec![String];`",
+            "`let v = [String; 0];`"
+          ],
+          "answer": 1,
+          "explanation": "With no elements and no later use, the type must be written."
+        },
+        {
+          "type": "single",
+          "q": "A user types an index. How should you read the element?",
+          "options": [
+            "`v[i]`",
+            "`v.get(i)` and handle `None`",
+            "`v.at(i)`",
+            "`v[i].unwrap()`"
+          ],
+          "answer": 1,
+          "explanation": "A bad index is expected input, not a bug, so do not panic."
+        },
+        {
+          "type": "single",
+          "q": "What does this print?",
+          "code": "let mut v = vec![1, 2, 3];\nfor x in &mut v { *x *= 10; }\nv.push(4);\nprintln!(\"{:?} {}\", v, v.len());\n",
+          "lang": "rust",
+          "options": [
+            "[1, 2, 3, 4] 4",
+            "[10, 20, 30, 4] 4",
+            "[10, 20, 30, 40] 4",
+            "It does not compile"
+          ],
+          "answer": 1,
+          "explanation": "The loop multiplies the existing elements; the borrow ends before `push`."
+        },
+        {
+          "type": "single",
+          "q": "What is `\"日本\".len()`? (each character is 3 bytes)",
+          "options": [
+            "2",
+            "3",
+            "6",
+            "It panics"
+          ],
+          "answer": 2,
+          "explanation": "`len` counts bytes."
+        },
+        {
+          "type": "single",
+          "q": "Which correctly gets the first character of a `&str` called `s`?",
+          "options": [
+            "`s[0]`",
+            "`s.chars().next()`",
+            "`s.bytes()[0]`",
+            "`&s[0]`"
+          ],
+          "answer": 1,
+          "explanation": "`chars().next()` returns `Option<char>`."
+        },
+        {
+          "type": "single",
+          "q": "After `let c = a + &b;` with two Strings, which variable can no longer be used?",
+          "options": [
+            "a",
+            "b",
+            "c",
+            "none"
+          ],
+          "answer": 0,
+          "explanation": "`+` takes the left String by value."
+        },
+        {
+          "type": "multi",
+          "q": "Which are true of `HashMap`?",
+          "options": [
+            "Iteration order is arbitrary",
+            "`insert` on an existing key replaces the value",
+            "Keys can be any type, no traits needed",
+            "`entry(k).or_insert(v)` returns a mutable reference to the value"
+          ],
+          "answer": [
+            0,
+            1,
+            3
+          ],
+          "explanation": "Keys must implement `Eq` and `Hash`."
+        },
+        {
+          "type": "single",
+          "q": "What does this print?",
+          "code": "use std::collections::BTreeMap;\nlet mut m = BTreeMap::new();\nfor c in \"abca\".chars() {\n    *m.entry(c).or_insert(0) += 1;\n}\nprintln!(\"{m:?}\");\n",
+          "lang": "rust",
+          "options": [
+            "{'a': 2, 'b': 1, 'c': 1}",
+            "{'a': 1, 'b': 1, 'c': 1, 'a': 1}",
+            "{'c': 1, 'b': 1, 'a': 2}",
+            "[2, 1, 1]"
+          ],
+          "answer": 0,
+          "explanation": "Each char is counted once per occurrence and BTreeMap prints keys in order."
+        },
+        {
+          "type": "single",
+          "q": "Which collection fits a print queue where jobs are added at the back and taken from the front?",
+          "options": [
+            "`Vec`",
+            "`VecDeque`",
+            "`HashSet`",
+            "`BTreeMap`"
+          ],
+          "answer": 1,
+          "explanation": "`VecDeque` has fast `push_back` and `pop_front`."
+        },
+        {
+          "type": "truefalse",
+          "q": "`let s = String::from(\"día\"); let t = &s[0..2];` panics because byte 2 is inside the character `í`.",
+          "answer": true,
+          "explanation": "`í` occupies bytes 1 and 2, so a slice ending at byte 2 cuts it."
+        }
+      ]
+    }
+  ]
+}

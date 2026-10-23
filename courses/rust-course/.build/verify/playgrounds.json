@@ -122,5 +122,17 @@
  "ch07-play-use": {
   "solution_code": null,
   "starter_ok": "run"
+ },
+ "ch08-play-group": {
+  "solution_code": "use std::collections::BTreeMap;\n\nfn main() {\n    let names = [\"ada\", \"grace\", \"alan\", \"linus\"];\n    let mut groups: BTreeMap<char, Vec<&str>> = BTreeMap::new();\n    for name in names {\n        let letter = name.chars().next().unwrap();\n        groups.entry(letter).or_default().push(name);\n    }\n    println!(\"{groups:?}\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch08-play-strings": {
+  "solution_code": "fn initials(name: &str) -> String {\n    let mut out = String::new();\n    for word in name.split_whitespace() {\n        if let Some(c) = word.chars().next() {\n            out.push_str(&c.to_uppercase().to_string());\n            out.push('.');\n        }\n    }\n    out\n}\n\nfn reverse(s: &str) -> String {\n    s.chars().rev().collect()\n}\n\nfn main() {\n    println!(\"{}\", initials(\"ada lovelace\"));\n    println!(\"{}\", initials(\"grace murray hopper\"));\n    println!(\"{}\", reverse(\"bêté\"));\n}\n",
+  "starter_ok": "run"
+ },
+ "ch08-play-vec": {
+  "solution_code": "fn main() {\n    let mut grades = vec![76, 95, 63, 88, 70];\n    let total: i32 = grades.iter().sum();\n    let average = total as f64 / grades.len() as f64;\n    let best = grades.iter().max().unwrap();\n    println!(\"{} scores, average {average:.1}, best {best}\", grades.len());\n    grades.sort();\n    grades.reverse();\n    println!(\"{grades:?}\");\n}\n",
+  "starter_ok": "run"
  }
 }

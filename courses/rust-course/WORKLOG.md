@@ -62,3 +62,6 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
   already prints the target output gets no expected_output (the verifier rejects that), only a task.
 - Chapter 7 done (Packages, Crates and Modules): 3 lessons + 10-question test; exercise ch07-library (verified);
   2 playgrounds. `fix_compiler_output.py` compiles `file: src/lib.rs` blocks as a library.
+- Chapter 8 done (Common Collections and Text): vectors, strings/UTF-8, hash maps + collection guide, 10-question
+  test; exercises ch08-vectors, ch08-text, ch08-maps (verified); 3 playgrounds verified. Examples that print maps use
+  BTreeMap so their output is deterministic.
