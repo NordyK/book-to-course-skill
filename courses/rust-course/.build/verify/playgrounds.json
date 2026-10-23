@@ -34,5 +34,21 @@
  "ch02-play-placeholders": {
   "solution_code": "fn main() {\n    let x = 5;\n    let y = 10;\n\n    println!(\"x = {x} and y = {y}\");\n    println!(\"{} + {} = {}\", x, y, x + y);\n}\n",
   "starter_ok": "run"
+ },
+ "ch03-play-chars": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch03-play-const": {
+  "solution_code": "const SECONDS_PER_MINUTE: u32 = 60;\n\nfn main() {\n    let minutes: u32 = 5;\n    let seconds = minutes * SECONDS_PER_MINUTE;\n    println!(\"{minutes} minutes = {seconds} seconds\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch03-play-overflow": {
+  "solution_code": null,
+  "starter_ok": "panic"
+ },
+ "ch03-play-shadow": {
+  "solution_code": null,
+  "starter_ok": "run"
  }
 }

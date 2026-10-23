@@ -1,0 +1,309 @@
+{
+  "title": "Numbers, booleans and characters",
+  "summary": "Rust's scalar types: integers of every size, what overflow does, floating-point numbers, arithmetic, bool and char.",
+  "minutes": 28,
+  "source": {
+    "chapter": "ch03",
+    "sections": [
+      "TRPL 3.2 Data Types",
+      "TRPL 3.2 Scalar Types",
+      "TRPL 3.2 Integer Overflow",
+      "PR ch3 Fixed-Width Numeric Types",
+      "PR ch3 Checked, Wrapping, Saturating, and Overflowing Arithmetic",
+      "PR ch3 Floating-Point Types",
+      "PR ch3 The bool Type",
+      "PR ch3 Characters",
+      "RiA 2.3 Numbers"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Every value in Rust has a **data type**, and the compiler must know every type before the program runs. A **scalar** type holds a single value. Rust has four kinds: **integers**, **floating-point numbers**, **booleans** and **characters**. This lesson is a tour of them, with the details that trip people up: sizes, overflow and conversions.\n"
+    },
+    {
+      "type": "text",
+      "title": "Integers",
+      "md": "An integer is a whole number. Rust's integer types say two things in their name: whether they can be negative (**i** for *signed*, **u** for *unsigned*) and how many bits they use. More bits means a bigger range, and more memory.\n"
+    },
+    {
+      "type": "table",
+      "title": "Integer types",
+      "headers": [
+        "Bits",
+        "Signed",
+        "Unsigned",
+        "Unsigned range"
+      ],
+      "rows": [
+        [
+          "8",
+          "`i8` (−128 to 127)",
+          "`u8`",
+          "0 to 255"
+        ],
+        [
+          "16",
+          "`i16`",
+          "`u16`",
+          "0 to 65,535"
+        ],
+        [
+          "32",
+          "`i32` (the default)",
+          "`u32`",
+          "0 to about 4.29 billion"
+        ],
+        [
+          "64",
+          "`i64`",
+          "`u64`",
+          "0 to about 1.8 × 10¹⁹"
+        ],
+        [
+          "128",
+          "`i128`",
+          "`u128`",
+          "0 to about 3.4 × 10³⁸"
+        ],
+        [
+          "pointer size",
+          "`isize`",
+          "`usize`",
+          "depends on the machine (64 bits on most computers)"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "title": "Which one should I use?",
+      "md": "- Not sure? Use `i32`, the default. It is fast everywhere.\n- Counting things in memory, or indexing a list? Use `usize`. Rust requires `usize` for indexes, because the size of memory depends on the machine.\n- Raw bytes (files, network)? `u8`.\n- Something specific: pick the smallest type whose range surely fits, like `u16` for a port number.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "title": "Ways to write integer literals",
+      "code": "let million = 1_000_000;   // underscores are just for reading\nlet hex = 0xff;            // 255\nlet octal = 0o77;          // 63\nlet binary = 0b1111_0000;  // 240\nlet byte = b'A';           // 65: a u8, only for ASCII characters\nlet small = 42u8;          // the suffix sets the type\nprintln!(\"{million} {hex} {octal} {binary} {byte} {small}\");\n",
+      "output": "1000000 255 63 240 65 42"
+    },
+    {
+      "type": "text",
+      "title": "Overflow",
+      "md": "A `u8` holds 0 to 255. What if a calculation produces 256? That is **integer overflow**, and Rust's answer depends on how you build:\n\n- In a **debug** build (`cargo run`, `cargo build`), Rust checks every arithmetic operation and **panics** on overflow. Your bug is reported where it happens.\n- In a **release** build (`--release`), the checks are removed for speed and the value **wraps around**: 256 becomes 0, 257 becomes 1, and so on, the way a car's odometer rolls over.\n\nRelying on wrapping by accident is considered a bug. When you *want* a specific behavior, ask for it explicitly with one of four method families:\n"
+    },
+    {
+      "type": "table",
+      "title": "Choosing what happens on overflow (shown for u8, 250 + 10)",
+      "headers": [
+        "Method",
+        "Result",
+        "Use it when"
+      ],
+      "rows": [
+        [
+          "`250u8.checked_add(10)`",
+          "`None` (`Some(x)` if no overflow)",
+          "Overflow means invalid input you want to handle"
+        ],
+        [
+          "`250u8.wrapping_add(10)`",
+          "`4` (260 − 256)",
+          "You really want modular arithmetic: hashes, checksums"
+        ],
+        [
+          "`250u8.saturating_add(10)`",
+          "`255` (stops at the limit)",
+          "Values that should stick at the edge: volume, health points"
+        ],
+        [
+          "`250u8.overflowing_add(10)`",
+          "`(4, true)`",
+          "You want the wrapped value and to know it wrapped"
+        ]
+      ]
+    },
+    {
+      "type": "playground",
+      "id": "ch03-play-overflow",
+      "title": "Watch overflow happen",
+      "lang": "rust",
+      "md": "`parse` here stops the compiler from noticing the overflow in advance, as it would with a plain `255u8 + 1`. Run it: the debug build panics with `attempt to add with overflow`. Then replace `level + 1` with `level.saturating_add(1)`, and after that with `level.wrapping_add(1)`, and compare.\n",
+      "code": "fn main() {\n    let level: u8 = \"255\".parse().unwrap(); // `unwrap` is like `expect` without a message\n    println!(\"level is {level}\");\n    let next = level + 1;\n    println!(\"next level is {next}\");\n}\n",
+      "expect_panic": true,
+      "hints": [
+        "`saturating_add(1)` gives 255; `wrapping_add(1)` gives 0."
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Floating-point numbers",
+      "md": "Numbers with a decimal point are **floating-point** numbers: `f64` (the default, about 15 to 17 significant digits) and `f32` (about 7). They follow the IEEE-754 standard like almost every language, which brings two surprises worth knowing early:\n\n- Many decimal fractions cannot be stored exactly. `0.1 + 0.2` is `0.30000000000000004`, not `0.3`. Compare floats with a small tolerance instead of `==`.\n- Some operations produce special values: `1.0 / 0.0` is infinity, and `0.0 / 0.0` is `NaN` (\"not a number\"), which is not even equal to itself.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "title": "Arithmetic",
+      "code": "fn main() {\n    let sum = 5 + 10;          // 15\n    let difference = 95.5 - 4.3; // 91.2\n    let product = 4 * 30;      // 120\n    let quotient = 56.7 / 32.2; // 1.7608695652173911\n    let truncated = -5 / 3;    // -1: integer division drops the fraction\n    let remainder = 43 % 5;    // 3\n    println!(\"{sum} {difference} {product} {quotient} {truncated} {remainder}\");\n}\n",
+      "output": "15 91.2 120 1.7608695652173911 -1 3",
+      "explain": "Integer division rounds toward zero. Both sides of an operator must have the same type: `5 + 2.5` does not compile, because Rust never converts between number types silently."
+    },
+    {
+      "type": "text",
+      "title": "Converting between number types",
+      "md": "To mix types you convert explicitly. `as` converts between number types, `From`/`into` converts only when no value can be lost, and `try_into` converts when it *might* fail and tells you if it did:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let small: u8 = 200;\n    let wide: u32 = small.into();      // always fits: u8 -> u32\n    let f = small as f64 / 3.0;         // `as` converts to f64\n    let truncated = 3.99_f64 as i32;    // 3: `as` drops the fraction\n    let squeezed = 300_i32 as u8;       // 44: `as` silently keeps the low 8 bits!\n    let checked: Result<u8, _> = 300_i32.try_into(); // Err: does not fit\n    println!(\"{wide} {f:.2} {truncated} {squeezed} {checked:?}\");\n}\n",
+      "output": "200 66.67 3 44 Err(TryFromIntError(()))",
+      "explain": "`{f:.2}` prints with two decimals. Prefer `into` and `try_into`; `as` is handy but quietly loses information when the value does not fit."
+    },
+    {
+      "type": "text",
+      "title": "Booleans and characters",
+      "md": "`bool` has two values, `true` and `false`, and takes one byte. Conditions in `if` and `while` must be `bool`: unlike C or Python, Rust does not treat `0` or an empty string as false.\n\n`char` is a single **Unicode scalar value**, written in single quotes: `'z'`, `'ß'`, `'😻'`. A `char` is always 4 bytes, so it can hold any character in any script. Text in double quotes is a string, not a `char`; strings are UTF-8 and use 1 to 4 bytes per character (chapter 8).\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch03-play-chars",
+      "title": "Characters are not bytes",
+      "lang": "rust",
+      "md": "Run it. Each `char` is 4 bytes, but in a UTF-8 string the same characters take 1, 2 and 4 bytes. `as u32` shows each character's Unicode number.",
+      "code": "fn main() {\n    for c in ['a', 'ß', '😻'] {\n        println!(\"{c}: code point {}, {} byte(s) in UTF-8\", c as u32, c.len_utf8());\n    }\n    println!(\"size of a char: {} bytes\", std::mem::size_of::<char>());\n    println!(\"\\\"aß😻\\\" is {} bytes long\", \"aß😻\".len());\n}\n"
+    },
+    {
+      "type": "exercise",
+      "id": "ch03-ex-overflow",
+      "exercise_dir": "ch03-safe-arithmetic",
+      "title": "Arithmetic that cannot go wrong",
+      "difficulty": "easy",
+      "goal": "Write three small functions that each handle overflow in a different, deliberate way.",
+      "behavior": "- `pub fn add_checked(a: u8, b: u8) -> Option<u8>`: `Some(sum)` when the sum fits in a `u8`, `None` otherwise.\n- `pub fn volume_up(level: u8, step: u8) -> u8`: increases the volume but never goes above 255.\n- `pub fn odometer(km: u16, driven: u16) -> u16`: like a car's odometer, rolls over past 65,535 back to 0 and keeps counting.\n",
+      "examples": [
+        {
+          "input": "add_checked(200, 55)",
+          "output": "Some(255)"
+        },
+        {
+          "input": "add_checked(200, 56)",
+          "output": "None"
+        },
+        {
+          "input": "volume_up(250, 10)",
+          "output": "255"
+        },
+        {
+          "input": "odometer(65_530, 10)",
+          "output": "4"
+        }
+      ],
+      "hints": [
+        "Each function is one line: the right method from the table in this lesson.",
+        "`a.checked_add(b)`, `level.saturating_add(step)`, `km.wrapping_add(driven)`."
+      ],
+      "solution_explain": "Saying which overflow behavior you want makes the code correct in both debug and release builds, and tells the reader it was intended."
+    },
+    {
+      "type": "quiz",
+      "id": "ch03-quiz-scalars",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which type must you use to index into an array or a Vec?",
+          "options": [
+            "`i32`",
+            "`u32`",
+            "`usize`",
+            "Any integer type"
+          ],
+          "answer": 2,
+          "explanation": "Indexes are `usize`, whose size matches the machine's memory addresses."
+        },
+        {
+          "type": "single",
+          "q": "`let x: u8 = 255;` then, at run time, `x + 1` in a **debug** build. What happens?",
+          "options": [
+            "The result is 256",
+            "The result wraps to 0",
+            "The program panics",
+            "The result stays 255"
+          ],
+          "answer": 2,
+          "explanation": "Debug builds check for overflow and panic. Release builds wrap to 0."
+        },
+        {
+          "type": "numeric",
+          "q": "What is `-7 / 2` in Rust (integers)?",
+          "answer": -3,
+          "explanation": "Integer division rounds toward zero: −3.5 becomes −3."
+        },
+        {
+          "type": "single",
+          "q": "What does `300_i32 as u8` give?",
+          "options": [
+            "255",
+            "44",
+            "A compile error",
+            "A panic"
+          ],
+          "answer": 1,
+          "explanation": "`as` keeps the low 8 bits: 300 − 256 = 44, silently. That is why `try_into` exists."
+        },
+        {
+          "type": "multi",
+          "q": "Which compile?",
+          "options": [
+            "`let a = 5 + 2.5;`",
+            "`let b = 5.0 + 2.5;`",
+            "`let c = 5 as f64 + 2.5;`",
+            "`if 1 { }`",
+            "`let d: char = 'é';`"
+          ],
+          "answer": [
+            1,
+            2,
+            4
+          ],
+          "explanation": "Mixed `i32 + f64` and an integer used as a condition do not compile."
+        },
+        {
+          "type": "truefalse",
+          "q": "`0.1 + 0.2 == 0.3` is `true` in Rust.",
+          "answer": false,
+          "explanation": "As in most languages, the sum is 0.30000000000000004. Compare floats with a tolerance."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Integers: `i8`–`i128` (signed), `u8`–`u128` (unsigned), plus `isize`/`usize`; `i32` is the default, `usize` is for indexes.",
+        "Overflow panics in debug builds and wraps in release; use `checked_`, `wrapping_`, `saturating_` or `overflowing_` methods to choose.",
+        "`f64` is the default float; floats are approximate, so avoid `==` on them.",
+        "Rust never mixes number types silently: convert with `into` (lossless), `try_into` (may fail) or `as` (may truncate).",
+        "`bool` is `true`/`false` and conditions must be `bool`; `char` is a 4-byte Unicode scalar value in single quotes."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "scalar type",
+      "def": "A type holding a single value: an integer, a float, a bool or a char."
+    },
+    {
+      "term": "integer overflow",
+      "def": "A result outside the type's range. Debug builds panic; release builds wrap around unless you choose otherwise."
+    },
+    {
+      "term": "usize",
+      "def": "The unsigned integer type as wide as a memory address; used for sizes and indexes."
+    },
+    {
+      "term": "char",
+      "def": "One Unicode scalar value, 4 bytes, written in single quotes like 'a'."
+    }
+  ]
+}

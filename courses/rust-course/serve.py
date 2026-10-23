@@ -145,7 +145,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if shutil.which(cmd[0]) is None:
             return self._json(200, {"ok": False, "exit_code": 127, "timed_out": False,
                                     "output": "Program '%s' nie jest zainstalowany / is not installed.\n" % cmd[0]})
-        env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", CI="1")
+        env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", CI="1", RUST_BACKTRACE="0")
         t0 = time.time()
         timed_out = False
         try:
@@ -201,7 +201,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             with open(src, "w", encoding="utf-8") as f:
                 f.write(code)
             try:
-                c = subprocess.run([rustc, "--edition", "2024", "-C", "debuginfo=0", "-o", exe, src], cwd=tmp,
+                c = subprocess.run([rustc, "--edition", "2024", "-C", "debuginfo=0", "--remap-path-prefix=%s=src" % tmp, "-o", exe, src], cwd=tmp,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, timeout=60)
             except subprocess.TimeoutExpired:
                 return self._json(200, {"ok": False, "compiled": False, "timed_out": True, "stdout": "", "stderr": "",
@@ -213,7 +213,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             timed_out = False
             try:
                 r = subprocess.run([exe], cwd=tmp, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                   stdin=subprocess.DEVNULL, timeout=10)
+                                   stdin=subprocess.DEVNULL, timeout=10, env=dict(os.environ, RUST_BACKTRACE="0"))
                 out, err, rc = r.stdout, r.stderr, r.returncode
             except subprocess.TimeoutExpired as e:
                 timed_out, rc = True, -1

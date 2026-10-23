@@ -583,7 +583,7 @@ function save(now) {
   const post = () => {
     if (!serverMode) return;
     fetch("api/progress", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(P) })
-      .then(r => { if (!r.ok) throw new Error(); saveErr = false; setSaveState(); })
+      .then(r => r.json().then(() => { if (!r.ok) throw new Error(); saveErr = false; setSaveState(); }))
       .catch(() => { saveErr = true; setSaveState(); });
   };
   clearTimeout(saveTimer);
@@ -630,7 +630,19 @@ function practiceOf(les) {
   });
   return r;
 }
-function nextLessonId() { const first = ORDER.find(id => !lessonDone(id)); return (P.last && ORDER.indexOf(P.last) >= 0 && !lessonDone(P.last)) ? P.last : first; }
+function testReady(id) { const ch = C.chapters[CH_OF[id]]; return ch.lessons.every(x => x === id || C.lessons[x].kind === "test" || lessonDone(x)); }
+function nextLessonId() {
+  const ok = id => !lessonDone(id) && (C.lessons[id].kind !== "test" || testReady(id));
+  if (P.last && C.lessons[P.last] && ok(P.last)) return P.last;
+  return ORDER.find(ok) || ORDER.find(id => !lessonDone(id));
+}
+function leftIn(id) {
+  const p = practiceOf(C.lessons[id]); const bits = [];
+  if (p.qT - p.qC) bits.push((p.qT - p.qC) + " quiz question" + (p.qT - p.qC > 1 ? "s" : ""));
+  if (p.eT - p.eP) bits.push((p.eT - p.eP) + " exercise" + (p.eT - p.eP > 1 ? "s" : ""));
+  if (p.pT - p.pP) bits.push((p.pT - p.pP) + " challenge" + (p.pT - p.pP > 1 ? "s" : ""));
+  return bits.length ? "Still to do: " + bits.join(", ") + "." : "";
+}
 function streak() {
   let n = 0; const d = new Date();
   const key = x => x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0");
@@ -653,7 +665,7 @@ function maybeAutoComplete(les) {
 }
 function completeLesson(id, auto) {
   P.lessons[id] = Object.assign(P.lessons[id] || {}, { completed: true, completedAt: new Date().toISOString() });
-  log("lesson", id, auto ? "all practice done" : ""); save(); stamp(t("lessonDone"));
+  log("lesson", id, auto ? "all practice done" : ""); save(); toast(t("lessonDone"));
   if (typeof window.__drawFinish === "function") window.__drawFinish();
 }
 
@@ -668,7 +680,12 @@ function ask(msg, yes) {
   document.addEventListener("keydown", key); document.body.append(ov); ok.focus();
 }
 function toast(msg, icon) { const el = h("div", { class: "toast", role: "status" }, ic(icon || "check"), msg); document.body.append(el); setTimeout(() => el.remove(), 2600); }
-function stamp(text) { if (reduceMotion()) { toast(text); return; } const el = h("div", { class: "stamp", "aria-hidden": "true" }, h("div", null, "✓ " + text)); document.body.append(el); setTimeout(() => el.remove(), 1400); }
+/* the console's one authored moment: a ledger stamp over the run rows when rustc or the tests verify the work */
+function stamp(text) {
+  const host = $(".console"), vis = host && host.isConnected && (innerWidth > 1180 || document.body.classList.contains("console-open"));
+  if (!vis) { toast(text); return; }
+  const el = h("div", { class: "stamp", "aria-hidden": "true" }, h("div", null, ic("check"), text)); host.append(el); setTimeout(() => el.remove(), 1400);
+}
 function copyText(text, btn) {
   const done = () => { const o = btn.lastChild.textContent; btn.lastChild.textContent = t("copied"); setTimeout(() => { btn.lastChild.textContent = o; }, 1200); };
   if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, done); else done();
@@ -700,9 +717,10 @@ async function playground(code, tests) {
     return { ok: !!j.success, compiled: !compileFailed, stdout: j.stdout || "", stderr, timed_out: false, exit: j.exitDetail || "" };
   } finally { clearTimeout(timer); }
 }
+function timed(ms) { const c = new AbortController(); setTimeout(() => c.abort(), ms); return c.signal; }
 async function runProgram(code) {
   if (usesLocal()) {
-    const r = await fetch("api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lang: "rust", code }) });
+    const r = await fetch("api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lang: "rust", code }), signal: timed(90000) });
     const j = await r.json(); if (!r.ok) throw new Error(j.error || "server error");
     return { ok: j.ok, compiled: j.compiled, stdout: j.stdout || "", stderr: (j.compile_output || "") + (j.stderr || ""), timed_out: j.timed_out, via: "local" };
   }
@@ -710,7 +728,7 @@ async function runProgram(code) {
 }
 async function runTests(dir, files, testsSrc) {
   if (usesLocal()) {
-    const r = await fetch("api/run-tests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dir, files }) });
+    const r = await fetch("api/run-tests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dir, files }), signal: timed(180000) });
     const j = await r.json(); if (!r.ok) throw new Error(j.error || "server error");
     return { ok: j.ok, output: j.output || "", timed_out: j.timed_out, via: "local" };
   }
@@ -726,11 +744,27 @@ function parseTests(out) {
 }
 const normOut = s => String(s == null ? "" : s).replace(/\r/g, "").split("\n").map(l => l.replace(/\s+$/, "")).join("\n").replace(/^\n+|\n+$/g, "");
 
+/* rustc text output -> [{sev, code, msg, file, line, col, len}] */
+function parseDiag(text) {
+  const out = [], lines = String(text || "").split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(error|warning)(?:\[(E\d{4})\])?: (.+)$/.exec(lines[i]); if (!m) continue;
+    let j = i + 1; while (j < lines.length && j < i + 3 && !/-->/.test(lines[j])) j++;
+    const loc = /--> (.+?):(\d+):(\d+)/.exec(lines[j] || ""); if (!loc) continue;
+    let len = 1;
+    for (let k = j + 1; k < Math.min(lines.length, j + 8); k++) { const c = /^\s*(?:\d+\s*)?\|( *)([\^-]+)/.exec(lines[k]); if (c && c[2][0] === "^") { len = c[2].length; break; } if (/^(error|warning)/.test(lines[k])) break; }
+    if (/aborting due to|could not compile|generated \d+ warning/.test(m[3])) continue;
+    out.push({ sev: m[1], code: m[2] || "", msg: m[3], file: loc[1], line: +loc[2], col: +loc[3], len });
+  }
+  return out;
+}
+
 /* ───────────── editor: textarea over a highlighted layer ───────────── */
 function makeEditor(onRun) {
   const ta = h("textarea", { spellcheck: "false", autocapitalize: "off", autocomplete: "off", "aria-label": "Code editor", wrap: "off" });
   const hl = h("pre", { class: "ed-hl", "aria-hidden": "true" }), gutter = h("div", { class: "ed-gutter", "aria-hidden": "true" });
-  const box = h("div", { class: "ed" }, gutter, hl, ta);
+  const marks = h("div", { class: "ed-marks", "aria-hidden": "true" });
+  const box = h("div", { class: "ed" }, gutter, hl, marks, ta);
   let lang = "rust", onChange = null;
   function paint() {
     const v = ta.value; const lines = highlightLines(v + (v.endsWith("\n") ? " " : ""), lang);
@@ -739,7 +773,7 @@ function makeEditor(onRun) {
     ta.style.height = "auto"; ta.style.height = Math.max(ta.scrollHeight, box.clientHeight) + "px";
     ta.style.width = "auto"; ta.style.width = Math.max(hl.scrollWidth, box.clientWidth) + "px";
   }
-  ta.addEventListener("input", () => { paint(); if (onChange) onChange(ta.value); });
+  ta.addEventListener("input", () => { paint(); marks.replaceChildren(); if (onChange) onChange(ta.value); });
   ta.addEventListener("keydown", e => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); onRun(); return; }
     if (ta.readOnly) return;
@@ -752,7 +786,18 @@ function makeEditor(onRun) {
     } else if (e.key === "Escape") ta.blur();
   });
   new ResizeObserver(() => paint()).observe(box);
-  return { el: box, ta, set(v, l, ro) { lang = l || "rust"; ta.value = v; ta.readOnly = !!ro; paint(); }, get: () => ta.value, onChange(fn) { onChange = fn; }, focus() { ta.focus(); } };
+  /* compiler diagnostics drawn over the code: a wavy underline under the exact span and a marker on the line */
+  function setMarks(list) {
+    marks.replaceChildren(...list.flatMap(d => [
+      h("span", { class: "ed-mark " + d.sev, title: d.msg, style: "top:calc(12px + " + (d.line - 1) + " * 1.6em);left:calc(50px + " + (d.col - 1) + "ch);width:" + Math.max(1, d.len) + "ch" }),
+      h("span", { class: "ed-gut " + d.sev, style: "top:calc(12px + " + (d.line - 1) + " * 1.6em)" })]));
+  }
+  function goto(line, col) {
+    const lines = ta.value.split("\n"); let pos = 0; for (let i = 0; i < Math.min(line - 1, lines.length); i++) pos += lines[i].length + 1;
+    pos += Math.max(0, (col || 1) - 1); ta.focus(); ta.setSelectionRange(pos, pos);
+    box.scrollTop = Math.max(0, (line - 4) * 13.5 * 1.6);
+  }
+  return { el: box, ta, set(v, l, ro) { lang = l || "rust"; ta.value = v; ta.readOnly = !!ro; marks.replaceChildren(); paint(); }, get: () => ta.value, onChange(fn) { onChange = fn; }, focus() { ta.focus(); }, setMarks, goto };
 }
 
 /* ───────────── the Verification Console ───────────── */
@@ -767,11 +812,41 @@ const Con = (() => {
   const runBtn = h("button", { class: "btn", type: "button", onclick: () => run() }, ic("play"), h("span", null, "Run"));
   const resetBtn = h("button", { class: "btn ghost sm", type: "button", onclick: () => resetCode() }, ic("reset", "sm"), "Reset");
   const copyBtn = h("button", { class: "btn ghost sm", type: "button", onclick: () => copyText(editor.get(), copyBtn) }, ic("copy", "sm"), h("span", null, t("copy")));
-  const actions = h("div", { class: "cs-actions" }, runBtn, resetBtn, copyBtn, h("span", { class: "kbd" }, "Ctrl / ⌘ + Enter"));
+  const actions = h("div", { class: "cs-actions" }, runBtn, resetBtn, copyBtn, h("span", { class: "kbd" }, "Ctrl/⌘+Enter runs", h("br"), "Esc leaves the editor"));
   const rows = h("div", { class: "cs-rows", role: "status", "aria-live": "polite" });
-  const out = h("div", { class: "cs-out" }, h("pre"));
-  const body = h("div", { style: "display:flex;flex-direction:column;flex:1;min-height:0" }, title, task, edWrap, actions, rows, out);
-  const empty = h("div", { class: "cs-empty" }, h("h3", null, "Nothing loaded yet"), h("p", null, "Every runnable example in the lesson has an “Open in console” button. Load one, edit it, press Run."));
+  const out = h("div", { class: "cs-out", tabindex: "0", "aria-label": "Program output" }, h("pre"));
+  const sum = h("div", { class: "cs-sum", role: "status", hidden: true });
+  const body = h("div", { style: "display:flex;flex-direction:column;flex:1;min-height:0" }, title, task, edWrap, actions, rows, sum, out);
+  /* one plain-language line above the raw compiler / test output */
+  function jumpTo(line) { const d = (lastDiag || []).find(x => x.line === line); if (window.matchMedia("(max-width: 1180px)").matches) sheet(true); editor.goto(line, d ? d.col : 1); }
+  let lastDiag = [];
+  function markDiag(text) {
+    const f = item && item.files[tab]; const path = f ? f.path : "";
+    lastDiag = parseDiag(text).filter(d => d.file === path || d.file.endsWith("/" + path) || (path === "main.rs" && d.file === "src/main.rs"));
+    editor.setMarks(lastDiag);
+  }
+  function explain(kind, text, it) {
+    let node = null;
+    const ce = /^error(?:\[(E\d{4})\])?: (.+)$/m.exec(text);
+    const loc = /--> [^:\n]*:(\d+):\d+/.exec(text);
+    const pan = /panicked at [^:\n]+:(\d+):\d+:\n(.+)/.exec(text);
+    if (kind === "compile" && ce) {
+      node = [h("b", null, "The compiler stopped at ", loc ? h("button", { class: "jump", type: "button", onclick: () => jumpTo(+loc[1]) }, "line " + loc[1]) : "an error", ": "), ce[2] + ". ",
+        "Read the message below; the lines starting with ", h("code", null, "help:"), " usually show the fix. ",
+        ce[1] ? h("a", { href: "https://doc.rust-lang.org/error_codes/" + ce[1] + ".html", target: "_blank", rel: "noopener" }, "What " + ce[1] + " means") : null];
+    } else if (kind === "panic" && pan) {
+      node = it.expectPanic ? [h("b", null, "Rust stopped the program on line " + pan[1] + ", as this example intends: "), pan[2]]
+        : [h("b", null, "The program compiled but stopped (panicked) on line " + pan[1] + ": "), pan[2]];
+    } else if (kind === "tests") {
+      const m = /test result: \w+\. (\d+) passed; (\d+) failed/.exec(text);
+      if (m && +m[2] > 0) node = [h("b", null, m[1] + " of " + (+m[1] + +m[2]) + " tests pass. "), "Below, each failing test shows ", h("code", null, "left"), " (what your code returned) and ", h("code", null, "right"), " (what the test expected)."];
+      else if (ce) node = [h("b", null, "Your code does not compile yet" + (loc ? " (line " + loc[1] + ")" : "") + ": "), ce[2] + ". The tests run once it compiles."];
+    } else if (kind === "mismatch") {
+      node = [h("b", null, "It ran, but printed something else. "), "Compare your output with the expected lines under it."];
+    }
+    sum.hidden = !node; if (node) fill(sum, node);
+  }
+  const empty = h("div", { class: "cs-empty" }, h("h2", null, "Nothing loaded yet"), h("p", { class: "cs-empty-p" }, "Press \u201cTry it\u201d on any example with a main function to load it here, edit it and run it."));
   const el = h("section", { class: "console", "aria-label": "Code console" }, plusMark("8px", "8px"), plusMark("8px", "8px", "right"), head, empty, body);
   const dock = h("aside", { class: "console-dock", id: "consoleDock" }, el);
   const peekT = h("span", { class: "pk-t" }, "Console");
@@ -793,7 +868,7 @@ const Con = (() => {
   function setOut(text, cls) { const pre = $("pre", out); pre.className = ""; pre.textContent = text; if (cls) pre.className = cls; }
   function load(it, opts) {
     item = it; tab = 0; empty.style.display = "none"; body.style.display = "flex";
-    title.textContent = it.title || "Code";
+    title.textContent = it.title || "Code"; sum.hidden = true;
     if (it.task) { task.style.display = ""; task.innerHTML = '<span class="label">Task</span>' + inline(it.task); } else task.style.display = "none";
     drawTabs(); editor.set(it.files[0].content, "rust", !it.files[0].editable);
     runBtn.lastChild.textContent = it.kind === "exercise" ? "Run tests" : "Run";
@@ -826,7 +901,7 @@ const Con = (() => {
         if (res.timed_out) list.push(["fail", "Timed out", ""]);
         if (!pt.tests.length && !pt.compileErr) list.push([res.ok ? "pass" : "fail", "Tests", res.ok ? "pass" : "fail"]);
         list.push([res.ok ? "pass" : "fail", res.ok ? "All tests pass" : "Not passing yet", ((Date.now() - started) / 1000).toFixed(1) + "s"]);
-        setRows(list); setOut(res.output.trim() || "(no output)", res.ok ? "" : "");
+        setRows(list); setOut(res.output.trim() || "(no output)", res.ok ? "" : ""); explain("tests", res.output, it); markDiag(res.output);
         it.lastOutput = res.output; if (it.onResult) it.onResult(res.ok, res);
       } else {
         setRows([["wait", "Compiling", runnerLabel()], ["idle", "Run"]].concat(it.check ? [["idle", "Output check"]] : [])); setOut("Compiling…", "dim");
@@ -834,7 +909,10 @@ const Con = (() => {
         const list = [[res.compiled ? "pass" : "fail", "Compile", res.compiled ? "" : "errors"]];
         let passed = null;
         if (res.compiled) {
-          list.push([res.ok ? "pass" : "fail", res.ok ? "Run" : (res.timed_out ? "Run timed out" : "Run stopped with an error"), ((Date.now() - started) / 1000).toFixed(1) + "s"]);
+          const panicked = !res.ok && /panicked at/.test(res.stderr);
+          list.push(res.ok ? ["pass", "Run", ((Date.now() - started) / 1000).toFixed(1) + "s"]
+            : panicked && it.expectPanic ? ["pass", "Stopped by Rust, as intended", "panic"]
+            : ["fail", res.timed_out ? "Run timed out" : panicked ? "Stopped with a panic" : "Run stopped with an error", ""]);
           if (it.check) {
             const o = normOut(res.stdout);
             passed = (it.check.expected == null || o === normOut(it.check.expected)) && (it.check.contains || []).every(s => o.indexOf(s) >= 0);
@@ -842,7 +920,10 @@ const Con = (() => {
           }
         } else if (it.check) list.push(["idle", "Output check", ""]);
         setRows(list);
-        const text = (res.stderr ? res.stderr.trim() + (res.stdout ? "\n\n" : "") : "") + (res.stdout || "");
+        const stderr = (res.stderr || "").replace(/^note: run with `RUST_BACKTRACE=1`.*\n?/m, "").trim();
+        const text = (res.stdout || "") + (stderr ? (res.stdout ? "\n" : "") + stderr : "");
+        explain(!res.compiled ? "compile" : /panicked at/.test(stderr) ? "panic" : passed === false ? "mismatch" : "ok", stderr, it);
+        markDiag(res.stderr || "");
         setOut(text.trim() || "(the program printed nothing)");
         if (passed === false && it.check && it.check.expected != null) $("pre", out).append("\n\n— expected —\n" + it.check.expected);
         it.lastOutput = text; if (it.onResult) it.onResult(passed, res);
@@ -862,35 +943,37 @@ function codeView(o) {
   const lines = highlightLines(o.code, o.lang || langOf(o.file));
   const copy = h("button", { type: "button", onclick: () => copyText(o.code, copy) }, ic("copy", "sm"), h("span", null, t("copy")));
   const tools = [copy];
-  if (o.runnable) tools.unshift(h("button", { class: "load", type: "button", onclick: o.runnable }, ic("play", "sm"), h("span", null, t("tryIt"))));
+  if (o.runnable) { const lb = h("button", { class: "load", type: "button", onclick: () => o.runnable(true) }, ic("play", "sm"), h("span", null, t("tryIt"))); lb.__load = () => o.runnable(false); tools.unshift(lb); }
   return h("div", { class: "code" }, h("div", { class: "code-head" }, h("span", { class: "fname" }, o.file || o.lang || ""), h("span", { class: "sp" }), tools),
     h("pre", null, h("code", null, lines.map((ln, i) => h("span", { class: "ln" + (hl.has(i + 1) ? " hl" : ""), html: ln })))));
 }
-const isRunnableRust = (code, lang) => /^(rust|rs)$/i.test(lang || "") && /fn\s+main\s*\(/.test(code || "");
+/* runnable in the console: Rust with a main function and no crates beyond the standard library */
+const isRunnableRust = (code, lang) => /^(rust|rs)$/i.test(lang || "") && /fn\s+main\s*\(/.test(code || "") &&
+  !/^\s*(?:use|extern crate)\s+(?!std\b|core\b|alloc\b|crate\b|self\b|super\b)[a-z_]\w*\s*(?:::|;|\s+as\b)/m.test(code || "");
 const CALLOUT = { tip: ["bulb", "Tip"], note: ["info", "Note"], warning: ["alert", "Watch out"], analogy: ["puzzle", "Analogy"], key: ["key", "Remember"], example: ["search", "Example"] };
 
 function renderBlock(b, les) {
   switch (b.type) {
-    case "text": return h("div", { class: "block prose" }, b.title ? h("h3", null, b.title) : null, h("div", { html: md(b.md) }));
+    case "text": return h("div", { class: "block prose" }, b.title ? h("h2", { html: inline(b.title) }) : null, h("div", { html: md(b.md) }));
     case "callout": { const k = CALLOUT[b.kind] ? b.kind : "note"; return h("aside", { class: "block callout " + k }, h("div", { class: "c-h" }, ic(CALLOUT[k][0], "sm"), h("span", { class: "label" }, CALLOUT[k][1]), b.title ? h("b", null, b.title) : null), h("div", { class: "prose", html: md(b.md) })); }
     case "code": {
-      const run = isRunnableRust(b.code, b.lang || langOf(b.file)) ? () => Con.load(scratchItem(b, les), { open: true, focus: true }) : null;
+      const run = isRunnableRust(b.code, b.lang || langOf(b.file)) ? user => Con.load(scratchItem(b, les), user ? { open: true, focus: true } : null) : null;
       const out = b.output ? h("div", { class: "out" }, h("span", { class: "label" }, b.output_label || t("output")), h("pre", null, b.output)) : null;
       const cv = codeView({ code: b.code, lang: b.lang, file: b.file, highlight: b.highlight, runnable: run }); if (out) cv.append(out);
-      return h("div", { class: "block" }, b.title ? h("h3", { class: "block-h" }, b.title) : null, cv, b.caption ? h("div", { class: "caption", html: inline(b.caption) }) : null, b.explain ? h("div", { class: "prose explain", html: md(b.explain) }) : null);
+      return h("div", { class: "block" }, b.title ? h("h2", { class: "block-h", html: inline(b.title) }) : null, cv, b.caption ? h("div", { class: "caption", html: inline(b.caption) }) : null, b.explain ? h("div", { class: "prose explain", html: md(b.explain) }) : null);
     }
     case "stepper": return stepperBlock(b);
     case "derivation": return derivationBlock(b);
     case "reveal": return revealBlock(b);
     case "from_book": return h("figure", { class: "block frombook", style: "margin-left:auto;margin-right:auto" }, h("div", { class: "label" }, ic("book", "sm"), t("frombook") + (b.source ? " · " + b.source : "")), h("div", { class: "prose", html: md(b.md) }), b.code ? codeView({ code: b.code, lang: b.lang }) : null);
-    case "table": return h("div", { class: "block" }, b.title ? h("h3", { class: "block-h" }, b.title) : null, h("div", { class: "tablewrap" }, h("table", null, h("thead", null, h("tr", null, b.headers.map(x => h("th", { html: inline(x) })))), h("tbody", null, b.rows.map(r => h("tr", null, r.map(c => h("td", { html: inline(c) }))))))));
+    case "table": return h("div", { class: "block" }, b.title ? h("h2", { class: "block-h", html: inline(b.title) }) : null, h("div", { class: "tablewrap" }, h("table", null, h("thead", null, h("tr", null, b.headers.map(x => h("th", { html: inline(x) })))), h("tbody", null, b.rows.map(r => h("tr", null, r.map(c => h("td", { html: inline(c) }))))))));
     case "flow": return flowBlock(b);
     case "svg": return h("figure", { class: "block figure", style: "margin-left:auto;margin-right:auto" }, h("div", { html: sanitizeSvg(b.svg) }), b.caption ? h("figcaption", { html: inline(b.caption) }) : null);
     case "quiz": return quizBlock(b, les);
     case "exercise": return exerciseBlock(b, les);
     case "playground": return playgroundBlock(b, les);
     case "flashcards": return flashBlock(b);
-    case "summary": return h("div", { class: "block summary" }, h("h3", null, b.title || t("summary")), h("ol", null, b.points.map(p => h("li", { html: inline(p) }))));
+    case "summary": return h("div", { class: "block summary" }, h("h2", null, b.title || t("summary")), h("ol", null, b.points.map(p => h("li", null, h("span", { html: inline(p) })))));
     default: return h("div", { class: "block" }, "[" + b.type + "]");
   }
 }
@@ -920,7 +1003,7 @@ function stepperBlock(b) {
     if (cv && s.output) cv.append(h("div", { class: "out" }, h("span", { class: "label" }, t("output")), h("pre", null, s.output)));
     fill(stage, h("div", { class: "step-title" }, s.title || ""), s.md ? h("div", { class: "prose", style: "margin-bottom:12px", html: md(s.md) }) : null, cv);
   });
-  const root = h("div", { class: "block panel" }, h("div", { class: "p-h" }, ic("steps"), b.title || "Walkthrough", h("span", { class: "label" }, b.steps.length + " steps")), stage, ctl.foot);
+  const root = h("div", { class: "block panel" }, h("div", { class: "p-h" }, ic("steps"), h("span", { html: inline(b.title || "Walkthrough") }), h("span", { class: "label" }, b.steps.length + " steps")), stage, ctl.foot);
   ctl.go(0); return root;
 }
 function derivationBlock(b) {
@@ -947,7 +1030,7 @@ function flowBlock(b) {
   function show(i) { cur = i; nodes.forEach((n, j) => { n.classList.toggle("on", j <= i); n.classList.toggle("cur", j === i); }); detail.innerHTML = md(b.nodes[i].detail || ""); nxt.disabled = i >= b.nodes.length - 1; }
   const nxt = h("button", { class: "btn sm", type: "button", onclick: () => show(cur + 1) }, t("next"), ic("chev", "sm"));
   const rst = h("button", { class: "btn ghost sm", type: "button", onclick: () => { cur = -1; nodes.forEach(n => n.classList.remove("on", "cur")); detail.textContent = ""; nxt.disabled = false; } }, t("again"));
-  return h("div", { class: "block panel" }, h("div", { class: "p-h" }, ic("flow"), b.title || "Process", h("span", { class: "label" }, b.nodes.length + " stages")), h("div", { class: "p-b" }, track, detail), h("div", { class: "p-f" }, nxt, rst));
+  return h("div", { class: "block panel" }, h("div", { class: "p-h" }, ic("flow"), h("span", { html: inline(b.title || "Process") }), h("span", { class: "label" }, b.nodes.length + " stages")), h("div", { class: "p-b" }, track, detail), h("div", { class: "p-f" }, nxt, rst));
 }
 
 /* ───────────── quizzes and tests ───────────── */
@@ -978,13 +1061,13 @@ function qText(q, numeric) {
 function qOrder(q, uid) {
   const n = q.items.length; let order = [...Array(n).keys()]; const rnd = rng(uid);
   const shuffle = () => { for (let k = 0; k < 6; k++) { for (let i = n - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; } if (order.some((v, i) => v !== i)) break; } };
-  shuffle(); const ul = h("ol", { class: "order-list" }); let locked = false;
+  shuffle(); const ul = h("ol", { class: "order-list" }); let locked = false, touched = false;
   const draw = () => ul.replaceChildren(...order.map((idx, pos) => h("li", null, h("span", { html: inline(q.items[idx]) }),
-    h("button", { class: "btn ghost sm", type: "button", disabled: locked || pos === 0, "aria-label": t("moveUp"), onclick: () => { [order[pos - 1], order[pos]] = [order[pos], order[pos - 1]]; draw(); ul.children[pos - 1].querySelector("button").focus(); } }, "↑"),
-    h("button", { class: "btn ghost sm", type: "button", disabled: locked || pos === n - 1, "aria-label": t("moveDown"), onclick: () => { [order[pos + 1], order[pos]] = [order[pos], order[pos + 1]]; draw(); const b2 = ul.children[pos + 1].querySelectorAll("button")[1]; if (!b2.disabled) b2.focus(); } }, "↓"))));
+    h("button", { class: "btn ghost sm", type: "button", disabled: locked || pos === 0, "aria-label": t("moveUp"), onclick: () => { touched = true; [order[pos - 1], order[pos]] = [order[pos], order[pos - 1]]; draw(); ul.children[pos - 1].querySelector("button").focus(); } }, "↑"),
+    h("button", { class: "btn ghost sm", type: "button", disabled: locked || pos === n - 1, "aria-label": t("moveDown"), onclick: () => { touched = true; [order[pos + 1], order[pos]] = [order[pos], order[pos + 1]]; draw(); const b2 = ul.children[pos + 1].querySelectorAll("button")[1]; if (!b2.disabled) b2.focus(); } }, "↓"))));
   draw();
-  return { el: ul, answered: () => true, correct: () => order.every((v, i) => v === i), lock: v => { locked = v; draw(); }, mark: ok => { ul.classList.remove("good", "bad"); ul.classList.add(ok ? "good" : "bad"); },
-    reveal: () => { order = [...Array(n).keys()]; ul.classList.remove("bad"); ul.classList.add("good"); draw(); }, reset: () => { order = [...Array(n).keys()]; shuffle(); ul.classList.remove("good", "bad"); draw(); } };
+  return { el: ul, answered: () => touched, correct: () => order.every((v, i) => v === i), lock: v => { locked = v; draw(); }, mark: ok => { ul.classList.remove("good", "bad"); ul.classList.add(ok ? "good" : "bad"); },
+    reveal: () => { order = [...Array(n).keys()]; ul.classList.remove("bad"); ul.classList.add("good"); draw(); }, reset: () => { touched = false; order = [...Array(n).keys()]; shuffle(); ul.classList.remove("good", "bad"); draw(); } };
 }
 function makeQuestion(q0, qi, quizId) {
   const q = q0.type === "truefalse" ? Object.assign({}, q0, { type: "single", options: [t("tTrue"), t("tFalse")], answer: q0.answer ? 0 : 1 }) : q0;
@@ -1002,7 +1085,8 @@ function makeQuestion(q0, qi, quizId) {
   const actions = h("div", { class: "q-actions" });
   const api = { el: root, impl, actions, hintBtn, answered: impl.answered, hintsUsed: () => used };
   api.show = (ok, reveal) => { impl.mark(ok); if (reveal && !ok) impl.reveal();
-    fb.replaceChildren(h("div", { class: "fb pop " + (ok ? "good" : "bad") }, h("strong", null, ic(ok ? "check" : "cross", "sm"), ok ? t("correct") : t("wrong")), (ok || reveal) && q.explanation ? h("div", { class: "prose", html: md(q.explanation) }) : (!ok ? h("div", null, "Use a hint or try again.") : null))); };
+    fb.replaceChildren(h("div", { class: "fb pop " + (ok ? "good" : "bad") }, h("div", { class: "fb-h" }, ic(ok ? "check" : "cross", "sm"), ok ? t("correct") : t("wrong")), (ok || reveal) && q.explanation ? h("div", { class: "prose", html: md(q.explanation) }) : (!ok ? h("div", null, "Use a hint or try again.") : null))); };
+  api.nudge = () => fb.replaceChildren(h("div", { class: "fb pop bad" }, h("div", { class: "fb-h" }, ic("info", "sm"), q.type === "order" ? "Move at least one item first." : q.type === "fill" || q.type === "numeric" ? "Type an answer first." : "Choose an answer first.")));
   api.clear = () => { fb.replaceChildren(); impl.reset(); impl.lock(false); };
   if (impl.input) impl.input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); const c = actions.querySelector("button"); if (c && !c.disabled) c.click(); } });
   root.append(actions, hintBox, fb); if (hintBtn) actions.append(hintBtn);
@@ -1016,7 +1100,7 @@ function quizBlock(b, les) {
     if (isTest) { badge.className = "tag " + (st.passed ? "pass" : st.attempts ? "fail" : ""); badge.textContent = st.attempts ? t("best") + " " + Math.round(st.best * 100) + "%" : t("needScore", Math.round(need * 100)); }
     else { badge.className = "tag " + (st.correct.length === b.questions.length ? "pass" : ""); badge.textContent = st.correct.length + " / " + b.questions.length + " correct"; }
   };
-  const root = h("section", { class: "block quiz" + (isTest ? " is-test" : "") }, h("div", { class: "p-h" }, ic(isTest ? "flag" : "list"), b.title || (isTest ? t("test") : "Quiz"), badge));
+  const root = h("section", { class: "block quiz" + (isTest ? " is-test" : "") }, h("div", { class: "p-h" }, ic(isTest ? "flag" : "list"), h("span", { html: inline(b.title || (isTest ? t("test") : "Quiz")) }), badge));
   showBadge();
   if (b.intro) root.append(h("div", { class: "quiz-intro prose", html: md(b.intro) }));
   const body = h("div"); root.append(body); let qs = [];
@@ -1027,7 +1111,7 @@ function quizBlock(b, les) {
       const chk = h("button", { class: "btn sm", type: "button" }, t("check")), retry = h("button", { class: "btn ghost sm", type: "button", hidden: true }, t("retry")), rev = h("button", { class: "btn ghost sm", type: "button", hidden: true }, t("showAnswer"));
       if (st.correct.indexOf(i) >= 0) { const done = h("span", { class: "tag pass" }, ic("check", "sm"), "Answered correctly before"); x.actions.prepend(done); }
       chk.onclick = () => {
-        if (!x.answered()) { toast("Choose or type an answer first.", "info"); return; }
+        if (!x.answered()) { x.nudge(); return; }
         const ok = x.impl.correct(); st.attempts++;
         if (ok) { x.impl.lock(true); x.show(true); chk.disabled = true; retry.hidden = rev.hidden = true; if (st.correct.indexOf(i) < 0) { st.correct.push(i); log("quiz", b.id, "q" + (i + 1)); } }
         else { x.show(false); retry.hidden = rev.hidden = false; }
@@ -1070,12 +1154,12 @@ function playgroundBlock(b, les) {
   const hintBtn = hints.length ? h("button", { class: "btn ghost sm", type: "button", onclick: () => { hintBox.append(h("div", { class: "hint pop" }, ic("bulb", "sm"), h("span", { html: inline(hints[used]) }))); used++; hintBtn.lastChild.textContent = t("hint") + " " + used + "/" + hints.length; hintBtn.disabled = used >= hints.length; } }, ic("bulb", "sm"), h("span", null, t("hint") + " 0/" + hints.length)) : null;
   const card = h("section", { class: "block runnable", id: "b-" + b.id });
   const item = () => ({
-    kind: "play", id: b.id, card, title: b.title || "Playground", task: b.task, check,
+    kind: "play", id: b.id, card, title: b.title || "Playground", task: b.task, check, expectPanic: !!b.expect_panic,
     files: [{ path: "main.rs", content: P.code[key] != null ? P.code[key] : b.code, original: b.code, editable: true, key }],
     onResult: (passed) => { st.runs++; st.lastRun = new Date().toISOString(); if (passed === true && !st.passed) { st.passed = true; log("playground", b.id, "passed"); stamp("Verified"); } else log("run", b.id); setTag(); save(); maybeAutoComplete(les); if (window.__drawFinish) window.__drawFinish(); }
   });
   const open = h("button", { class: "btn", type: "button", onclick: () => Con.load(item(), { open: true, focus: true }) }, ic("term", "sm"), t("loadConsole"));
-  fill(card, h("div", { class: "p-h" }, ic(check ? "flag" : "term"), b.title || "Playground", tag),
+  fill(card, h("div", { class: "p-h" }, ic(check ? "flag" : "term"), h("span", { html: inline(b.title || "Playground") }), tag),
     h("div", { class: "p-b" }, b.md ? h("div", { class: "prose", style: "margin-bottom:14px", html: md(b.md) }) : null,
       b.task ? h("div", { class: "task" }, h("span", { class: "label" }, "Task"), h("div", { class: "prose", html: md(b.task) })) : null,
       codeView({ code: P.code[key] != null ? P.code[key] : b.code, lang: "rust", file: "main.rs" }), hintBox),
@@ -1138,7 +1222,7 @@ function exerciseBlock(b, les) {
     };
     foot.append(sb);
   }
-  fill(card, h("div", { class: "p-h" }, ic("tool"), t("exercise") + ": " + b.title, b.difficulty ? h("span", { class: "tag", style: "margin-left:auto" }, b.difficulty) : null, tag),
+  fill(card, h("div", { class: "p-h" }, ic("tool"), h("span", { html: inline(t("exercise") + ": " + b.title) }), b.difficulty ? h("span", { class: "tag", style: "margin-left:auto" }, b.difficulty) : null, tag),
     h("div", { class: "p-b" }, parts, hintBox, solBox), foot);
   if (b.difficulty) tag.style.marginLeft = "0";
   return card;
@@ -1171,15 +1255,18 @@ function armReveal(container) {
 }
 function fmtMin(m) { m = Math.round(m); return m < 60 ? m + " min" : Math.floor(m / 60) + " h " + (m % 60) + " min"; }
 function ago(iso) { const s = (Date.now() - new Date(iso)) / 1000; if (s < 60) return "just now"; if (s < 3600) return Math.round(s / 60) + " min ago"; if (s < 86400) return Math.round(s / 3600) + " h ago"; return Math.round(s / 86400) + " d ago"; }
+const BLOCK_TITLE = {};
+Object.values(C.lessons).forEach(l => (l.blocks || []).forEach(b => { if (b.id) BLOCK_TITLE[b.id] = (b.title || l.title).replace(/[`*]/g, ""); }));
 function activityText(a) {
-  const les = C.lessons[a.id], title = les ? les.title : a.id;
+  const les = C.lessons[a.id], title = les ? les.title : a.id, bt = "\u201c" + (BLOCK_TITLE[a.id] || a.id) + "\u201d";
   switch (a.kind) {
     case "lesson": return ["check", "Completed lesson “" + title + "”"];
     case "test": return ["flag", "Chapter test scored " + a.detail];
-    case "exercise": return ["tool", "Exercise " + a.id + " " + (a.detail === "passed" ? "passed its tests" : a.detail)];
-    case "playground": return ["term", "Challenge " + a.id + " verified"];
-    case "quiz": return ["list", "Answered " + a.id + " " + a.detail + " correctly"];
-    case "run": return ["play", "Ran " + a.id];
+    case "exercise": return ["tool", "Exercise " + bt + (a.detail === "passed" ? " passed its tests" : a.detail === "checklist" || a.detail === "marked done" ? " done" : " " + a.detail)];
+    case "playground": return ["term", "Challenge " + bt + " verified"];
+    case "quiz": return ["list", "Answered question " + a.detail.replace("q", "") + " of " + bt];
+    case "run": return ["play", "Ran " + bt + (a.detail === "fail" ? ": tests not passing yet" : a.detail === "pass" ? ": tests pass" : "")];
+    case "visit": return ["book", "Opened \u201c" + title + "\u201d"];
     default: return ["dot", a.kind + " " + a.id];
   }
 }
@@ -1209,16 +1296,25 @@ function renderHome() {
     : pct === 100 ? h("h1", { class: "display" }, "Every lesson ", h("em", null, "verified"), ".")
     : h("h1", { class: "display" }, "Chapter " + (CH_OF[nid] + 1) + ": ", h("em", null, nch.title), ".");
   const lead = firstVisit ? (C.meta.subtitle || "") : pct === 100 ? "You have completed every written lesson. New chapters appear here as they are added." : tot.les + " of " + ORDER.length + " lessons complete. Your code, answers and scores are saved " + (serverMode ? "to progress/progress.json." : "in this browser.");
-  const resume = nles ? h("div", { class: "resume-card" }, h("span", { class: "label" }, firstVisit ? "First lesson" : "Up next"), h("h2", null, nles.title), h("p", null, nles.summary || ""),
+  const resume = nles ? h("div", { class: "resume-card" }, h("span", { class: "label" }, firstVisit ? "First lesson" : lessonStarted(nid) ? "Continue" : "Up next"), h("h2", null, nles.title), h("p", null, nles.summary || ""), lessonStarted(nid) && leftIn(nid) ? h("p", { class: "left" }, leftIn(nid)) : null,
     h("div", { class: "resume-meter" }, h("div", { class: "meter" }, h("i", { style: "width:" + chapterPct(nch) + "%" })), h("span", { class: "meter-num" }, chapterPct(nch) + "% of chapter")),
     h("a", { class: "btn solid-light", href: "#/lesson/" + nid }, firstVisit ? t("start") : t("resume"), ic("chev", "sm"))) : null;
   const band = h("section", { class: "band" }, plusMark("24px", "24px"), plusMark("24px", "24px", "right"),
-    h("div", { class: "band-inner" }, h("div", null, statement, h("p", { class: "band-lead" }, lead), h("div", { class: "band-actions" }, !resume && nid ? h("a", { class: "btn solid-light", href: "#/lesson/" + nid }, firstVisit ? t("start") : t("resume"), ic("chev", "sm")) : null, h("a", { class: "btn on-dark", href: "#/progress" }, "See progress"), h("a", { class: "btn on-dark", href: "#/glossary" }, "Glossary"))), resume));
+    h("div", { class: "band-inner" }, h("div", null, statement, h("p", { class: "band-lead" }, lead), resume ? null : h("div", { class: "band-actions" }, h("a", { class: "btn on-dark", href: "#/progress" }, "See everything you did"))), resume));
   const tile = (label, val, sub) => h("div", { class: "tile" }, h("span", { class: "label" }, label), h("b", null, val), sub ? h("small", null, sub) : null);
   const tiles = h("div", { class: "tiles" }, tile("Lessons", tot.les + "/" + ORDER.length, pct + "% of written lessons"), tile("Exercises", tot.exP + "/" + tot.ex, "passing their tests"),
     tile("Challenges", tot.pgP + "/" + tot.pg, "outputs verified"), tile("Quiz answers", tot.qC + "/" + tot.q, "answered correctly"), tile("Chapter tests", tot.testsP + "/" + tot.tests, "passed"), tile("Streak", streak() + (streak() === 1 ? " day" : " days"), fmtMin(tot.minutes) + " studied"));
   const recent = P.activity.slice(0, 6);
-  fill(el, band, h("div", { class: "wrap" }, tiles,
+  /* first-run orientation: how a lesson works and whether code can run here. Gone once a lesson is complete. */
+  const how = tot.les ? null : h("section", { class: "how", "aria-labelledby": "howH" }, h("h2", { class: "h2", id: "howH" }, "How each lesson works"),
+    h("ol", { class: "how-steps" },
+      h("li", null, h("b", null, "Read a short explanation"), h("span", null, "Every new term is defined the first time it appears, and collected in the glossary.")),
+      h("li", null, h("b", null, "Run and change real Rust"), h("span", null, "Examples open in the console. Press Run, read what the compiler says, change the code, run again.")),
+      h("li", null, h("b", null, "Prove it"), h("span", null, "Quizzes, exercises checked by real tests, and a chapter test with a 70% pass mark. Everything you do is saved."))),
+    h("p", { class: "how-run" }, ic(usesLocal() ? "check" : "info", "sm"), usesLocal() ? "Code runs on this computer with your installed Rust, and progress is saved to progress/progress.json."
+      : serverMode ? "Rust is not installed on this computer, so code runs on play.rust-lang.org (needs internet). Install Rust from rustup.rs and restart start.sh to run it locally."
+      : "Opened as a file: code runs on play.rust-lang.org (needs internet) and progress is kept in this browser. Start the course with start.sh / start.bat to run code locally and save progress to a file."));
+  fill(el, band, h("div", { class: "wrap" }, how, tiles,
     h("section", { class: "section" }, h("div", { class: "section-head" }, h("h2", { class: "h2" }, "The course"), h("p", null, (C.chapters.length + ROADMAP.length) + " chapters from first program to systems programming. Each square is a lesson; the framed square is the chapter test.")),
       ledger(), h("div", { class: "legend" }, h("span", null, h("i", { class: "cell" }), "Not started"), h("span", null, h("i", { class: "cell started" }), "Started"), h("span", null, h("i", { class: "cell done" }), "Complete"), h("span", null, h("i", { class: "cell gate" }), "Chapter test"))),
     h("section", { class: "section" }, h("div", { class: "section-head" }, h("h2", { class: "h2" }, "Your study log")),
@@ -1262,6 +1358,17 @@ function renderGlossary() {
   const inp = h("input", { class: "search", type: "search", placeholder: "Search " + (C.glossary || []).length + " terms", "aria-label": "Search the glossary", oninput: e => draw(e.target.value) });
   fill(el, h("div", { class: "page" }, h("h1", { class: "page-title" }, "Glossary"), h("p", { class: "page-lead" }, "Every term the course defines, with the lesson that introduces it."), inp, list), footer()); draw("");
 }
+function chapterDone(ci) {
+  const ch = C.chapters[ci], nextCh = C.chapters[ci + 1], road = !nextCh && ROADMAP[0];
+  const test = C.lessons[ch.lessons[ch.lessons.length - 1]]; const qb = test && test.blocks.find(b => b.type === "quiz"); const st = qb && P.quizzes[qb.id];
+  return h("section", { class: "chapter-done" }, plusMark("12px", "12px", "right"),
+    h("span", { class: "label", style: "color:var(--sky-paper)" }, "Chapter " + (ci + 1) + " verified" + (st && st.best ? " · best " + Math.round(st.best * 100) + "%" : "")),
+    h("h2", null, "You finished ", h("em", null, ch.title), "."),
+    ch.goals && ch.goals.length ? [h("p", { style: "margin:0" }, "You can now:"), h("ul", null, ch.goals.map(g => h("li", { html: inline(g) })))] : null,
+    nextCh ? h("a", { class: "btn", href: "#/lesson/" + nextCh.lessons[0] }, "Start chapter " + (ci + 2) + ": " + nextCh.title, ic("chev", "sm"))
+      : road ? h("p", { style: "margin:0" }, "Next up is chapter " + (ci + 2) + ", \u201c" + road.title + "\u201d. It is being written; it will appear on the course page when it is ready.")
+      : h("a", { class: "btn", href: "#/progress" }, "See everything you did", ic("chev", "sm")));
+}
 function renderLesson(id) {
   const les = C.lessons[id]; const el = main();
   const ci = CH_OF[id], ch = C.chapters[ci], pos = ORDER.indexOf(id), isTest = les.kind === "test";
@@ -1277,7 +1384,9 @@ function renderLesson(id) {
   const drawFinish = () => {
     const p = practiceOf(les); const done = lessonDone(id);
     const chip = (label, a, b2) => b2 ? h("span", { class: "tag " + (a === b2 ? "pass" : "") }, label + " " + a + "/" + b2) : null;
-    fill(fin, h("h3", null, done ? t("lessonDone") : isTest ? "Pass the test to complete the chapter" : t("yourPractice")),
+    if (isTest && done) { fill(fin, chapterDone(ci)); fin.className = "finish-ch"; return; }
+    fin.className = "finish";
+    fill(fin, h("h2", null, done ? t("lessonDone") : isTest ? "Pass the test to complete the chapter" : t("yourPractice")),
       isTest ? null : h("div", { class: "row" }, chip("Quiz", p.qC, p.qT), chip("Exercises", p.eP, p.eT), chip("Challenges", p.pP, p.pT)),
       !done && !isTest && (p.qC < p.qT || p.eP < p.eT || p.pP < p.pT) ? h("p", { class: "caption", style: "margin:0" }, "The lesson completes itself once all practice above is done. You can also mark it complete now and come back later.") : null,
       h("div", { class: "row" }, !done && !isTest ? h("button", { class: "btn", type: "button", onclick: () => completeLesson(id) }, ic("check", "sm"), t("finishLesson")) : null,
@@ -1287,14 +1396,13 @@ function renderLesson(id) {
   window.__drawFinish = drawFinish; drawFinish(); col.append(fin);
   const prev = pos > 0 ? ORDER[pos - 1] : null, nxt = pos < ORDER.length - 1 ? ORDER[pos + 1] : null;
   col.append(h("nav", { class: "pager", "aria-label": "Lesson navigation" }, prev ? h("a", { href: "#/lesson/" + prev }, h("small", null, t("prev")), C.lessons[prev].title) : h("span"), nxt ? h("a", { class: "nx", href: "#/lesson/" + nxt }, h("small", null, t("next")), C.lessons[nxt].title) : h("span", { class: "nx" })));
-  fill(el, h("div", { class: "lesson-grid" }, col, isTest ? null : Con.dock), isTest ? null : Con.peek);
-  if (isTest) { el.firstChild.style.gridTemplateColumns = "minmax(0,1fr)"; }
-  else {
+  const hasCode = !isTest && !!col.querySelector(".runnable, .code-head .load");
+  fill(el, h("div", { class: "lesson-grid" + (hasCode ? "" : " solo") }, col, hasCode ? Con.dock : null), hasCode ? Con.peek : null);
+  if (hasCode) {
     Con.setRunner();
     const loadedHere = Con.item && Con.item.card && col.contains(Con.item.card);
-    if (!loadedHere) { const first = col.querySelector(".runnable"); if (first && first.__load) first.__load(); else Con.clear(); }
+    if (!loadedHere) { const first = col.querySelector(".runnable"); if (first && first.__load) first.__load(); else { const tryIt = col.querySelector(".code-head .load"); if (tryIt) tryIt.__load(); else Con.clear(); } }
   }
-  armReveal(col);
 }
 
 /* ───────────── chrome + routing ───────────── */
@@ -1302,7 +1410,8 @@ const openChapters = new Set();
 function renderRail(current) {
   const rail = $("#rail"); const curCh = current && CH_OF[current] != null ? C.chapters[CH_OF[current]].id : null;
   if (curCh) openChapters.add(curCh);
-  fill(rail, C.chapters.map((ch, ci) => {
+  const rn = currentRoute && C.lessons[currentRoute] ? "lesson" : currentRoute;
+  fill(rail, h("nav", { class: "rail-nav", "aria-label": "Main" }, [["home", "Course"], ["progress", "Progress"], ["glossary", "Glossary"]].map(([k, l]) => h("a", { href: "#/" + k, "aria-current": rn === k ? "page" : null }, l))), C.chapters.map((ch, ci) => {
     const open = openChapters.has(ch.id);
     const wrap = h("div", { class: "rail-ch" + (open ? " open" : "") + (ch.id === curCh ? " cur" : "") },
       h("button", { type: "button", "aria-expanded": String(open), onclick: () => { open ? openChapters.delete(ch.id) : openChapters.add(ch.id); renderRail(currentRoute); } },
@@ -1312,7 +1421,7 @@ function renderRail(current) {
   }), ROADMAP.length ? h("p", { class: "caption", style: "padding:14px 16px" }, ROADMAP.length + " more chapters are being written: see the course page.") : null);
 }
 function refreshChrome() {
-  const pct = overallPct(); const m = $("#meter > i"); if (m) m.style.width = pct + "%"; const mn = $("#meterNum"); if (mn) mn.textContent = pct + "%";
+  const pct = overallPct(); const m = $("#meter > i"); if (m) { m.style.width = pct + "%"; m.parentNode.setAttribute("aria-valuenow", String(pct)); } const mn = $("#meterNum"); if (mn) mn.textContent = pct + "%";
   renderRail(currentRoute);
 }
 function route() {

@@ -232,6 +232,7 @@ blocks:
   - type: playground
     id: ch02-play-parse-fail
     starter_ok: panic
+    expect_panic: true
     title: "What happens with bad input?"
     lang: rust
     md: |

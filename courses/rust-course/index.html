@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#09234f">
 <title>Rust: From First Program to Systems Programming</title>
 <link rel="preload" href="assets/fonts/dm-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 28 28%27%3E%3Crect width=%2728%27 height=%2728%27 fill=%27%2309234f%27/%3E%3Cpath d=%27M8 14.5l4 4 8-9%27 fill=%27none%27 stroke=%27%23c4f0ff%27 stroke-width=%272.4%27/%3E%3C/svg%3E">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
@@ -24,7 +25,7 @@
   </nav>
   <div class="bar-meter">
     <span id="saveState" class="save-state"></span>
-    <div id="meter" class="meter" role="img" aria-label="Course progress"><i></i></div>
+    <div id="meter" class="meter" role="progressbar" aria-label="Lessons completed, percent" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
     <span id="meterNum" class="meter-num">0%</span>
     <button id="themeBtn" class="icon-btn on-dark" type="button" aria-label="Switch theme"></button>
   </div>

@@ -41,6 +41,7 @@
     {
       "type": "playground",
       "id": "ch01-play-bounds",
+      "expect_panic": true,
       "title": "See it yourself: Rust checks array access",
       "lang": "rust",
       "md": "This is the Rust version of the C mistake: a vector (a growable list) with three items, and an attempt to read item number 10. Press **Run** and read what Rust says. Then change `10` to `2` and run it again.\n",
