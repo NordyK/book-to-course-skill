@@ -9,8 +9,9 @@ def run(code):
         os.makedirs(t+"/src"); src=t+"/src/main.rs"; open(src,"w").write(code)
         c=subprocess.run(["rustc","--edition","2024","-A","warnings","-o",t+"/m","src/main.rs"],cwd=t,capture_output=True,text=True)
         if c.returncode: return "CE", c.stderr
-        r=subprocess.run([t+"/m"],cwd=t,capture_output=True,text=True,timeout=10)
-        return ("ok" if r.returncode==0 else "panic"), (r.stderr if STDERR[0] else r.stdout)
+        r=subprocess.run([t+"/m"],cwd=t,capture_output=True,text=True,timeout=10,env={**os.environ,"RUST_BACKTRACE":"0"})
+        err=re.sub(r"thread '([^']*)' \(\d+\)", r"thread '\1'", r.stderr)  # newer rustc prints a thread id
+        return ("ok" if r.returncode==0 else "panic"), (err if STDERR[0] else r.stdout)
 STDERR=[False]
 n=lambda s:"\n".join(l.rstrip() for l in s.strip().split("\n"))
 for ch in chs:
@@ -30,5 +31,7 @@ for ch in chs:
                 continue
             # a main returning Result may exit non-zero on purpose; the stdout must still match
             if st=="panic" and re.search(r"fn main\(\) -> Result", code): st="ok"
+            # a block that shows a panic on stderr is expected to exit non-zero
+            if st=="panic" and STDERR[0] and "panicked at" in b["output"]: st="ok"
             if st!="ok" or n(out)!=n(b["output"]): print("DIFF",ch,fn,b.get("title"),st,"\n  want:",repr(n(b["output"])),"\n  got: ",repr(n(out) if st!='CE' else out[:400]))
 print("done")

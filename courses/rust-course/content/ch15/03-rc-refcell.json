@@ -1,0 +1,281 @@
+{
+  "title": "Rc<T> and RefCell<T>",
+  "summary": "Shared ownership with reference counting, Rc::clone and strong_count, interior mutability with RefCell and run-time borrow checking, the mock object example, Cell for Copy values, and combining Rc<RefCell<T>> for shared mutable data.",
+  "minutes": 40,
+  "source": {
+    "chapter": "ch15",
+    "sections": [
+      "TRPL 15.4 Rc<T>, the Reference Counted Smart Pointer",
+      "TRPL 15.4 Sharing Data",
+      "TRPL 15.4 Cloning to Increase the Reference Count",
+      "TRPL 15.5 RefCell<T> and the Interior Mutability Pattern",
+      "TRPL 15.5 Enforcing Borrowing Rules at Runtime",
+      "TRPL 15.5 Using Interior Mutability",
+      "TRPL 15.5 Testing with Mock Objects",
+      "TRPL 15.5 Tracking Borrows at Runtime",
+      "TRPL 15.5 Allowing Multiple Owners of Mutable Data",
+      "PR ch9 Interior Mutability",
+      "PR ch4 Rc and Arc: Shared Ownership",
+      "RiA 6.2 Smart pointer building blocks",
+      "CR Day 3 Rc",
+      "CR Day 3 Cell and RefCell"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Ownership usually has one owner. Sometimes a value really has several: in a graph, a node may be pointed to by many edges and should live as long as any of them. **`Rc<T>`** (reference counted) allows that. It keeps a count of how many `Rc`s point to the value and drops the value when the count reaches zero.\n\n*The Rust Programming Language*'s picture: a TV in a family room. The first person in turns it on; others come and watch; the last one to leave turns it off. `Rc<T>` is for **single-threaded** code; chapter 16 has `Arc<T>` for threads.\n"
+    },
+    {
+      "type": "text",
+      "title": "Sharing a list",
+      "md": "Two lists `b` and `c` should share the tail `a`. With `Box`, the first `Cons` would **move** `a` and the second could not use it. With `Rc`, both hold a counted pointer:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::rc::Rc;\n\nenum List {\n    Cons(i32, Rc<List>),\n    Nil,\n}\n\nuse List::{Cons, Nil};\n\nfn main() {\n    let a = Rc::new(Cons(5, Rc::new(Cons(10, Rc::new(Nil)))));\n    println!(\"count after creating a = {}\", Rc::strong_count(&a));\n    let _b = Cons(3, Rc::clone(&a));\n    println!(\"count after creating b = {}\", Rc::strong_count(&a));\n    {\n        let _c = Cons(4, Rc::clone(&a));\n        println!(\"count after creating c = {}\", Rc::strong_count(&a));\n    }\n    println!(\"count after c goes out of scope = {}\", Rc::strong_count(&a));\n}\n",
+      "output": "count after creating a = 1\ncount after creating b = 2\ncount after creating c = 3\ncount after c goes out of scope = 2\n",
+      "explain": "`Rc::clone(&a)` does not copy the list; it increments the count and returns another pointer. Writing `Rc::clone(&a)` rather than `a.clone()` is the convention, so deep clones and cheap count bumps look different when reading code."
+    },
+    {
+      "type": "svg",
+      "caption": "`b` and `c` each start with their own `Cons`, then point to the shared list `a`. The count on `a`'s allocation is 3 while all three exist.",
+      "svg": "<svg viewBox='0 0 520 170' xmlns='http://www.w3.org/2000/svg' font-family='ui-monospace, monospace' font-size='13'>\n  <g fill='none' stroke='currentColor' stroke-width='1'>\n    <rect x='200' y='60' width='70' height='36' rx='4'/>\n    <rect x='300' y='60' width='70' height='36' rx='4'/>\n    <rect x='400' y='60' width='60' height='36' rx='4'/>\n    <rect x='40' y='16' width='70' height='36' rx='4'/>\n    <rect x='40' y='104' width='70' height='36' rx='4'/>\n    <path d='M270 78 H296 M290 74 L296 78 L290 82'/>\n    <path d='M370 78 H396 M390 74 L396 78 L390 82'/>\n    <path d='M110 34 C150 34, 160 70, 196 72 M190 68 L196 72 L190 76'/>\n    <path d='M110 122 C150 122, 160 88, 196 86 M190 82 L196 86 L190 90'/>\n    <rect x='196' y='56' width='270' height='44' rx='6' stroke-dasharray='4 3'/>\n  </g>\n  <g fill='currentColor'>\n    <text x='52' y='39'>b: 3</text>\n    <text x='52' y='127'>c: 4</text>\n    <text x='212' y='83'>a: 5</text>\n    <text x='318' y='83'>10</text>\n    <text x='412' y='83'>Nil</text>\n    <text x='200' y='124' font-size='12'>shared via Rc: strong_count = 3</text>\n  </g>\n</svg>\n"
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "title": "Rc gives shared, read-only access",
+      "md": "Through an `Rc<T>` you get only `&T`. If several owners could mutate the value, the borrowing rules (one writer or many readers) would be broken. To mutate shared data, combine `Rc` with a type that provides **interior mutability**."
+    },
+    {
+      "type": "text",
+      "title": "Interior mutability and RefCell<T>",
+      "md": "**Interior mutability** is a design pattern that lets you mutate data even through a shared reference. It is safe because the borrowing rules are still enforced, just at **run time** instead of compile time. **`RefCell<T>`** does this:\n\n- `.borrow()` returns a `Ref<T>`, which acts like `&T`;\n- `.borrow_mut()` returns a `RefMut<T>`, which acts like `&mut T`.\n\n`RefCell` counts the active borrows. Asking for `borrow_mut` while any other borrow is alive, or for `borrow` while a mutable one is alive, **panics**. The rules are the same; the check moved from the compiler to the program.\n"
+    },
+    {
+      "type": "table",
+      "title": "Box, Rc and RefCell",
+      "headers": [
+        "",
+        "`Box<T>`",
+        "`Rc<T>`",
+        "`RefCell<T>`"
+      ],
+      "rows": [
+        [
+          "owners",
+          "one",
+          "many",
+          "one"
+        ],
+        [
+          "borrow checking",
+          "compile time",
+          "compile time (shared only)",
+          "run time"
+        ],
+        [
+          "mutation",
+          "if the Box is `mut`",
+          "no",
+          "yes, even through `&RefCell<T>`"
+        ],
+        [
+          "cost",
+          "a heap allocation",
+          "allocation + counter updates",
+          "a borrow counter, checks on each borrow"
+        ],
+        [
+          "threads",
+          "yes",
+          "no (use `Arc`)",
+          "no (use `Mutex`)"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "title": "A use case: mock objects",
+      "md": "*The Rust Programming Language* tests a `LimitTracker` that sends a warning when a user nears a quota. It talks to the outside world through a trait whose method takes `&self`:\n\n```rust\npub trait Messenger {\n    fn send(&self, msg: &str);\n}\n```\n\nA test wants a **mock** messenger that only records the messages so the test can inspect them. But recording means mutating, and `send` gets only `&self`. Changing the trait to `&mut self` would distort the real design just for a test. `RefCell` solves it:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::cell::RefCell;\n\npub trait Messenger {\n    fn send(&self, msg: &str);\n}\n\npub struct LimitTracker<'a, T: Messenger> {\n    messenger: &'a T,\n    value: usize,\n    max: usize,\n}\n\nimpl<'a, T: Messenger> LimitTracker<'a, T> {\n    pub fn new(messenger: &'a T, max: usize) -> LimitTracker<'a, T> {\n        LimitTracker { messenger, value: 0, max }\n    }\n\n    pub fn set_value(&mut self, value: usize) {\n        self.value = value;\n        let percentage_of_max = self.value as f64 / self.max as f64;\n        if percentage_of_max >= 1.0 {\n            self.messenger.send(\"Error: You are over your quota!\");\n        } else if percentage_of_max >= 0.9 {\n            self.messenger.send(\"Urgent warning: You've used up over 90% of your quota!\");\n        } else if percentage_of_max >= 0.75 {\n            self.messenger.send(\"Warning: You've used up over 75% of your quota!\");\n        }\n    }\n}\n\nstruct MockMessenger {\n    sent_messages: RefCell<Vec<String>>,\n}\n\nimpl Messenger for MockMessenger {\n    fn send(&self, message: &str) {\n        self.sent_messages.borrow_mut().push(String::from(message));\n    }\n}\n\nfn main() {\n    let mock = MockMessenger { sent_messages: RefCell::new(vec![]) };\n    let mut tracker = LimitTracker::new(&mock, 100);\n    tracker.set_value(80);\n    tracker.set_value(95);\n    println!(\"{:?}\", mock.sent_messages.borrow());\n}\n",
+      "output": "[\"Warning: You've used up over 75% of your quota!\", \"Urgent warning: You've used up over 90% of your quota!\"]\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::cell::RefCell;\n\nfn main() {\n    let cell = RefCell::new(vec![1, 2, 3]);\n    let first = cell.borrow_mut();\n    let second = cell.borrow_mut(); // a second mutable borrow at once\n    println!(\"{} {}\", first.len(), second.len());\n}\n",
+      "output": "thread 'main' panicked at src/main.rs:6:23:\nRefCell already borrowed\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+      "output_label": "Standard error",
+      "explain": "This compiles, but it breaks the rules at run time, so it panics. `try_borrow_mut()` returns a `Result` instead, for code that wants to handle the conflict."
+    },
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Cell<T> for small Copy values",
+      "md": "`Cell<T>` is a lighter form of interior mutability for `Copy` types: `get()` copies the value out and `set(v)` replaces it. No references to the inside are ever handed out, so no borrow tracking is needed. *Programming Rust* uses it for counters, such as a hit counter on a struct shared by `&`."
+    },
+    {
+      "type": "text",
+      "title": "Rc<RefCell<T>>: shared and mutable",
+      "md": "Combine the two: `Rc` for several owners, `RefCell` for mutation. Every owner can then change the value, and every owner sees the change:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::cell::RefCell;\nuse std::rc::Rc;\n\n#[derive(Debug)]\nenum List {\n    Cons(Rc<RefCell<i32>>, Rc<List>),\n    Nil,\n}\n\nuse List::{Cons, Nil};\n\nfn main() {\n    let value = Rc::new(RefCell::new(5));\n\n    let a = Rc::new(Cons(Rc::clone(&value), Rc::new(Nil)));\n    let b = Cons(Rc::new(RefCell::new(3)), Rc::clone(&a));\n    let c = Cons(Rc::new(RefCell::new(4)), Rc::clone(&a));\n\n    *value.borrow_mut() += 10;\n\n    println!(\"a after = {a:?}\");\n    println!(\"b after = {b:?}\");\n    println!(\"c after = {c:?}\");\n}\n",
+      "output": "a after = Cons(RefCell { value: 15 }, Nil)\nb after = Cons(RefCell { value: 3 }, Cons(RefCell { value: 15 }, Nil))\nc after = Cons(RefCell { value: 4 }, Cons(RefCell { value: 15 }, Nil))\n",
+      "explain": "`value.borrow_mut()` goes through the `Rc` with deref coercion and asks the `RefCell` for a mutable borrow, which ends at the semicolon."
+    },
+    {
+      "type": "playground",
+      "id": "ch15-play-shared-account",
+      "title": "A shared bank account",
+      "lang": "rust",
+      "md": "Two cards share one account. Make `Card` hold an `Rc<RefCell<Account>>` so a payment with either card changes the same balance, and print how many owners the account has.\n",
+      "task": "Print `balance after payments: 70` and `owners: 3`.",
+      "code": "use std::cell::RefCell;\nuse std::rc::Rc;\n\nstruct Account {\n    balance: i64,\n}\n\nstruct Card {\n    account: Account, // TODO: share it\n}\n\nimpl Card {\n    fn pay(&self, amount: i64) {\n        // TODO: subtract amount from the shared balance\n    }\n}\n\nfn main() {\n    let account = Rc::new(RefCell::new(Account { balance: 100 }));\n    let debit = Card { account: Rc::clone(&account) };\n    let credit = Card { account: Rc::clone(&account) };\n    debit.pay(20);\n    credit.pay(10);\n    println!(\"balance after payments: {}\", account.borrow().balance);\n    println!(\"owners: {}\", Rc::strong_count(&account));\n}\n",
+      "expected_output": "balance after payments: 70\nowners: 3\n",
+      "hints": [
+        "`account: Rc<RefCell<Account>>`",
+        "`self.account.borrow_mut().balance -= amount;` works with `&self`: that is interior mutability."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch15-ex-rc",
+      "exercise_dir": "ch15-rc",
+      "title": "Shared inventory with mock notifications",
+      "difficulty": "hard",
+      "goal": "Share mutable state with Rc<RefCell<T>> and test through a trait with a RefCell-based mock.",
+      "behavior": "- `pub trait Notifier { fn notify(&self, msg: &str); }`.\n- `pub struct Store { stock: Rc<RefCell<HashMap<String, u32>>>, notifier: Rc<dyn Notifier> }`. Several `Store` values (branches) may share one stock map.\n- `pub fn new(stock: &Rc<RefCell<HashMap<String, u32>>>, notifier: Rc<dyn Notifier>) -> Store`.\n- `pub fn restock(&self, item: &str, n: u32)` adds to the shared stock.\n- `pub fn sell(&self, item: &str, n: u32) -> Result<(), String>`: fails with `\"not enough <item>\"` (and changes nothing) if stock is too low; on success, if the remaining stock is below 3, calls `notify(\"low stock: <item> (<left>)\")`.\n- `pub struct Recorder { pub messages: RefCell<Vec<String>> }` implementing `Notifier` by recording messages, and `pub fn recorder() -> Rc<Recorder>`.\n",
+      "examples": [
+        {
+          "input": "restock(\"pen\", 5) then sell(\"pen\", 3)",
+          "output": "Ok(()) and one message \"low stock: pen (2)\""
+        }
+      ],
+      "hints": [
+        "`*self.stock.borrow_mut().entry(item.to_string()).or_insert(0) += n;`",
+        "In `sell`, take one `borrow_mut()` into a variable, check and update, then **drop** that borrow before calling `notify` (keep the borrow inside a block). The notifier may not need the stock, but holding borrows across calls is a classic source of `already borrowed` panics.",
+        "`Rc<Recorder>` coerces to `Rc<dyn Notifier>` when you pass `rec.clone()` where `Rc<dyn Notifier>` is expected."
+      ],
+      "solution_explain": "`Store`'s methods take `&self`, yet change the shared map: interior mutability. The block in `sell` ends the `borrow_mut` before `notify` runs. `Rc<dyn Notifier>` is a trait object (chapter 18) so the store works with any notifier; the test's `Recorder` is a mock like the one in the lesson."
+    },
+    {
+      "type": "quiz",
+      "id": "ch15-quiz-rc",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "What does `Rc::clone(&a)` do?",
+          "options": [
+            "Deep-copies the data",
+            "Increments the reference count and returns a new pointer to the same data",
+            "Moves a",
+            "Creates a weak pointer"
+          ],
+          "answer": 1,
+          "explanation": "It is cheap."
+        },
+        {
+          "type": "single",
+          "q": "When is the value inside an Rc dropped?",
+          "options": [
+            "When the first Rc is dropped",
+            "When the strong count reaches zero",
+            "At the end of main",
+            "Never"
+          ],
+          "answer": 1,
+          "explanation": "The last owner turns off the TV."
+        },
+        {
+          "type": "single",
+          "q": "Why can't you mutate through an `Rc<T>` directly?",
+          "options": [
+            "Rc is immutable for performance",
+            "Several owners with mutable access would break the borrowing rules",
+            "It is a compile-time constant",
+            "You can"
+          ],
+          "answer": 1,
+          "explanation": "Use Rc<RefCell<T>>."
+        },
+        {
+          "type": "single",
+          "q": "What happens if you call `borrow_mut()` on a RefCell that is already mutably borrowed?",
+          "options": [
+            "Compile error",
+            "A panic at run time",
+            "It waits",
+            "It returns the same borrow"
+          ],
+          "answer": 1,
+          "explanation": "The checks happen at run time."
+        },
+        {
+          "type": "single",
+          "q": "Which would you use for a shared counter of type `u32` that you increment through `&self`?",
+          "options": [
+            "`Box<u32>`",
+            "`Cell<u32>`",
+            "`Rc<u32>`",
+            "`&mut u32`"
+          ],
+          "answer": 1,
+          "explanation": "Cell is ideal for small Copy values."
+        },
+        {
+          "type": "truefalse",
+          "q": "Rc<T> can be sent to another thread.",
+          "answer": false,
+          "explanation": "Its counter is not thread-safe; use Arc<T>."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "`Rc<T>` gives several owners shared, read-only access; the value is dropped when the last owner goes.",
+        "`Rc::clone` bumps the count; `Rc::strong_count` reports it.",
+        "Interior mutability: `RefCell<T>` allows mutation through `&` and checks the borrowing rules at run time, panicking on violation.",
+        "`Cell<T>` is the light version for `Copy` values.",
+        "`Rc<RefCell<T>>` is the standard way to have shared mutable data in single-threaded code."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "Rc<T>",
+      "def": "A reference-counted smart pointer allowing several owners of the same heap value (single-threaded)."
+    },
+    {
+      "term": "reference counting",
+      "def": "Tracking how many owners a value has and freeing it when the count reaches zero."
+    },
+    {
+      "term": "interior mutability",
+      "def": "A pattern that allows mutating data through shared references, with the rules checked at run time."
+    },
+    {
+      "term": "RefCell<T>",
+      "def": "A type providing interior mutability by tracking borrows at run time."
+    },
+    {
+      "term": "Cell<T>",
+      "def": "Interior mutability for Copy values through get and set, without references."
+    },
+    {
+      "term": "mock object",
+      "def": "A stand-in for a real dependency in tests that records how it was used."
+    }
+  ]
+}

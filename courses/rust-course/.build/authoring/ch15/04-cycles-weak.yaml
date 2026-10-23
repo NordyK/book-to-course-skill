@@ -1,0 +1,433 @@
+title: "Reference cycles and Weak<T>"
+summary: "How Rc and RefCell can create a reference cycle that leaks memory, strong versus weak references, upgrade and downgrade, and a tree whose children own nodes while parents are weak."
+minutes: 30
+source:
+  chapter: ch15
+  sections: ["TRPL 15.6 Reference Cycles Can Leak Memory", "TRPL 15.6 Creating a Reference Cycle", "TRPL 15.6 Preventing Reference Cycles Using Weak<T>", "TRPL 15.6 Creating a Tree Data Structure", "TRPL 15.6 Adding a Reference from a Child to Its Parent", "TRPL 15.6 Visualizing Changes to strong_count and weak_count", "PR ch4 Rc and Arc: Shared Ownership", "CR Day 3 Weak"]
+blocks:
+  - type: text
+    md: |
+      Rust's guarantees make memory leaks **hard**, not impossible. A leak is memory that is never freed. Leaking is memory-safe, so Rust does not forbid it, and `Rc` plus `RefCell` make one possible: if two values point to each other with `Rc`, neither count ever reaches zero.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::cell::RefCell;
+      use std::rc::Rc;
+
+      #[derive(Debug)]
+      enum List {
+          Cons(i32, RefCell<Rc<List>>),
+          Nil,
+      }
+
+      use List::{Cons, Nil};
+
+      impl List {
+          fn tail(&self) -> Option<&RefCell<Rc<List>>> {
+              match self {
+                  Cons(_, item) => Some(item),
+                  Nil => None,
+              }
+          }
+      }
+
+      fn main() {
+          let a = Rc::new(Cons(5, RefCell::new(Rc::new(Nil))));
+          println!("a initial rc count = {}", Rc::strong_count(&a));
+
+          let b = Rc::new(Cons(10, RefCell::new(Rc::clone(&a))));
+          println!("a rc count after b creation = {}", Rc::strong_count(&a));
+          println!("b initial rc count = {}", Rc::strong_count(&b));
+
+          if let Some(link) = a.tail() {
+              *link.borrow_mut() = Rc::clone(&b); // a now points back to b
+          }
+
+          println!("b rc count after changing a = {}", Rc::strong_count(&b));
+          println!("a rc count after changing a = {}", Rc::strong_count(&a));
+          // println!("a next item = {:?}", a.tail()); // would recurse until the stack overflows
+      }
+    output: |
+      a initial rc count = 1
+      a rc count after b creation = 2
+      b initial rc count = 1
+      b rc count after changing a = 2
+      a rc count after changing a = 2
+    explain: "At the end of `main`, `b` is dropped: its count goes from 2 to 1, not 0, because `a` still points to it. Then `a` goes from 2 to 1 because `b`'s list still points to it. Both allocations stay forever. Printing the cycle with `{:?}` would follow it around until the stack overflowed."
+
+  - type: svg
+    caption: "A cycle: `a` points to `b` and `b` points to `a`. When the variables go away, each list still has one owner, the other list, so neither is freed."
+    svg: |
+      <svg viewBox='0 0 460 150' xmlns='http://www.w3.org/2000/svg' font-family='ui-monospace, monospace' font-size='13'>
+        <g fill='none' stroke='currentColor' stroke-width='1'>
+          <rect x='120' y='50' width='90' height='40' rx='4'/>
+          <rect x='270' y='50' width='90' height='40' rx='4'/>
+          <path d='M210 62 C240 40, 250 40, 266 58 M260 54 L266 58 L259 61'/>
+          <path d='M270 80 C240 102, 230 102, 214 84 M220 87 L214 84 L221 81'/>
+          <path d='M40 70 H116 M110 66 L116 70 L110 74' stroke-dasharray='4 3'/>
+          <path d='M440 70 H364 M370 66 L364 70 L370 74' stroke-dasharray='4 3'/>
+        </g>
+        <g fill='currentColor'>
+          <text x='134' y='75'>5 (a)</text>
+          <text x='280' y='75'>10 (b)</text>
+          <text x='30' y='60' font-size='12'>var a</text>
+          <text x='405' y='60' font-size='12'>var b</text>
+          <text x='160' y='130' font-size='12'>dashed: dropped at the end of main</text>
+        </g>
+      </svg>
+
+  - type: text
+    title: Weak<T>
+    md: |
+      The fix is to make one direction of the link **not count** for ownership. `Rc::downgrade(&rc)` creates a **`Weak<T>`**: a pointer that does not keep the value alive. Rc keeps two counts:
+
+      - `strong_count`: owners. The value is dropped when it reaches 0.
+      - `weak_count`: weak pointers. It does not need to reach 0 for the value to be dropped.
+
+      Because the value may already be gone, you cannot use a `Weak` directly. Call **`upgrade()`**, which returns `Option<Rc<T>>`: `Some` if the value is still alive, `None` if it was dropped.
+
+  - type: text
+    title: A tree with parent links
+    md: |
+      A tree is the classic case. A parent should **own** its children: when the parent goes, so do they. A child should be able to find its parent, but must not own it, or parent and child would form a cycle. So children are `Rc`, the parent link is `Weak`:
+
+  - type: code
+    lang: rust
+    code: |
+      use std::cell::RefCell;
+      use std::rc::{Rc, Weak};
+
+      #[derive(Debug)]
+      struct Node {
+          value: i32,
+          parent: RefCell<Weak<Node>>,
+          children: RefCell<Vec<Rc<Node>>>,
+      }
+
+      fn main() {
+          let leaf = Rc::new(Node {
+              value: 3,
+              parent: RefCell::new(Weak::new()),
+              children: RefCell::new(vec![]),
+          });
+
+          println!("leaf parent = {:?}", leaf.parent.borrow().upgrade().map(|p| p.value));
+
+          {
+              let branch = Rc::new(Node {
+                  value: 5,
+                  parent: RefCell::new(Weak::new()),
+                  children: RefCell::new(vec![Rc::clone(&leaf)]),
+              });
+
+              *leaf.parent.borrow_mut() = Rc::downgrade(&branch);
+
+              println!("leaf parent = {:?}", leaf.parent.borrow().upgrade().map(|p| p.value));
+              println!(
+                  "branch strong = {}, weak = {}",
+                  Rc::strong_count(&branch),
+                  Rc::weak_count(&branch)
+              );
+              println!(
+                  "leaf strong = {}, weak = {}",
+                  Rc::strong_count(&leaf),
+                  Rc::weak_count(&leaf)
+              );
+          }
+
+          println!("leaf parent = {:?}", leaf.parent.borrow().upgrade().map(|p| p.value));
+          println!("leaf strong = {}, weak = {}", Rc::strong_count(&leaf), Rc::weak_count(&leaf));
+      }
+    output: |
+      leaf parent = None
+      leaf parent = Some(5)
+      branch strong = 1, weak = 1
+      leaf strong = 2, weak = 0
+      leaf parent = None
+      leaf strong = 1, weak = 0
+    explain: "Inside the block, `branch` has one owner (the variable) and one weak pointer (from the leaf). When the block ends, its strong count drops to 0, so the branch is freed even though the leaf still has a weak link to it. Afterwards `upgrade()` returns `None`, and the leaf is owned only by `leaf` again."
+
+  - type: table
+    title: Choosing a pointer
+    headers: ["You need", "Use"]
+    rows:
+      - ["one owner, value on the heap", "`Box<T>`"]
+      - ["several owners, read-only", "`Rc<T>` (threads: `Arc<T>`)"]
+      - ["mutation through `&`, one thread", "`RefCell<T>` or `Cell<T>`"]
+      - ["several owners and mutation", "`Rc<RefCell<T>>` (threads: `Arc<Mutex<T>>`)"]
+      - ["a back-reference that must not keep the target alive", "`Weak<T>`"]
+
+  - type: playground
+    id: ch15-play-weak
+    title: "Observers that do not keep the subject alive"
+    lang: rust
+    md: |
+      A `Subject` keeps a list of `Weak` observers. `notify` should send the message to every observer that is still alive **and remove the dead ones** from the list. Use `upgrade()` and `retain`.
+    task: "Print `a got: hello`, `b got: hello`, then `a got: again` and `1 observers left`."
+    code: |
+      use std::rc::{Rc, Weak};
+
+      struct Observer {
+          name: String,
+      }
+
+      struct Subject {
+          observers: Vec<Weak<Observer>>,
+      }
+
+      impl Subject {
+          fn notify(&mut self, msg: &str) {
+              // TODO: deliver to live observers and drop dead ones
+          }
+      }
+
+      fn main() {
+          let a = Rc::new(Observer { name: String::from("a") });
+          let b = Rc::new(Observer { name: String::from("b") });
+          let mut s = Subject { observers: vec![Rc::downgrade(&a), Rc::downgrade(&b)] };
+          s.notify("hello");
+          drop(b);
+          s.notify("again");
+          println!("{} observers left", s.observers.len());
+      }
+    expected_output: |
+      a got: hello
+      b got: hello
+      a got: again
+      1 observers left
+    solution_code: |
+      use std::rc::{Rc, Weak};
+
+      struct Observer {
+          name: String,
+      }
+
+      struct Subject {
+          observers: Vec<Weak<Observer>>,
+      }
+
+      impl Subject {
+          fn notify(&mut self, msg: &str) {
+              self.observers.retain(|w| match w.upgrade() {
+                  Some(o) => {
+                      println!("{} got: {msg}", o.name);
+                      true
+                  }
+                  None => false,
+              });
+          }
+      }
+
+      fn main() {
+          let a = Rc::new(Observer { name: String::from("a") });
+          let b = Rc::new(Observer { name: String::from("b") });
+          let mut s = Subject { observers: vec![Rc::downgrade(&a), Rc::downgrade(&b)] };
+          s.notify("hello");
+          drop(b);
+          s.notify("again");
+          println!("{} observers left", s.observers.len());
+      }
+    hints:
+      - "`self.observers.retain(|w| ...)` keeps the entries for which the closure returns true."
+      - "`match w.upgrade() { Some(o) => { println!(...); true } None => false }`"
+
+  - type: exercise
+    id: ch15-ex-tree
+    exercise_dir: ch15-tree
+    title: "A tree with parent pointers"
+    difficulty: hard
+    goal: "Build a tree where children are owned with Rc and parents are referenced with Weak, and navigate both ways."
+    behavior: |
+      `pub struct Node { pub name: String, parent: RefCell<Weak<Node>>, children: RefCell<Vec<Rc<Node>>> }`.
+      - `pub fn new_node(name: &str) -> Rc<Node>`.
+      - `pub fn add_child(parent: &Rc<Node>, child: &Rc<Node>)`: links both ways (child list and weak parent).
+      - `pub fn parent_name(node: &Node) -> Option<String>`.
+      - `pub fn path(node: &Rc<Node>) -> String`: names from the root down, joined with `/`, e.g. `"root/usr/bin"`.
+      - `pub fn count(node: &Rc<Node>) -> usize`: the node plus all its descendants.
+    examples:
+      - input: "path(&bin) where root > usr > bin"
+        output: "\"root/usr/bin\""
+      - input: "parent_name(&root)"
+        output: "None"
+    hints:
+      - "`add_child`: `parent.children.borrow_mut().push(Rc::clone(child)); *child.parent.borrow_mut() = Rc::downgrade(parent);`"
+      - "`path`: start with the node's name and walk up with `let mut current = Rc::clone(node); while let Some(p) = { let x = current.parent.borrow().upgrade(); x } { ... }`, pushing names, then reverse."
+      - "`count`: `1 + node.children.borrow().iter().map(count).sum::<usize>()`."
+    rust:
+      starter: |
+        use std::cell::RefCell;
+        use std::rc::{Rc, Weak};
+
+        pub struct Node {
+            pub name: String,
+            parent: RefCell<Weak<Node>>,
+            children: RefCell<Vec<Rc<Node>>>,
+        }
+
+        pub fn new_node(name: &str) -> Rc<Node> {
+            todo!()
+        }
+
+        pub fn add_child(parent: &Rc<Node>, child: &Rc<Node>) {
+            todo!()
+        }
+
+        pub fn parent_name(node: &Node) -> Option<String> {
+            todo!()
+        }
+
+        pub fn path(node: &Rc<Node>) -> String {
+            todo!()
+        }
+
+        pub fn count(node: &Rc<Node>) -> usize {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        fn sample() -> (Rc<Node>, Rc<Node>, Rc<Node>) {
+            let root = new_node("root");
+            let usr = new_node("usr");
+            let bin = new_node("bin");
+            add_child(&root, &usr);
+            add_child(&usr, &bin);
+            add_child(&root, &new_node("etc"));
+            (root, usr, bin)
+        }
+
+        #[test]
+        fn parents() {
+            let (root, usr, bin) = sample();
+            assert_eq!(parent_name(&root), None);
+            assert_eq!(parent_name(&usr), Some(String::from("root")));
+            assert_eq!(parent_name(&bin), Some(String::from("usr")));
+        }
+
+        #[test]
+        fn paths() {
+            let (root, _usr, bin) = sample();
+            assert_eq!(path(&bin), "root/usr/bin");
+            assert_eq!(path(&root), "root");
+        }
+
+        #[test]
+        fn counting() {
+            let (root, usr, _) = sample();
+            assert_eq!(count(&root), 4);
+            assert_eq!(count(&usr), 2);
+        }
+
+        #[test]
+        fn no_cycle() {
+            let (root, usr, _) = sample();
+            assert_eq!(Rc::strong_count(&root), 1, "children do not own their parent");
+            assert_eq!(Rc::strong_count(&usr), 2, "usr is owned by its variable and by root");
+            assert_eq!(Rc::weak_count(&root), 2, "two children point back weakly");
+        }
+
+        #[test]
+        fn parent_can_be_dropped() {
+            let bin = {
+                let (_root, _usr, bin) = sample();
+                bin
+            };
+            assert_eq!(parent_name(&bin), None, "the parents were freed");
+            assert_eq!(path(&bin), "bin");
+        }
+      solution: |
+        use std::cell::RefCell;
+        use std::rc::{Rc, Weak};
+
+        pub struct Node {
+            pub name: String,
+            parent: RefCell<Weak<Node>>,
+            children: RefCell<Vec<Rc<Node>>>,
+        }
+
+        pub fn new_node(name: &str) -> Rc<Node> {
+            Rc::new(Node {
+                name: name.to_string(),
+                parent: RefCell::new(Weak::new()),
+                children: RefCell::new(Vec::new()),
+            })
+        }
+
+        pub fn add_child(parent: &Rc<Node>, child: &Rc<Node>) {
+            parent.children.borrow_mut().push(Rc::clone(child));
+            *child.parent.borrow_mut() = Rc::downgrade(parent);
+        }
+
+        pub fn parent_name(node: &Node) -> Option<String> {
+            node.parent.borrow().upgrade().map(|p| p.name.clone())
+        }
+
+        pub fn path(node: &Rc<Node>) -> String {
+            let mut names = vec![node.name.clone()];
+            let mut current = Rc::clone(node);
+            loop {
+                let parent = current.parent.borrow().upgrade();
+                match parent {
+                    Some(p) => {
+                        names.push(p.name.clone());
+                        current = p;
+                    }
+                    None => break,
+                }
+            }
+            names.reverse();
+            names.join("/")
+        }
+
+        pub fn count(node: &Rc<Node>) -> usize {
+            1 + node.children.borrow().iter().map(count).sum::<usize>()
+        }
+    solution_explain: "In `path`, the `upgrade()` result is stored in a variable before `current` is reassigned, so the `RefCell` borrow of the old `current` ends first. The last test shows the point of `Weak`: once the variables owning the root and `usr` are gone, those nodes are freed, and `bin`'s parent link quietly becomes `None` instead of keeping them alive."
+
+  - type: quiz
+    id: ch15-quiz-weak
+    title: Check yourself
+    questions:
+      - type: truefalse
+        q: "Safe Rust guarantees that memory is never leaked."
+        answer: false
+        explanation: "Leaks are memory-safe; Rc cycles can cause them."
+      - type: single
+        q: "What does `weak.upgrade()` return?"
+        options: ["`Rc<T>`", "`Option<Rc<T>>`", "`&T`", "`Weak<T>`"]
+        answer: 1
+        explanation: "None if the value has been dropped."
+      - type: single
+        q: "Which count must reach zero for an Rc's value to be dropped?"
+        options: ["weak_count", "strong_count", "both", "neither"]
+        answer: 1
+        explanation: "Weak pointers do not keep it alive."
+      - type: single
+        q: "In a tree, which link should be Weak?"
+        options: ["Parent to child", "Child to parent", "Both", "Neither"]
+        answer: 1
+        explanation: "Parents own children; children only refer to parents."
+      - type: single
+        q: "What creates a Weak from an Rc?"
+        options: ["`Rc::clone`", "`Rc::downgrade(&rc)`", "`Weak::new(rc)`", "`rc.weak()`"]
+        answer: 1
+        explanation: "And upgrade goes back."
+
+  - type: summary
+    points:
+      - "Two `Rc`s pointing at each other form a cycle whose counts never reach zero: a leak."
+      - "`Weak<T>` pointers (from `Rc::downgrade`) do not own; `upgrade()` gives `Option<Rc<T>>`."
+      - "Values are dropped when `strong_count` hits zero, whatever `weak_count` is."
+      - "Trees and graphs: owning links are `Rc`, back links are `Weak`."
+terms:
+  - term: reference cycle
+    def: "Values that own each other through Rc, so their counts never reach zero."
+  - term: memory leak
+    def: "Memory that is never freed; possible in safe Rust through reference cycles."
+  - term: "Weak<T>"
+    def: "A non-owning pointer to an Rc value; it must be upgraded to use the value."
+  - term: strong_count
+    def: "The number of Rc owners of a value."
+  - term: weak_count
+    def: "The number of Weak pointers to an Rc value."

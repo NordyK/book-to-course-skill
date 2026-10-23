@@ -190,5 +190,21 @@
  "ch14-play-reexport": {
   "solution_code": "mod shapes {\n    pub use self::kinds::Circle;\n    pub use self::math::area;\n\n    pub mod kinds {\n        pub struct Circle {\n            pub r: f64,\n        }\n    }\n\n    pub mod math {\n        use super::kinds::Circle;\n\n        pub fn area(c: &Circle) -> f64 {\n            std::f64::consts::PI * c.r * c.r\n        }\n    }\n}\n\nfn main() {\n    let c = shapes::Circle { r: 5.0 };\n    println!(\"{:.2}\", shapes::area(&c));\n}\n",
   "starter_ok": "compile_error"
+ },
+ "ch15-play-drop-order": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch15-play-shared-account": {
+  "solution_code": "use std::cell::RefCell;\nuse std::rc::Rc;\n\nstruct Account {\n    balance: i64,\n}\n\nstruct Card {\n    account: Rc<RefCell<Account>>,\n}\n\nimpl Card {\n    fn pay(&self, amount: i64) {\n        self.account.borrow_mut().balance -= amount;\n    }\n}\n\nfn main() {\n    let account = Rc::new(RefCell::new(Account { balance: 100 }));\n    let debit = Card { account: Rc::clone(&account) };\n    let credit = Card { account: Rc::clone(&account) };\n    debit.pay(20);\n    credit.pay(10);\n    println!(\"balance after payments: {}\", account.borrow().balance);\n    println!(\"owners: {}\", Rc::strong_count(&account));\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch15-play-tree": {
+  "solution_code": "#[derive(Debug)]\nstruct Node {\n    value: i32,\n    left: Option<Box<Node>>,\n    right: Option<Box<Node>>,\n}\n\nfn insert(slot: &mut Option<Box<Node>>, value: i32) {\n    match slot {\n        None => *slot = Some(Box::new(Node { value, left: None, right: None })),\n        Some(node) => {\n            if value < node.value {\n                insert(&mut node.left, value);\n            } else {\n                insert(&mut node.right, value);\n            }\n        }\n    }\n}\n\nfn count(slot: &Option<Box<Node>>) -> usize {\n    match slot {\n        None => 0,\n        Some(node) => 1 + count(&node.left) + count(&node.right),\n    }\n}\n\nfn in_order(slot: &Option<Box<Node>>, out: &mut Vec<i32>) {\n    if let Some(node) = slot {\n        in_order(&node.left, out);\n        out.push(node.value);\n        in_order(&node.right, out);\n    }\n}\n\nfn main() {\n    let mut root = None;\n    for v in [7, 3, 9, 1, 4] {\n        insert(&mut root, v);\n    }\n    println!(\"{} nodes\", count(&root));\n    let mut values = Vec::new();\n    in_order(&root, &mut values);\n    println!(\"in order: {values:?}\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch15-play-weak": {
+  "solution_code": "use std::rc::{Rc, Weak};\n\nstruct Observer {\n    name: String,\n}\n\nstruct Subject {\n    observers: Vec<Weak<Observer>>,\n}\n\nimpl Subject {\n    fn notify(&mut self, msg: &str) {\n        self.observers.retain(|w| match w.upgrade() {\n            Some(o) => {\n                println!(\"{} got: {msg}\", o.name);\n                true\n            }\n            None => false,\n        });\n    }\n}\n\nfn main() {\n    let a = Rc::new(Observer { name: String::from(\"a\") });\n    let b = Rc::new(Observer { name: String::from(\"b\") });\n    let mut s = Subject { observers: vec![Rc::downgrade(&a), Rc::downgrade(&b)] };\n    s.notify(\"hello\");\n    drop(b);\n    s.notify(\"again\");\n    println!(\"{} observers left\", s.observers.len());\n}\n",
+  "starter_ok": "run"
  }
 }

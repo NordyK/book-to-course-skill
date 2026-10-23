@@ -85,3 +85,7 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
 - Chapter 14 done (Cargo and Crates.io): profiles, doc comments + sections + //!, pub use re-exports, publishing and
   yanking, SemVer/Cargo.lock, workspaces, cargo install, custom commands, fmt/clippy/fix; 8-question test;
   exercise ch14-api (re-exports + doc example), verified; 1 playground.
+- Chapter 15 done (Smart Pointers): pointers + Box + recursive types, Deref/coercion/Drop, Rc + RefCell + Cell + mock
+  objects, cycles + Weak + trees; 12-question test; exercises ch15-box, ch15-deref, ch15-rc, ch15-tree (verified);
+  5 playgrounds. `verify_codeblocks.py` now runs with RUST_BACKTRACE=0, strips the thread id newer rustc prints in
+  panic messages, and accepts a non-zero exit for "Standard error" blocks that show a panic.

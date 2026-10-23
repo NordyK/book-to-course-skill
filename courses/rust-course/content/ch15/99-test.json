@@ -1,0 +1,166 @@
+{
+  "title": "Chapter test: Smart Pointers",
+  "kind": "test",
+  "summary": "Twelve questions on Box, Deref, Drop, Rc, RefCell and Weak. You need 70% to pass; you can retry and your best score is kept.",
+  "blocks": [
+    {
+      "type": "quiz",
+      "id": "ch15-test",
+      "pass_score": 0.7,
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which type lets a recursive enum have a known size?",
+          "options": [
+            "`Vec<T>` only",
+            "`Box<T>` (or another pointer)",
+            "`Option<T>`",
+            "`Cell<T>`"
+          ],
+          "answer": 1,
+          "explanation": "Indirection gives a fixed-size field."
+        },
+        {
+          "type": "single",
+          "q": "What does this print?",
+          "code": "let b = Box::new(String::from(\"hi\"));\nlet n: &str = &b;\nprintln!(\"{}\", n.len() + b.len());\n",
+          "lang": "rust",
+          "options": [
+            "2",
+            "4",
+            "It does not compile",
+            "It panics"
+          ],
+          "answer": 1,
+          "explanation": "Deref coercion turns &Box<String> into &str."
+        },
+        {
+          "type": "single",
+          "q": "Implementing which trait lets `*my_pointer` work?",
+          "options": [
+            "Drop",
+            "Deref",
+            "Clone",
+            "AsRef"
+          ],
+          "answer": 1,
+          "explanation": "And DerefMut for `*p = ...`."
+        },
+        {
+          "type": "single",
+          "q": "What does this print?",
+          "code": "struct D(u8);\nimpl Drop for D { fn drop(&mut self) { print!(\"{}\", self.0); } }\nfn main() { let _a = D(1); let b = D(2); drop(b); let _c = D(3); }\n",
+          "lang": "rust",
+          "options": [
+            "123",
+            "231",
+            "213",
+            "321"
+          ],
+          "answer": 1,
+          "explanation": "2 is dropped early, then 3 and 1 in reverse order at the end."
+        },
+        {
+          "type": "single",
+          "q": "Why use `Rc::clone(&a)` rather than `a.clone()`?",
+          "options": [
+            "a.clone() does not compile",
+            "Convention: it signals a cheap count increment, not a deep copy",
+            "Rc::clone is faster",
+            "a.clone() creates a Weak"
+          ],
+          "answer": 1,
+          "explanation": "Both do the same thing for Rc."
+        },
+        {
+          "type": "single",
+          "q": "After `let a = Rc::new(1); let b = Rc::clone(&a); let c = Rc::clone(&b); drop(b);`, what is `Rc::strong_count(&a)`?",
+          "options": [
+            "1",
+            "2",
+            "3",
+            "0"
+          ],
+          "answer": 1,
+          "explanation": "a and c remain."
+        },
+        {
+          "type": "single",
+          "q": "`RefCell<T>` checks the borrowing rules...",
+          "options": [
+            "at compile time",
+            "at run time, panicking on violation",
+            "never",
+            "only in release builds"
+          ],
+          "answer": 1,
+          "explanation": "That is the trade it makes for flexibility."
+        },
+        {
+          "type": "single",
+          "q": "Which compiles but panics?",
+          "options": [
+            "`let c = RefCell::new(1); let a = c.borrow(); let b = c.borrow();`",
+            "`let c = RefCell::new(1); let a = c.borrow(); let b = c.borrow_mut();`",
+            "`let c = RefCell::new(1); *c.borrow_mut() += 1;`",
+            "`let c = Cell::new(1); c.set(2);`"
+          ],
+          "answer": 1,
+          "explanation": "A mutable borrow while a shared borrow is alive."
+        },
+        {
+          "type": "single",
+          "q": "Shared mutable state in single-threaded code is usually written as...",
+          "options": [
+            "`Box<RefCell<T>>`",
+            "`Rc<RefCell<T>>`",
+            "`RefCell<Rc<T>>` only",
+            "`&mut Rc<T>`"
+          ],
+          "answer": 1,
+          "explanation": "Rc for owners, RefCell for mutation."
+        },
+        {
+          "type": "single",
+          "q": "Two nodes hold `Rc` pointers to each other and their variables go out of scope. What happens?",
+          "options": [
+            "Both are freed",
+            "A compile error",
+            "Neither is freed: a memory leak",
+            "A panic"
+          ],
+          "answer": 2,
+          "explanation": "Each still has one strong owner."
+        },
+        {
+          "type": "single",
+          "q": "What does `Weak::upgrade` return when the value has been dropped?",
+          "options": [
+            "A dangling pointer",
+            "`None`",
+            "A panic",
+            "`Some` with a default"
+          ],
+          "answer": 1,
+          "explanation": "That is why it returns an Option."
+        },
+        {
+          "type": "multi",
+          "q": "Which are not usable across threads?",
+          "options": [
+            "`Rc<T>`",
+            "`RefCell<T>`",
+            "`Box<i32>`",
+            "`Cell<T>`"
+          ],
+          "answer": [
+            0,
+            1,
+            3
+          ],
+          "explanation": "Their counters and borrow flags are not synchronized; use Arc and Mutex."
+        }
+      ]
+    }
+  ]
+}
