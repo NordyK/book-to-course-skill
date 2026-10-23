@@ -128,3 +128,8 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
 - Exercises: ch23-http, ch23-net, ch23-time. Playgrounds: ch23-play-echo, ch23-play-error, ch23-play-time.
 - Note: the lesson corrects RiA's `is_unicast`, which actually tests the multicast bit.
 - All offline: networking uses 127.0.0.1:0 servers in a thread; no chrono, dates by hand.
+
+## Chapter 24, Going Low-Level (done)
+- Lessons: 01-ffi (C types, repr(C) layout with offset_of!, safe fn vs unsafe extern declarations, CString/CStr and the dangling as_ptr trap, qsort callbacks, CFile RAII wrapper over fopen/fputs/fclose, exporting with #[unsafe(no_mangle)] and catch_unwind), 02-no-std-kernel (core/alloc/std, FledgeOS _start and panic handler, VGA text buffer simulated with write_volatile, core::fmt::Write without heap, asm!, embedded PAC/HAL and type-state pins), 03-signals (interrupts/exceptions/signals, Ctrl-C stepper, signal table, signal()+raise() with atomics, async-signal-safety, why not longjmp, signal-hook/ctrlc), 99-test (10 questions).
+- Exercises: ch24-ffi (libc wrappers incl. variadic snprintf), ch24-vga (no_std writer with wrapping and scrolling), ch24-signals (delivery model with blocked/pending masks). Playgrounds: ch24-play-qsort, ch24-play-vga, ch24-play-signal (starter_ok: panic).
+- Everything runs offline against the system libc; signal numbers are Linux's.
