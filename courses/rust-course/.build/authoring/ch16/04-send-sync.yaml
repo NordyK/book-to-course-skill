@@ -1,0 +1,175 @@
+title: "Extensible concurrency with Send and Sync"
+summary: "The two marker traits behind fearless concurrency: Send for transferring ownership between threads and Sync for sharing references, which types have them and why, how they are derived automatically, and why implementing them by hand is unsafe."
+minutes: 20
+source:
+  chapter: ch16
+  sections: ["TRPL 16.4 Extensible Concurrency with Send and Sync", "TRPL 16.4 Transferring Ownership Between Threads", "TRPL 16.4 Accessing from Multiple Threads", "TRPL 16.4 Implementing Send and Sync Manually Is Unsafe", "PR ch19 Thread Safety: Send and Sync", "PR ch19 Piping Almost Any Iterator to a Channel", "CR Concurrency Morning Send and Sync", "CR Concurrency Morning Examples"]
+blocks:
+  - type: text
+    md: |
+      Surprisingly, the Rust **language** knows very little about concurrency. Threads, channels, mutexes and atomics are all in the **standard library**, and you could write your own. What the language provides is two **marker traits** in `std::marker`, which have no methods and only state a property of a type:
+
+      - **`Send`**: ownership of a value of this type can be **transferred** to another thread.
+      - **`Sync`**: a value of this type can be **referenced** from several threads at once. Precisely: `T` is `Sync` if `&T` is `Send`.
+
+      `thread::spawn` requires its closure (and so everything it captures) to be `Send`. `Arc<T>` is only `Send` if `T` is `Send + Sync`. Every concurrency API is written with these bounds, and that is where errors like the `Rc` one come from.
+
+  - type: table
+    title: Who is Send and Sync?
+    headers: ["Type", "Send", "Sync", "Why"]
+    rows:
+      - ["`i32`, `String`, `Vec<T>` of such", "yes", "yes", "plain owned data"]
+      - ["`Rc<T>`", "no", "no", "non-atomic count: two threads could update it at once"]
+      - ["`Arc<T>`", "if T: Send + Sync", "if T: Send + Sync", "atomic count"]
+      - ["`RefCell<T>`, `Cell<T>`", "yes (if T is)", "no", "their borrow tracking is not synchronized"]
+      - ["`Mutex<T>`", "if T: Send", "if T: Send", "access is synchronized by the lock"]
+      - ["`MutexGuard<T>`", "no", "yes", "some platforms require unlocking on the thread that locked"]
+      - ["raw pointers `*const T`", "no", "no", "no guarantees at all"]
+
+  - type: callout
+    kind: key
+    title: Automatic
+    md: "`Send` and `Sync` are **auto traits**: a struct or enum made only of `Send` fields is automatically `Send`, and likewise for `Sync`. You almost never write them yourself. A single `Rc` field anywhere inside a type makes the whole type non-`Send`, and the compiler reports it wherever the type would cross a thread boundary."
+
+  - type: code
+    lang: rust
+    code: |
+      use std::cell::RefCell;
+      use std::sync::{Arc, Mutex};
+
+      fn require_send<T: Send>(_: &T) {}
+      fn require_sync<T: Sync>(_: &T) {}
+
+      struct Config {
+          name: String,
+          retries: u32,
+      }
+
+      fn main() {
+          let c = Config { name: String::from("app"), retries: 3 };
+          require_send(&c);
+          require_sync(&c);
+
+          let shared = Arc::new(Mutex::new(vec![1, 2, 3]));
+          require_send(&shared);
+          require_sync(&shared);
+
+          let cell = RefCell::new(5);
+          require_send(&cell); // fine: it can move to another thread
+          // require_sync(&cell); // error: RefCell<i32> cannot be shared between threads safely
+
+          println!("{} {} {}", c.name, c.retries, shared.lock().unwrap().len() + *cell.borrow());
+      }
+    output: "app 3 8"
+    explain: "These helper functions are a handy trick to check a type's auto traits at compile time. Uncomment the line to see the compiler's explanation."
+
+  - type: text
+    title: Implementing them by hand is unsafe
+    md: |
+      Types built from `Send`/`Sync` parts get the traits for free. Implementing them manually, for example for a type built on raw pointers, requires `unsafe impl Send for MyType {}`. You are then promising the compiler something it cannot check, and a wrong promise is undefined behavior. Chapter 20 covers `unsafe`; *The Rustonomicon* covers these promises in depth.
+
+  - type: text
+    title: What this buys you
+    md: |
+      Put together, the rules of this chapter mean that **data races are impossible in safe Rust**: a data race needs two threads accessing the same memory at once with at least one writing, and either the memory is moved (one owner), shared immutably (`Sync` types only), or protected by a lock or atomic. The type system checks it everywhere, including in libraries you have never seen.
+
+      A good example from *Programming Rust*: the `rayon` crate turns `iter()` into `par_iter()` to split work across all cores. It is safe to use because its methods require `Send` and `Sync` closures: if your closure captured an `Rc` or wrote to a shared variable, it would not compile.
+
+  - type: playground
+    id: ch16-play-send
+    title: "Make it Send"
+    lang: rust
+    md: |
+      `Job` cannot be sent to a thread because of one field. Change only the struct (and the two lines that build and use that field) so the program compiles. Then read the original error message: it names the exact field that is not `Send`.
+    task: "Make it compile; it prints `job resize ran 2 times`."
+    code: |
+      use std::cell::Cell;
+      use std::rc::Rc;
+      use std::thread;
+
+      struct Job {
+          name: String,
+          runs: Rc<Cell<u32>>,
+      }
+
+      fn main() {
+          let job = Job { name: String::from("resize"), runs: Rc::new(Cell::new(0)) };
+          let handle = thread::spawn(move || {
+              job.runs.set(job.runs.get() + 1);
+              job.runs.set(job.runs.get() + 1);
+              format!("job {} ran {} times", job.name, job.runs.get())
+          });
+          println!("{}", handle.join().unwrap());
+      }
+    starter_ok: compile_error
+    expected_output: "job resize ran 2 times"
+    solution_code: |
+      use std::sync::Arc;
+      use std::sync::atomic::{AtomicU32, Ordering};
+      use std::thread;
+
+      struct Job {
+          name: String,
+          runs: Arc<AtomicU32>,
+      }
+
+      fn main() {
+          let job = Job { name: String::from("resize"), runs: Arc::new(AtomicU32::new(0)) };
+          let handle = thread::spawn(move || {
+              job.runs.fetch_add(1, Ordering::Relaxed);
+              job.runs.fetch_add(1, Ordering::Relaxed);
+              format!("job {} ran {} times", job.name, job.runs.load(Ordering::Relaxed))
+          });
+          println!("{}", handle.join().unwrap());
+      }
+    hints:
+      - "`Rc` is not `Send`. What is its thread-safe counterpart?"
+      - "`Cell` is not `Sync`, so `Arc<Cell<u32>>` is still not `Send`. Use `Arc<AtomicU32>` (or `Arc<Mutex<u32>>`)."
+      - "With only one thread using it, a plain `u32` field works too: the point is that `Rc` and `Cell` are the problem."
+
+  - type: quiz
+    id: ch16-quiz-send-sync
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What does it mean for T to be Send?"
+        options: ["T can be printed", "Ownership of a T can be moved to another thread", "T can be copied", "T has no references"]
+        answer: 1
+        explanation: "Required by thread::spawn for captured values."
+      - type: single
+        q: "T is Sync exactly when..."
+        options: ["T is Copy", "&T is Send", "T is Send", "T has a Mutex"]
+        answer: 1
+        explanation: "Sharing a reference across threads must be safe."
+      - type: multi
+        q: "Which types are not Send?"
+        options: ["`Rc<i32>`", "`Arc<i32>`", "`String`", "`*mut u8`"]
+        answer: [0, 3]
+        explanation: "Arc and String can move between threads."
+      - type: single
+        q: "A struct has fields `String`, `u32` and `Rc<String>`. Is it Send?"
+        options: ["Yes", "No, because of the Rc field", "Only if you implement it", "It depends on the thread"]
+        answer: 1
+        explanation: "Auto traits need every field to have them."
+      - type: truefalse
+        q: "`unsafe impl Send for MyType {}` asks the compiler to check that MyType is thread-safe."
+        answer: false
+        explanation: "It is a promise you make; the compiler cannot check it."
+
+  - type: summary
+    points:
+      - "`Send`: can be moved to another thread. `Sync`: can be shared by reference across threads."
+      - "They are auto traits: types made of Send/Sync parts get them automatically."
+      - "`Rc`, `RefCell` and `Cell` keep you on one thread; `Arc`, `Mutex` and atomics work across threads."
+      - "These traits are why safe Rust has no data races; implementing them by hand is `unsafe`."
+terms:
+  - term: Send
+    def: "A marker trait for types whose ownership can be transferred between threads."
+  - term: Sync
+    def: "A marker trait for types that can be referenced from several threads at once (&T is Send)."
+  - term: marker trait
+    def: "A trait with no methods that only states a property of a type."
+  - term: auto trait
+    def: "A trait the compiler implements automatically for a type whose fields all implement it."
+  - term: data race
+    def: "Two threads accessing the same memory at the same time, at least one writing, without synchronization."

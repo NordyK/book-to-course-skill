@@ -89,3 +89,7 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
   objects, cycles + Weak + trees; 12-question test; exercises ch15-box, ch15-deref, ch15-rc, ch15-tree (verified);
   5 playgrounds. `verify_codeblocks.py` now runs with RUST_BACKTRACE=0, strips the thread id newer rustc prints in
   panic messages, and accepts a non-zero exit for "Standard error" blocks that show a panic.
+- Chapter 16 done (Fearless Concurrency): threads (spawn/join/move/scope, thread cost), channels (mpsc, multiple
+  producers, sync_channel, pipelines), shared state (Mutex, Arc, RwLock, atomics, Condvar, deadlock, poisoning),
+  Send and Sync; 12-question test; exercises ch16-threads, ch16-channels, ch16-shared (verified); 4 playgrounds.
+  Thread examples whose order varies show a sample run in a `lang: text` block, not a checked output.

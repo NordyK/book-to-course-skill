@@ -1,0 +1,77 @@
+title: "Chapter test: Fearless Concurrency"
+kind: test
+summary: Twelve questions on threads, channels, shared state, Send and Sync. You need 70% to pass; you can retry and your best score is kept.
+blocks:
+  - type: quiz
+    id: ch16-test
+    pass_score: 0.7
+    questions:
+      - type: single
+        q: "Which call waits for a spawned thread to finish?"
+        options: ["`thread::sleep`", "`handle.join()`", "`handle.wait()`", "`thread::yield_now()`"]
+        answer: 1
+        explanation: "join returns the thread's result."
+      - type: single
+        q: "Why does this not compile? `let v = vec![1]; thread::spawn(|| println!(\"{v:?}\"));`"
+        options: ["println! is not thread-safe", "The closure borrows v but the thread might outlive it; add move", "Vec is not Send", "spawn needs a function, not a closure"]
+        answer: 1
+        explanation: "E0373."
+      - type: single
+        q: "Which lets threads borrow a local vector without move or Arc?"
+        options: ["`thread::spawn`", "`thread::scope`", "`mpsc::channel`", "`Mutex::new`"]
+        answer: 1
+        explanation: "Scoped threads are joined before the scope ends."
+      - type: single
+        q: "What does this print?"
+        code: |
+          let (tx, rx) = mpsc::channel();
+          for i in 0..3 {
+              let tx = tx.clone();
+              thread::spawn(move || tx.send(i).unwrap());
+          }
+          drop(tx);
+          let total: i32 = rx.iter().sum();
+          println!("{total}");
+        lang: rust
+        options: ["0", "3", "It hangs forever", "It does not compile"]
+        answer: 1
+        explanation: "0 + 1 + 2, and drop(tx) lets the iterator end."
+      - type: single
+        q: "Without `drop(tx)` in the previous question, what happens?"
+        options: ["The same output", "rx.iter() never ends because the original sender is alive", "A compile error", "A panic"]
+        answer: 1
+        explanation: "The channel stays open."
+      - type: single
+        q: "After `tx.send(s)` with `s: String`, can the sending thread print `s`?"
+        options: ["Yes", "No, s was moved into the channel", "Only with clone after the send", "Only inside unsafe"]
+        answer: 1
+        explanation: "Ownership moved."
+      - type: single
+        q: "What does `Arc` add compared with `Rc`?"
+        options: ["Mutation", "An atomic, thread-safe reference count", "Weak references", "Copy semantics"]
+        answer: 1
+        explanation: "Mutation still needs Mutex or atomics."
+      - type: single
+        q: "Ten threads increment `Arc<Mutex<i32>>` once each. What is the final value?"
+        options: ["Between 1 and 10", "10", "0", "It depends on timing"]
+        answer: 1
+        explanation: "The mutex serializes the increments."
+      - type: single
+        q: "Which is the lock-free way to count events across threads?"
+        options: ["`Mutex<usize>`", "`AtomicUsize` with `fetch_add`", "`RefCell<usize>`", "`Rc<usize>`"]
+        answer: 1
+        explanation: "Atomics need no lock."
+      - type: single
+        q: "Which error can still happen in safe Rust?"
+        options: ["A data race", "A deadlock", "Using freed memory", "A dangling reference"]
+        answer: 1
+        explanation: "Logic errors with locks are possible."
+      - type: multi
+        q: "Which are Sync?"
+        options: ["`i32`", "`Mutex<Vec<u8>>`", "`RefCell<i32>`", "`Arc<String>`"]
+        answer: [0, 1, 3]
+        explanation: "RefCell's borrow flags are not synchronized."
+      - type: truefalse
+        q: "A struct whose fields are all Send is automatically Send."
+        answer: true
+        explanation: "Send is an auto trait."

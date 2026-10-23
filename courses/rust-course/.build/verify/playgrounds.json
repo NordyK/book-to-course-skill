@@ -206,5 +206,21 @@
  "ch15-play-weak": {
   "solution_code": "use std::rc::{Rc, Weak};\n\nstruct Observer {\n    name: String,\n}\n\nstruct Subject {\n    observers: Vec<Weak<Observer>>,\n}\n\nimpl Subject {\n    fn notify(&mut self, msg: &str) {\n        self.observers.retain(|w| match w.upgrade() {\n            Some(o) => {\n                println!(\"{} got: {msg}\", o.name);\n                true\n            }\n            None => false,\n        });\n    }\n}\n\nfn main() {\n    let a = Rc::new(Observer { name: String::from(\"a\") });\n    let b = Rc::new(Observer { name: String::from(\"b\") });\n    let mut s = Subject { observers: vec![Rc::downgrade(&a), Rc::downgrade(&b)] };\n    s.notify(\"hello\");\n    drop(b);\n    s.notify(\"again\");\n    println!(\"{} observers left\", s.observers.len());\n}\n",
   "starter_ok": "run"
+ },
+ "ch16-play-bank": {
+  "solution_code": "use std::sync::{Arc, Mutex};\nuse std::thread;\n\nfn main() {\n    let balance = Arc::new(Mutex::new(0i64));\n    let mut handles = Vec::new();\n    for _ in 0..4 {\n        let balance = Arc::clone(&balance);\n        handles.push(thread::spawn(move || {\n            for _ in 0..250 {\n                *balance.lock().unwrap() += 1;\n            }\n        }));\n    }\n    for h in handles {\n        h.join().unwrap();\n    }\n    println!(\"balance = {}\", balance.lock().unwrap());\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch16-play-pipeline": {
+  "solution_code": "use std::sync::mpsc;\nuse std::thread;\n\nfn main() {\n    let (tx1, rx1) = mpsc::channel();\n    let (tx2, rx2) = mpsc::channel::<u32>();\n\n    thread::spawn(move || {\n        for n in 1..=10u32 {\n            let _ = tx1.send(n); // ignore the error if stage 2 is gone\n        }\n    });\n\n    thread::spawn(move || {\n        for n in rx1 {\n            if n % 2 == 0 {\n                tx2.send(n * n).unwrap();\n            }\n        }\n    });\n\n    let total: u32 = rx2.iter().sum();\n    println!(\"sum of even squares: {total}\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch16-play-send": {
+  "solution_code": "use std::sync::Arc;\nuse std::sync::atomic::{AtomicU32, Ordering};\nuse std::thread;\n\nstruct Job {\n    name: String,\n    runs: Arc<AtomicU32>,\n}\n\nfn main() {\n    let job = Job { name: String::from(\"resize\"), runs: Arc::new(AtomicU32::new(0)) };\n    let handle = thread::spawn(move || {\n        job.runs.fetch_add(1, Ordering::Relaxed);\n        job.runs.fetch_add(1, Ordering::Relaxed);\n        format!(\"job {} ran {} times\", job.name, job.runs.load(Ordering::Relaxed))\n    });\n    println!(\"{}\", handle.join().unwrap());\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch16-play-threads": {
+  "solution_code": "use std::thread;\n\nfn main() {\n    let docs = vec![\n        String::from(\"the quick brown fox\"),\n        String::from(\"jumps over\"),\n        String::from(\"the lazy dog and keeps running far\"),\n    ];\n\n    let mut handles = Vec::new();\n    for doc in docs {\n        handles.push(thread::spawn(move || doc.split_whitespace().count()));\n    }\n\n    let mut total = 0;\n    for h in handles {\n        total += h.join().unwrap();\n    }\n    println!(\"total words: {total}\");\n}\n",
+  "starter_ok": "compile_error"
  }
 }

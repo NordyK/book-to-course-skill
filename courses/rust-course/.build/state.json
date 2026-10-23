@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created": "2026-10-23T02:32:57+00:00",
-  "updated": "2026-10-23T04:08:30+00:00",
+  "updated": "2026-10-23T04:12:59+00:00",
   "book": {
     "title": "Rust: From First Program to Systems Programming",
     "author": "Merged from 5 books (see .build/plan.md)",
@@ -151,8 +151,8 @@
       "title": "Fearless Concurrency",
       "words": 33307,
       "file": "chapters/ch16.md",
-      "status": "pending",
-      "lessons_built": 0,
+      "status": "done",
+      "lessons_built": 5,
       "note": ""
     },
     {
@@ -308,6 +308,10 @@
     {
       "at": "2026-10-23T04:08:30+00:00",
       "msg": "ch15 → done"
+    },
+    {
+      "at": "2026-10-23T04:12:59+00:00",
+      "msg": "ch16 → done"
     }
   ]
 }
