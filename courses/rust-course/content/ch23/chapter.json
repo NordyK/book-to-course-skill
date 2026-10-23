@@ -1,0 +1,11 @@
+{
+  "title": "Networking and Time",
+  "summary": "Rust in Action's networking and time chapters: the layers of the network stack, HTTP spoken by hand over TCP, ports, DNS and UDP; error types that wrap other errors, MAC addresses and protocol state machines as enums; and how computers keep time, from Unix and NTP timestamps to monotonic clocks and clock synchronization.",
+  "goals": [
+    "Explain the network layers and write raw HTTP requests over std::net::TcpStream to a local server",
+    "Resolve names to socket addresses and send UDP datagrams",
+    "Define a library error type that wraps io, parse and address errors with From and ?",
+    "Model MAC addresses and a TCP-like connection as Rust types",
+    "Use SystemTime, Instant and Duration, format timestamps as RFC 3339, and compute NTP offset and delay"
+  ]
+}

@@ -122,3 +122,9 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
   index, tombstones, reload, compaction, HashMap vs BTreeMap). 10-question test; exercises ch22-io, ch22-hexdump,
   ch22-actionkv (generic over Read + Write + Seek, torn writes, corruption); 3 playgrounds. 52 exercises verified.
   YAML note: an output block whose first line starts with spaces needs `output: |2`.
+
+## Chapter 23, Networking and Time (done)
+- Lessons: 01-http-tcp (layers, raw HTTP to a local TcpListener, ToSocketAddrs, UDP ping), 02-traits-errors-net (library error types with From and ?, Box<dyn Error> and downcast, MAC addresses, protocol state machine as an enum), 03-time-clocks (clock vocabulary, SystemTime/Instant/Duration, civil_from_days and RFC 3339, NTP timestamps, offset and delay with 1/delay² weighting), 99-test (10 questions).
+- Exercises: ch23-http, ch23-net, ch23-time. Playgrounds: ch23-play-echo, ch23-play-error, ch23-play-time.
+- Note: the lesson corrects RiA's `is_unicast`, which actually tests the multicast bit.
+- All offline: networking uses 127.0.0.1:0 servers in a thread; no chrono, dates by hand.

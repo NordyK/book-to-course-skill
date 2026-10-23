@@ -1,0 +1,578 @@
+title: "Time and timekeeping"
+summary: "Why a day is not always 86,400 seconds, where computers get the time from, the clock vocabulary (wall clock, system clock, monotonic, steady, resolution), Unix and NTP timestamps and epochs, SystemTime, Instant and Duration in std, formatting RFC 3339 dates by hand with the days-to-civil algorithm, and how NTP estimates clock offset and network delay."
+minutes: 40
+source:
+  chapter: ch23
+  sections: ["RiA 9 Time and Time Keeping", "RiA 9.1 Background", "RiA 9.2 Sources of Time", "RiA 9.3 Definitions", "RiA 9.4 Encoding Time", "RiA 9.4.1 Representing time zones", "RiA 9.5 clock v0.1.0", "RiA 9.6 clock v0.1.1: Formatting timestamps to comply with ISO 8601 and email standards", "RiA 9.7 clock v0.1.2: Setting the time", "RiA 9.9 clock v0.1.3: Resolving differences between clocks with the Network Time Protocol", "RiA 9.9.1 Sending NTP requests and interpreting responses", "RiA 9.9.2 Adjusting the local time as a result of the server's response", "RiA 9.9.3 Converting between time representations that use different precisions and epochs"]
+blocks:
+  - type: text
+    md: |
+      It is easy to think a day has 60 × 60 × 24 = 86,400 seconds. *Rust in Action* opens its time chapter by taking that apart: the Earth's rotation is irregular, so **UTC** occasionally inserts a **leap second**; time zones are political, change by law, and some are offset by 30 or 45 minutes; daylight saving time makes some local times happen twice and others never. Programs therefore keep time in **UTC** as a count of seconds since a fixed **epoch**, and convert to local calendars only for display.
+
+  - type: table
+    title: The vocabulary of clocks
+    headers: ["Term", "Meaning"]
+    rows:
+      - ["absolute (wall clock) time", "the time you would tell someone who asks; calendar time"]
+      - ["real-time clock (RTC)", "a battery-powered chip on the motherboard that keeps time while the computer is off"]
+      - ["system clock", "the operating system's idea of the time; it can **jump** when set or synchronized"]
+      - ["monotonic clock", "never goes backwards"]
+      - ["steady clock", "monotonic and every second the same length; starts at an arbitrary point, so it only measures durations"]
+      - ["accuracy, skew", "how close a clock's seconds are to real seconds; skew is the difference between two clocks"]
+      - ["resolution", "the smallest step a clock can show, often nanoseconds for CPU counters"]
+
+  - type: text
+    title: Time in the standard library
+    md: |
+      Rust's `std::time` has two clocks, matching the two needs:
+
+      - **`SystemTime`** is the wall clock. `SystemTime::now().duration_since(UNIX_EPOCH)` gives the **Unix timestamp**: time since 1970-01-01 00:00:00 UTC. It can go backwards when the clock is adjusted, so `duration_since` returns a `Result`.
+      - **`Instant`** is a monotonic, steady clock: use it to measure how long something takes. It has no relation to the calendar.
+      - **`Duration`** is a span of time: seconds plus nanoseconds, with `as_secs_f64`, `as_millis`, arithmetic and `checked_sub`.
+
+      Calendar dates, time zones and parsing are not in std; real programs use the `chrono` or `jiff` crate, as *Rust in Action*'s `clock` does with chrono. Below we do the conversion by hand to see how it works.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::thread;
+      use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+      fn main() {
+          let now = SystemTime::now().duration_since(UNIX_EPOCH).expect("clock before 1970");
+          println!("seconds since 1970 is more than 1.7 billion: {}", now.as_secs() > 1_700_000_000);
+
+          let start = Instant::now();
+          thread::sleep(Duration::from_millis(20));
+          let elapsed = start.elapsed();
+          println!("slept at least 20 ms: {}", elapsed >= Duration::from_millis(20));
+
+          let d = Duration::from_secs(3725) + Duration::from_millis(250);
+          println!("{:?} = {} s = {} ms", d, d.as_secs_f64(), d.as_millis());
+          let (h, m, s) = (d.as_secs() / 3600, d.as_secs() / 60 % 60, d.as_secs() % 60);
+          println!("{h:02}:{m:02}:{s:02}.{:03}", d.subsec_millis());
+          println!("{:?}", Duration::from_secs(1).checked_sub(Duration::from_secs(2)));
+      }
+    output: |
+      seconds since 1970 is more than 1.7 billion: true
+      slept at least 20 ms: true
+      3725.25s = 3725.25 s = 3725250 ms
+      01:02:05.250
+      None
+    explain: "The real timestamp changes every run, so the example prints only a comparison. `Duration` is unsigned: subtracting a larger one with `checked_sub` gives `None` instead of panicking."
+
+  - type: text
+    title: From a timestamp to a calendar date
+    md: |
+      A Unix timestamp splits into **days** since the epoch (`secs / 86400`) and the **time of day** (`secs % 86400`). Turning days into year, month and day is the tricky part because of leap years. The standard trick (Howard Hinnant's `civil_from_days`) shifts the year to start in **March**, so the leap day falls at the end, and counts in 400-year **eras**, which always have exactly 146,097 days. The result can be printed in **RFC 3339** (the internet profile of ISO 8601) format: `2024-02-29T13:05:09Z`, where `Z` means UTC. *Rust in Action*'s clock prints the same with chrono's `to_rfc3339()`.
+
+  - type: code
+    lang: rust
+    code: |
+      /// Days since 1970-01-01 to (year, month, day). Works for negative days too.
+      fn civil_from_days(z: i64) -> (i64, u32, u32) {
+          let z = z + 719_468; // shift the epoch to 0000-03-01
+          let era = z.div_euclid(146_097);
+          let doe = z.rem_euclid(146_097); // day of era [0, 146096]
+          let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // year of era [0, 399]
+          let y = yoe + era * 400;
+          let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // day of year, March-based [0, 365]
+          let mp = (5 * doy + 2) / 153; // month, March = 0
+          let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+          let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+          (if m <= 2 { y + 1 } else { y }, m, d)
+      }
+
+      fn rfc3339(unix: i64) -> String {
+          let (days, secs) = (unix.div_euclid(86_400), unix.rem_euclid(86_400));
+          let (y, m, d) = civil_from_days(days);
+          format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", secs / 3600, secs / 60 % 60, secs % 60)
+      }
+
+      fn main() {
+          for t in [0, 951_782_400, 1_709_211_909, 2_147_483_647, -1] {
+              println!("{t:>11} -> {}", rfc3339(t));
+          }
+      }
+    output: |2
+                0 -> 1970-01-01T00:00:00Z
+        951782400 -> 2000-02-29T00:00:00Z
+       1709211909 -> 2024-02-29T13:05:09Z
+       2147483647 -> 2038-01-19T03:14:07Z
+               -1 -> 1969-12-31T23:59:59Z
+    explain: "2,147,483,647 is the largest `i32`: systems that store Unix time in 32 bits overflow at 03:14:07 UTC on 19 January 2038, the \"year 2038 problem\". `div_euclid` and `rem_euclid` round toward negative infinity, so times before 1970 work."
+
+  - type: text
+    title: NTP timestamps and epochs
+    md: |
+      Different systems count from different epochs. The **Network Time Protocol** (NTP) uses **1 January 1900** and stores a 64-bit fixed-point number (chapter 21): 32 bits of whole seconds and 32 bits of **fraction**, so its resolution is 2^-32 s, about 233 picoseconds. Converting to Unix time means subtracting the seconds between the two epochs, **2,208,988,800**, and turning the fraction into nanoseconds.
+
+  - type: code
+    lang: rust
+    code: |
+      const NTP_TO_UNIX_SECONDS: u64 = 2_208_988_800;
+
+      #[derive(Debug, Clone, Copy, PartialEq)]
+      struct NtpTimestamp {
+          seconds: u32,
+          fraction: u32,
+      }
+
+      impl NtpTimestamp {
+          fn from_unix(secs: u64, nanos: u32) -> Self {
+              let fraction = ((nanos as u64) << 32) / 1_000_000_000;
+              NtpTimestamp { seconds: (secs + NTP_TO_UNIX_SECONDS) as u32, fraction: fraction as u32 }
+          }
+
+          fn to_unix(self) -> (u64, u32) {
+              let nanos = ((self.fraction as u64) * 1_000_000_000) >> 32;
+              (self.seconds as u64 - NTP_TO_UNIX_SECONDS, nanos as u32)
+          }
+
+          fn to_bytes(self) -> [u8; 8] {
+              let mut b = [0u8; 8];
+              b[..4].copy_from_slice(&self.seconds.to_be_bytes());
+              b[4..].copy_from_slice(&self.fraction.to_be_bytes());
+              b
+          }
+      }
+
+      fn main() {
+          let t = NtpTimestamp::from_unix(1_709_211_909, 500_000_000);
+          println!("{t:?}");
+          println!("{:02x?}", t.to_bytes());
+          println!("{:?}", t.to_unix());
+      }
+    output: |
+      NtpTimestamp { seconds: 3918200709, fraction: 2147483648 }
+      [e9, 8a, ff, 85, 80, 00, 00, 00]
+      (1709211909, 500000000)
+    explain: "Half a second is a fraction of exactly 2^31. NTP sends its timestamps big-endian, network byte order. Its 32-bit seconds field wraps in 2036, and NTP version 4 adds an era number to handle that."
+
+  - type: text
+    title: How NTP measures the offset
+    md: |
+      An NTP client cannot simply ask "what time is it?": the answer is old by the time it arrives. Instead four timestamps are collected:
+
+      - **T1**: the client sends the request (client clock);
+      - **T2**: the server receives it (server clock);
+      - **T3**: the server sends the reply (server clock);
+      - **T4**: the client receives the reply (client clock).
+
+      Assuming the network takes the same time in both directions:
+
+      - **delay** δ = (T4 - T1) - (T3 - T2): the round trip minus the server's processing time;
+      - **offset** θ = ((T2 - T1) + (T3 - T4)) / 2: how far the server's clock is ahead of ours.
+
+      *Rust in Action*'s clock asks several servers and averages their offsets, weighted by 1 / δ², so servers with slow, noisy connections count much less.
+
+  - type: code
+    lang: rust
+    code: |
+      struct NtpResult {
+          t1: f64,
+          t2: f64,
+          t3: f64,
+          t4: f64,
+      }
+
+      impl NtpResult {
+          fn offset(&self) -> f64 {
+              ((self.t2 - self.t1) + (self.t3 - self.t4)) / 2.0
+          }
+
+          fn delay(&self) -> f64 {
+              (self.t4 - self.t1) - (self.t3 - self.t2)
+          }
+      }
+
+      fn weighted_mean(values: &[f64], weights: &[f64]) -> f64 {
+          let total: f64 = values.iter().zip(weights).map(|(v, w)| v * w).sum();
+          total / weights.iter().sum::<f64>()
+      }
+
+      fn main() {
+          // milliseconds; our clock is about 100 ms behind
+          let results = [
+              NtpResult { t1: 1000.0, t2: 1110.0, t3: 1111.0, t4: 1021.0 },
+              NtpResult { t1: 2000.0, t2: 2125.0, t3: 2126.0, t4: 2051.0 },
+              NtpResult { t1: 3000.0, t2: 3300.0, t3: 3301.0, t4: 3401.0 },
+          ];
+          let mut offsets = Vec::new();
+          let mut weights = Vec::new();
+          for r in &results {
+              println!("offset {:>6.1} ms, delay {:>5.1} ms", r.offset(), r.delay());
+              offsets.push(r.offset());
+              weights.push(1.0 / (r.delay() * r.delay()));
+          }
+          println!("weighted offset {:.1} ms", weighted_mean(&offsets, &weights));
+      }
+    output: |
+      offset  100.0 ms, delay  20.0 ms
+      offset  100.0 ms, delay  50.0 ms
+      offset  100.0 ms, delay 400.0 ms
+      weighted offset 100.0 ms
+    explain: "Here all three servers agree; in practice offsets scatter, and the weighting keeps the 400 ms connection from pulling the estimate around. Setting the system clock needs administrator rights and an OS call (`clock_settime` through libc on Linux, `SetSystemTime` on Windows), which *Rust in Action*'s clock v0.1.2 shows with `unsafe` FFI (chapter 24)."
+
+  - type: playground
+    id: ch23-play-time
+    title: "Time ago"
+    lang: rust
+    md: |
+      Write `ago(d: Duration) -> String` that describes a duration the way chat apps do: under a minute `"just now"`, then `"N minutes ago"`, `"N hours ago"`, `"N days ago"`, using singular for 1 (`"1 hour ago"`).
+    task: "Print `just now`, `1 minute ago`, `45 minutes ago`, `2 hours ago`, `1 day ago`, `30 days ago`."
+    code: |
+      use std::time::Duration;
+
+      fn ago(d: Duration) -> String {
+          String::from("just now") // TODO
+      }
+
+      fn main() {
+          for secs in [30, 61, 45 * 60, 2 * 3600 + 5, 86_400 + 1, 30 * 86_400] {
+              println!("{}", ago(Duration::from_secs(secs)));
+          }
+      }
+    expected_output: |
+      just now
+      1 minute ago
+      45 minutes ago
+      2 hours ago
+      1 day ago
+      30 days ago
+    solution_code: |
+      use std::time::Duration;
+
+      fn ago(d: Duration) -> String {
+          let s = d.as_secs();
+          let (n, unit) = match s {
+              0..=59 => return String::from("just now"),
+              60..=3599 => (s / 60, "minute"),
+              3600..=86_399 => (s / 3600, "hour"),
+              _ => (s / 86_400, "day"),
+          };
+          format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" })
+      }
+
+      fn main() {
+          for secs in [30, 61, 45 * 60, 2 * 3600 + 5, 86_400 + 1, 30 * 86_400] {
+              println!("{}", ago(Duration::from_secs(secs)));
+          }
+      }
+    hints:
+      - "Match on `d.as_secs()` with ranges: `0..=59`, `60..=3599`, `3600..=86_399`, `_`."
+      - "Return early for `just now`; the other arms produce a number and a unit."
+
+  - type: exercise
+    id: ch23-ex-time
+    exercise_dir: ch23-time
+    title: "A small time library"
+    difficulty: hard
+    goal: "Convert between Unix timestamps, calendar dates and NTP timestamps, and estimate clock offset from NTP samples."
+    behavior: |
+      - `pub fn days_from_civil(y: i64, m: u32, d: u32) -> i64` (days since 1970-01-01) and `pub fn civil_from_days(z: i64) -> (i64, u32, u32)`: exact inverses.
+      - `pub fn to_rfc3339(unix: i64) -> String`, e.g. `"2024-02-29T13:05:09Z"`.
+      - `pub fn parse_rfc3339(s: &str) -> Option<i64>`: accept exactly `YYYY-MM-DDTHH:MM:SSZ`; reject wrong lengths, separators, months outside 1–12, days outside the month (respect leap years), hours ≥ 24, minutes or seconds ≥ 60.
+      - `pub fn is_leap(y: i64) -> bool` and `pub fn days_in_month(y: i64, m: u32) -> u32`.
+      - `pub fn weekday(unix: i64) -> &'static str`: `"Mon"` .. `"Sun"` (1970-01-01 was a Thursday).
+      - `pub fn ntp_to_unix(seconds: u32, fraction: u32) -> (i64, u32)` returning Unix seconds and nanoseconds, and `pub fn unix_to_ntp(secs: i64, nanos: u32) -> (u32, u32)`.
+      - `pub fn ntp_offset_delay(t1: f64, t2: f64, t3: f64, t4: f64) -> (f64, f64)`: (offset, delay).
+      - `pub fn best_offset(samples: &[(f64, f64, f64, f64)]) -> Option<f64>`: the 1/delay²-weighted mean offset, ignoring samples whose delay is zero or negative; `None` if nothing usable remains.
+    examples:
+      - input: "parse_rfc3339(\"2023-02-29T00:00:00Z\")"
+        output: "None (2023 is not a leap year)"
+      - input: "weekday(0)"
+        output: "\"Thu\""
+    hints:
+      - "`days_from_civil` is the reverse of the lesson's algorithm: `let y = if m <= 2 { y - 1 } else { y }; let era = y.div_euclid(400); let yoe = y - era * 400; let mp = (m + 9) % 12; let doy = (153 * mp + 2) / 5 + d - 1; let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; era * 146_097 + doe - 719_468`."
+      - "Parse with byte positions: check `s.len() == 20` and that bytes 4, 7, 10, 13, 16, 19 are `-`, `-`, `T`, `:`, `:`, `Z`, then parse the number slices."
+      - "Weekday: `(days + 3).rem_euclid(7)` indexes `[\"Mon\", \"Tue\", ...]` because day 0 is a Thursday (index 3)."
+      - "Round-trip the NTP fraction with `((nanos as u64) << 32) / 1_000_000_000` and `(fraction as u64 * 1_000_000_000) >> 32`."
+    rust:
+      starter: |
+        pub const NTP_TO_UNIX_SECONDS: i64 = 2_208_988_800;
+
+        pub fn is_leap(y: i64) -> bool {
+            todo!()
+        }
+
+        pub fn days_in_month(y: i64, m: u32) -> u32 {
+            todo!()
+        }
+
+        pub fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+            todo!()
+        }
+
+        pub fn civil_from_days(z: i64) -> (i64, u32, u32) {
+            todo!()
+        }
+
+        pub fn to_rfc3339(unix: i64) -> String {
+            todo!()
+        }
+
+        pub fn parse_rfc3339(s: &str) -> Option<i64> {
+            todo!()
+        }
+
+        pub fn weekday(unix: i64) -> &'static str {
+            todo!()
+        }
+
+        pub fn ntp_to_unix(seconds: u32, fraction: u32) -> (i64, u32) {
+            todo!()
+        }
+
+        pub fn unix_to_ntp(secs: i64, nanos: u32) -> (u32, u32) {
+            todo!()
+        }
+
+        pub fn ntp_offset_delay(t1: f64, t2: f64, t3: f64, t4: f64) -> (f64, f64) {
+            todo!()
+        }
+
+        pub fn best_offset(samples: &[(f64, f64, f64, f64)]) -> Option<f64> {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn leap_years() {
+            assert!(is_leap(2024) && is_leap(2000) && !is_leap(1900) && !is_leap(2023));
+            assert_eq!(days_in_month(2024, 2), 29);
+            assert_eq!(days_in_month(2023, 2), 28);
+            assert_eq!(days_in_month(2023, 4), 30);
+            assert_eq!(days_in_month(2023, 12), 31);
+        }
+
+        #[test]
+        fn civil_roundtrip() {
+            assert_eq!(days_from_civil(1970, 1, 1), 0);
+            assert_eq!(days_from_civil(2000, 3, 1), 11_017);
+            assert_eq!(civil_from_days(-1), (1969, 12, 31));
+            for z in (-800_000..800_000).step_by(997) {
+                let (y, m, d) = civil_from_days(z);
+                assert_eq!(days_from_civil(y, m, d), z);
+            }
+        }
+
+        #[test]
+        fn formatting() {
+            assert_eq!(to_rfc3339(0), "1970-01-01T00:00:00Z");
+            assert_eq!(to_rfc3339(1_709_211_909), "2024-02-29T13:05:09Z");
+            assert_eq!(to_rfc3339(-86_401), "1969-12-30T23:59:59Z");
+        }
+
+        #[test]
+        fn parsing() {
+            assert_eq!(parse_rfc3339("2024-02-29T13:05:09Z"), Some(1_709_211_909));
+            assert_eq!(parse_rfc3339("1970-01-01T00:00:00Z"), Some(0));
+            for bad in [
+                "2023-02-29T00:00:00Z",
+                "2024-13-01T00:00:00Z",
+                "2024-04-31T00:00:00Z",
+                "2024-01-01T24:00:00Z",
+                "2024-01-01T00:60:00Z",
+                "2024-01-01 00:00:00Z",
+                "2024-01-01T00:00:00",
+                "24-01-01T00:00:00Z",
+                "2024-0a-01T00:00:00Z",
+            ] {
+                assert_eq!(parse_rfc3339(bad), None, "{bad}");
+            }
+            for t in [0i64, 951_782_400, 4_102_444_799, -1_000_000] {
+                assert_eq!(parse_rfc3339(&to_rfc3339(t)), Some(t));
+            }
+        }
+
+        #[test]
+        fn weekdays() {
+            assert_eq!(weekday(0), "Thu");
+            assert_eq!(weekday(1_709_211_909), "Thu");
+            assert_eq!(weekday(1_709_251_200), "Fri");
+            assert_eq!(weekday(-86_400), "Wed");
+        }
+
+        #[test]
+        fn ntp() {
+            assert_eq!(ntp_to_unix(2_208_988_800, 0), (0, 0));
+            assert_eq!(ntp_to_unix(3_918_200_709, 1 << 31), (1_709_211_909, 500_000_000));
+            assert_eq!(unix_to_ntp(1_709_211_909, 500_000_000), (3_918_200_709, 1 << 31));
+            let (s, f) = unix_to_ntp(100, 123_456_789);
+            let (s2, n2) = ntp_to_unix(s, f);
+            assert_eq!(s2, 100);
+            assert!((n2 as i64 - 123_456_789).abs() <= 1, "fraction round-trips to within 1 ns");
+        }
+
+        #[test]
+        fn offsets() {
+            assert_eq!(ntp_offset_delay(1000.0, 1110.0, 1111.0, 1021.0), (100.0, 20.0));
+            let samples = [
+                (0.0, 60.0, 61.0, 21.0),    // offset 50, delay 20
+                (0.0, 210.0, 211.0, 201.0), // offset 110, delay 200
+                (0.0, 5.0, 5.0, 0.0),       // delay 0: ignored
+            ];
+            let best = best_offset(&samples).unwrap();
+            let expected = (50.0 / 400.0 + 110.0 / 40_000.0) / (1.0 / 400.0 + 1.0 / 40_000.0);
+            assert!((best - expected).abs() < 1e-9);
+            assert_eq!(best_offset(&[(0.0, 5.0, 5.0, 0.0)]), None);
+            assert_eq!(best_offset(&[]), None);
+        }
+      solution: |
+        pub const NTP_TO_UNIX_SECONDS: i64 = 2_208_988_800;
+
+        pub fn is_leap(y: i64) -> bool {
+            (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+        }
+
+        pub fn days_in_month(y: i64, m: u32) -> u32 {
+            match m {
+                1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+                4 | 6 | 9 | 11 => 30,
+                2 if is_leap(y) => 29,
+                2 => 28,
+                _ => 0,
+            }
+        }
+
+        pub fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+            let y = if m <= 2 { y - 1 } else { y };
+            let era = y.div_euclid(400);
+            let yoe = y - era * 400;
+            let mp = (m as i64 + 9) % 12;
+            let doy = (153 * mp + 2) / 5 + d as i64 - 1;
+            let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+            era * 146_097 + doe - 719_468
+        }
+
+        pub fn civil_from_days(z: i64) -> (i64, u32, u32) {
+            let z = z + 719_468;
+            let era = z.div_euclid(146_097);
+            let doe = z.rem_euclid(146_097);
+            let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+            let y = yoe + era * 400;
+            let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+            let mp = (5 * doy + 2) / 153;
+            let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+            let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+            (if m <= 2 { y + 1 } else { y }, m, d)
+        }
+
+        pub fn to_rfc3339(unix: i64) -> String {
+            let (days, secs) = (unix.div_euclid(86_400), unix.rem_euclid(86_400));
+            let (y, m, d) = civil_from_days(days);
+            format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", secs / 3600, secs / 60 % 60, secs % 60)
+        }
+
+        pub fn parse_rfc3339(s: &str) -> Option<i64> {
+            let b = s.as_bytes();
+            if b.len() != 20 {
+                return None;
+            }
+            for (i, c) in [(4, b'-'), (7, b'-'), (10, b'T'), (13, b':'), (16, b':'), (19, b'Z')] {
+                if b[i] != c {
+                    return None;
+                }
+            }
+            let num = |r: std::ops::Range<usize>| -> Option<i64> {
+                let part = s.get(r)?;
+                if !part.bytes().all(|c| c.is_ascii_digit()) {
+                    return None;
+                }
+                part.parse().ok()
+            };
+            let (y, mo, d) = (num(0..4)?, num(5..7)? as u32, num(8..10)? as u32);
+            let (h, mi, se) = (num(11..13)?, num(14..16)?, num(17..19)?);
+            if !(1..=12).contains(&mo) || d == 0 || d > days_in_month(y, mo) || h >= 24 || mi >= 60 || se >= 60 {
+                return None;
+            }
+            Some(days_from_civil(y, mo, d) * 86_400 + h * 3600 + mi * 60 + se)
+        }
+
+        pub fn weekday(unix: i64) -> &'static str {
+            const NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+            NAMES[(unix.div_euclid(86_400) + 3).rem_euclid(7) as usize]
+        }
+
+        pub fn ntp_to_unix(seconds: u32, fraction: u32) -> (i64, u32) {
+            let nanos = ((fraction as u64) * 1_000_000_000) >> 32;
+            (seconds as i64 - NTP_TO_UNIX_SECONDS, nanos as u32)
+        }
+
+        pub fn unix_to_ntp(secs: i64, nanos: u32) -> (u32, u32) {
+            let fraction = ((nanos as u64) << 32) / 1_000_000_000;
+            ((secs + NTP_TO_UNIX_SECONDS) as u32, fraction as u32)
+        }
+
+        pub fn ntp_offset_delay(t1: f64, t2: f64, t3: f64, t4: f64) -> (f64, f64) {
+            (((t2 - t1) + (t3 - t4)) / 2.0, (t4 - t1) - (t3 - t2))
+        }
+
+        pub fn best_offset(samples: &[(f64, f64, f64, f64)]) -> Option<f64> {
+            let mut total = 0.0;
+            let mut weights = 0.0;
+            for &(t1, t2, t3, t4) in samples {
+                let (offset, delay) = ntp_offset_delay(t1, t2, t3, t4);
+                if delay <= 0.0 {
+                    continue;
+                }
+                let w = 1.0 / (delay * delay);
+                total += offset * w;
+                weights += w;
+            }
+            if weights > 0.0 { Some(total / weights) } else { None }
+        }
+    solution_explain: "Both calendar functions work on March-based years in 400-year eras, which removes every leap-year special case except the century rule baked into the constants. Parsing validates structure first, then ranges, then the day against `days_in_month`, so `2023-02-29` is caught. The NTP fraction conversion is exact for half seconds and within one nanosecond otherwise."
+
+  - type: quiz
+    id: ch23-quiz-time
+    title: Check yourself
+    questions:
+      - type: single
+        q: "Which clock should you use to measure how long a function takes?"
+        options: ["SystemTime", "Instant", "The RTC", "UNIX_EPOCH"]
+        answer: 1
+        explanation: "It is monotonic and steady."
+      - type: single
+        q: "Why does `SystemTime::duration_since` return a Result?"
+        options: ["Time zones", "The system clock can be set backwards", "Leap seconds always fail", "It allocates"]
+        answer: 1
+        explanation: "The wall clock jumps."
+      - type: single
+        q: "What epoch does NTP use?"
+        options: ["1970-01-01", "1900-01-01", "2000-01-01", "The boot time"]
+        answer: 1
+        explanation: "2,208,988,800 seconds before the Unix epoch."
+      - type: single
+        q: "With T1 = 0, T2 = 60, T3 = 61, T4 = 21 (ms), what is the offset?"
+        options: ["20", "50", "60", "41"]
+        answer: 1
+        explanation: "((60 - 0) + (61 - 21)) / 2 = 50."
+      - type: single
+        q: "What happens at 03:14:07 UTC on 19 January 2038?"
+        options: ["Nothing", "Signed 32-bit Unix timestamps overflow", "NTP stops", "A leap second"]
+        answer: 1
+        explanation: "The year 2038 problem; i64 timestamps are fine."
+
+  - type: summary
+    points:
+      - "Keep time in UTC as seconds since an epoch; convert to local calendars only for display."
+      - "SystemTime is the wall clock and can jump; Instant is monotonic for measuring durations."
+      - "Calendar dates come from days since the epoch; the civil_from_days algorithm handles leap years."
+      - "NTP timestamps are 32.32 fixed-point seconds since 1900."
+      - "NTP estimates offset ((T2-T1)+(T3-T4))/2 and delay (T4-T1)-(T3-T2), and weights servers by 1/delay²."
+terms:
+  - term: epoch
+    def: "The fixed starting point a timestamp counts from, such as 1970-01-01 for Unix."
+  - term: Unix timestamp
+    def: "The number of seconds since 1970-01-01 00:00:00 UTC, ignoring leap seconds."
+  - term: monotonic clock
+    def: "A clock that never goes backwards."
+  - term: RFC 3339
+    def: "The internet date format like 2024-02-29T13:05:09Z, a profile of ISO 8601."
+  - term: NTP
+    def: "The Network Time Protocol, used to synchronize clocks over a network."
+  - term: leap second
+    def: "An extra second occasionally inserted into UTC to keep it aligned with the Earth's rotation."
