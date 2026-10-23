@@ -1,0 +1,85 @@
+title: "Chapter test: Getting Started"
+kind: test
+summary: Ten questions on why Rust exists, your first program and Cargo. You need 70% to pass; you can retry.
+blocks:
+  - type: quiz
+    id: ch01-test
+    pass_score: 0.7
+    questions:
+      - type: single
+        q: "A C program writes to `a[3]` of an array that has one element. What does the C standard say happens?"
+        options:
+          - "The compiler refuses to build the program."
+          - "The program always crashes immediately with a clear message."
+          - "The behavior is undefined: the program may do anything."
+          - "The array grows to four elements automatically."
+        answer: 2
+        hints: ["This is the four-line program from *Programming Rust*."]
+        explanation: |
+          It is **undefined behavior**: the standard places no requirements at all, so the program might crash, print nonsense or be exploited. A Rust program doing the same with a vector stops with a clear `index out of bounds` panic instead.
+      - type: truefalse
+        q: "If a Rust program compiles, it cannot contain any logic errors."
+        answer: false
+        hints: ["What exactly does the compiler know about your intentions?"]
+        explanation: "False. Rust rules out undefined behavior (invalid memory use, data races), not mistakes in your logic. A program that adds where it should subtract still compiles."
+      - type: multi
+        q: "Which are Rust's three goals, as *Rust in Action* puts them?"
+        options: ["Safety", "Productivity", "Control", "Garbage collection", "Dynamic typing"]
+        answer: [0, 1, 2]
+        hints: ["Two options describe things Rust specifically does *not* have."]
+        explanation: "Safety, productivity and control. Rust has no garbage collector, and it is statically typed: types are checked at compile time."
+      - type: single
+        q: "What does this program print?"
+        code: |
+          fn main() {
+              println!("Ready");
+              println!("Steady");
+          }
+        lang: rust
+        options: ["`Ready Steady` on one line", "`Ready` and `Steady` on two lines", "Nothing: `main` is never called", "An error: two `println!` calls are not allowed"]
+        answer: 1
+        hints: ["What does the `ln` in `println!` stand for?"]
+        explanation: "`println!` prints its text and then a new line, so each call prints one line. `main` runs automatically; you never call it yourself."
+      - type: single
+        q: "Which line would fail to compile?"
+        code: |
+          fn main() {
+              println("Hello");
+          }
+        lang: rust
+        options: ["Line 1: `main` needs parameters", "Line 2: `println` is missing its `!`", "Line 3: the bracket should be `)`", "None, it compiles"]
+        answer: 1
+        hints: ["Is `println` a function or a macro?"]
+        explanation: "`println!` is a macro and must be called with `!`. Without it Rust looks for a *function* called `println`, which does not exist. `main` taking no parameters is correct."
+      - type: fill
+        q: "Which tool installs Rust and updates it with the `update` subcommand?"
+        answer: ["rustup"]
+        hints: ["Its name starts with `rust`."]
+        explanation: "`rustup` installs the toolchain; `rustup update` upgrades it and `rustup doc` opens the offline documentation."
+      - type: order
+        q: "Order a typical Cargo workflow for a brand-new program."
+        items:
+          - "`cargo new guess`"
+          - "Edit `src/main.rs`"
+          - "`cargo check` to find mistakes quickly"
+          - "`cargo run` to try it"
+          - "`cargo build --release` to make the final program"
+        hints: ["You need a project before you can edit it, and you ship last."]
+        explanation: "Create, edit, check often, run to try, and build with optimizations at the end."
+      - type: single
+        q: "Where does Cargo expect your source files?"
+        options: ["In the project's top folder", "In `src/`", "In `target/`", "Anywhere, as long as it is listed in `Cargo.lock`"]
+        answer: 1
+        hints: ["`cargo new` created one folder besides `target/` appearing later."]
+        explanation: "Source code goes in `src/`. The top folder holds `Cargo.toml`, README and license; `target/` holds build output."
+      - type: truefalse
+        q: "`cargo build --release` produces a faster program than `cargo build`, but takes longer to compile."
+        answer: true
+        hints: ["What does the release profile turn on?"]
+        explanation: "True. The release profile enables optimizations: slower to compile, faster to run. Always measure performance with the release build."
+      - type: single
+        q: "What is a crate?"
+        options: ["A compiled executable file", "A package of Rust code, such as your project or a library", "The `target/` folder", "Rust's error message format"]
+        answer: 1
+        hints: ["Dependencies are listed as crates in `Cargo.toml`."]
+        explanation: "A **crate** is a package of Rust code. Your project is a crate, and the libraries listed under `[dependencies]` are crates too."

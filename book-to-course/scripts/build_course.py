@@ -25,7 +25,9 @@ BLOCK_REQ = {
     "text": ["md"], "callout": ["md"], "code": ["code"], "stepper": ["steps"], "reveal": ["prompt", "md"],
     "from_book": ["md"], "table": ["headers", "rows"], "flow": ["nodes"], "svg": ["svg"], "quiz": ["questions"],
     "exercise": ["title", "goal"], "flashcards": ["cards"], "summary": ["points"], "derivation": ["steps"],
+    "playground": ["code"],
 }
+PLAYGROUND_LANGS = {"rust", "python", "js", "go"}
 REL_RE = re.compile(r"^[^\n]{1,12}$")
 CALLOUTS = {"tip", "note", "warning", "analogy", "key", "example"}
 ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -40,7 +42,7 @@ BACKTICK_SPAN = re.compile(r"`[^`]+`")
 NON_PROSE_KEYS = {
     "code", "output", "solution", "input", "command", "command_display", "lang", "language",
     "id", "type", "file", "exercise_dir", "kind", "difficulty", "answer", "placeholder",
-    "pages", "sections", "chapter", "svg", "highlight", "unit",
+    "pages", "sections", "chapter", "svg", "highlight", "unit", "expected_output", "must_contain",
     # derivation: bare LaTeX (no $ delimiters) — linted directly with bare=True instead
     "lhs", "rhs", "rel", "result",
 }
@@ -305,7 +307,7 @@ def check_block(b, where, lesson, ids, rep, counters):
             rep.err(where, "%s block needs `%s`" % (t, k))
             return
     check_text(b, where, rep)
-    if t in ("quiz", "exercise", "flashcards"):
+    if t in ("quiz", "exercise", "flashcards", "playground"):
         counters[t] = counters.get(t, 0) + 1
         if not b.get("id"):
             b["id"] = "%s-%s%d" % (lesson["id"], t, counters[t])
@@ -346,6 +348,17 @@ def check_block(b, where, lesson, ids, rep, counters):
         if b.get("difficulty") and b["difficulty"] not in EX_MINUTES:
             rep.err(where, "difficulty must be easy, medium or hard")
         embed_exercise(b, rep.root, where, rep)
+    if t == "playground":
+        lang = str(b.get("lang", "rust")).lower()
+        b["lang"] = lang
+        if lang not in PLAYGROUND_LANGS:
+            rep.err(where, "playground `lang` must be one of %s" % ", ".join(sorted(PLAYGROUND_LANGS)))
+        mc = b.get("must_contain")
+        if mc is not None and not (isinstance(mc, list) and all(isinstance(x, str) and x for x in mc)):
+            rep.err(where, "playground `must_contain` must be a list of non-empty strings")
+        if (b.get("expected_output") is not None or mc) and not b.get("task"):
+            rep.warn(where, "playground has a check (`expected_output`/`must_contain`) but no `task` telling the learner what to make it print")
+        b["hints"] = [h for h in as_list(b.get("hints")) if h]
     if t == "derivation":
         steps = b["steps"]
         if not isinstance(steps, list) or len(steps) < 2:
@@ -394,6 +407,8 @@ def lesson_minutes(les):
             practice += b.get("minutes") or EX_MINUTES.get(b.get("difficulty") or "medium", 15)
         elif t == "flashcards":
             practice += 0.3 * len(b["cards"])
+        elif t == "playground":
+            practice += b.get("minutes") or (4 if (b.get("expected_output") is not None or b.get("must_contain")) else 2)
         elif t == "derivation":
             theory += sum(wc(s.get("why")) for s in b.get("steps", []) if isinstance(s, dict)) / 130.0 + 0.5 * len(b.get("steps", []))
     return theory, practice
@@ -479,7 +494,7 @@ def main():
             else:
                 if "summary" not in types:
                     rep.warn(where, "no `summary` block at the end")
-                if "quiz" not in types and "exercise" not in types:
+                if "quiz" not in types and "exercise" not in types and "playground" not in types:
                     rep.warn(where, "lesson has no practice (quiz or exercise)")
                 if types and types[0] not in ("text", "callout"):
                     rep.warn(where, "start with a short `text`/`callout` that says what the learner will be able to do after the lesson")

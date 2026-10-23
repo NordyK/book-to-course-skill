@@ -1,1 +1,10 @@
 __pycache__/
+# Rust course: extracted book text stays local (copyrighted sources), learner progress and build output too
+courses/*/.build/source/
+courses/*/progress/*
+!courses/*/progress/.gitkeep
+courses/*/exercises/*/target/
+courses/*/exercises/*/Cargo.lock
+courses/*/.cargo-target/
+courses/*/.impeccable/review/
+courses/*/.impeccable/questions/

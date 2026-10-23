@@ -1,0 +1,247 @@
+{
+  "version": 1,
+  "created": "2026-10-23T02:32:57+00:00",
+  "updated": "2026-10-23T02:32:57+00:00",
+  "book": {
+    "title": "Rust: From First Program to Systems Programming",
+    "author": "Merged from 5 books (see .build/plan.md)",
+    "language": "en",
+    "source": "merged",
+    "format": "merged"
+  },
+  "ui_lang": "en",
+  "chapters": [
+    {
+      "id": "ch01",
+      "title": "Getting Started with Rust",
+      "words": 16584,
+      "file": "chapters/ch01.md",
+      "status": "pending",
+      "lessons_built": 4,
+      "note": ""
+    },
+    {
+      "id": "ch02",
+      "title": "Your First Program: a Guessing Game",
+      "words": 19409,
+      "file": "chapters/ch02.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch03",
+      "title": "Common Programming Concepts",
+      "words": 44758,
+      "file": "chapters/ch03.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch04",
+      "title": "Ownership, Borrowing and Slices",
+      "words": 37714,
+      "file": "chapters/ch04.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch05",
+      "title": "Structs: Grouping Related Data",
+      "words": 26149,
+      "file": "chapters/ch05.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch06",
+      "title": "Enums and Pattern Matching",
+      "words": 19569,
+      "file": "chapters/ch06.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch07",
+      "title": "Packages, Crates and Modules",
+      "words": 24587,
+      "file": "chapters/ch07.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch08",
+      "title": "Common Collections and Text",
+      "words": 34694,
+      "file": "chapters/ch08.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch09",
+      "title": "Error Handling",
+      "words": 19474,
+      "file": "chapters/ch09.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch10",
+      "title": "Generics, Traits and Lifetimes",
+      "words": 41941,
+      "file": "chapters/ch10.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch11",
+      "title": "Writing Automated Tests",
+      "words": 15221,
+      "file": "chapters/ch11.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch12",
+      "title": "Project: a Command-Line Search Tool",
+      "words": 17357,
+      "file": "chapters/ch12.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch13",
+      "title": "Closures and Iterators",
+      "words": 32543,
+      "file": "chapters/ch13.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch14",
+      "title": "Cargo and Crates.io",
+      "words": 5977,
+      "file": "chapters/ch14.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch15",
+      "title": "Smart Pointers",
+      "words": 32353,
+      "file": "chapters/ch15.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch16",
+      "title": "Fearless Concurrency",
+      "words": 33307,
+      "file": "chapters/ch16.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch17",
+      "title": "Async Programming",
+      "words": 39463,
+      "file": "chapters/ch17.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch18",
+      "title": "Trait Objects and OOP in Rust",
+      "words": 14862,
+      "file": "chapters/ch18.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch19",
+      "title": "Patterns in Depth",
+      "words": 14957,
+      "file": "chapters/ch19.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch20",
+      "title": "Advanced Features: Unsafe, Advanced Traits and Types, Macros",
+      "words": 49637,
+      "file": "chapters/ch20.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch21",
+      "title": "Data in Depth: Bits, Integers and Floats",
+      "words": 20516,
+      "file": "chapters/ch21.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch22",
+      "title": "Files, Storage and I/O",
+      "words": 18122,
+      "file": "chapters/ch22.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch23",
+      "title": "Networking and Time",
+      "words": 18166,
+      "file": "chapters/ch23.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch24",
+      "title": "Going Low-Level: FFI, Kernels and Signals",
+      "words": 22868,
+      "file": "chapters/ch24.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    },
+    {
+      "id": "ch25",
+      "title": "Final Project: a Multithreaded Web Server",
+      "words": 39913,
+      "file": "chapters/ch25.md",
+      "status": "pending",
+      "lessons_built": 0,
+      "note": ""
+    }
+  ],
+  "notes": [],
+  "log": [
+    {
+      "at": "2026-10-23T02:32:57+00:00",
+      "msg": "course initialised"
+    }
+  ]
+}

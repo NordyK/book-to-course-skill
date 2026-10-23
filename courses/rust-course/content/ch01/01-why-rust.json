@@ -1,0 +1,177 @@
+{
+  "title": "Why Rust? Speed without the crashes",
+  "summary": "You will be able to say what kind of bugs Rust prevents, what it gives you in return, and what it costs.",
+  "source": {
+    "chapter": "ch01",
+    "sections": [
+      "TRPL Introduction",
+      "PR ch1 Systems Programmers Can Have Nice Things",
+      "RiA 1.7–1.10 What is Rust, Downsides, Where Rust fits"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "By the end of this lesson you will be able to explain, in one or two sentences, **why people choose Rust** and what trade-off they accept when they do. That matters because every rule you meet later in this course (and there are some strict ones) exists to protect one promise. Knowing the promise makes the rules feel less arbitrary.\n"
+    },
+    {
+      "type": "callout",
+      "kind": "analogy",
+      "title": "A car with a very picky inspector",
+      "md": "Imagine two car factories. The first one lets you drive away straight after assembly; problems show up on the motorway. The second one has an inspector who refuses to let any car leave until every bolt is checked. Leaving the second factory takes longer, but the car will not lose a wheel at 120 km/h.\n\nRust is the second factory. The inspector is the **compiler**, the program that turns your code into something the computer can run. Where the analogy breaks: the Rust inspector also explains *exactly* which bolt is loose and usually how to fix it.\n"
+    },
+    {
+      "type": "text",
+      "title": "The problem Rust was built to solve",
+      "md": "Programs keep their data in the computer's **memory**, a long row of numbered boxes. Languages such as C and C++ let you reach into any box directly. That is fast, but nothing stops you from reaching into a box you do not own, or one that was already thrown away.\n\nWhen that happens the C standard calls it **undefined behavior**: the program is allowed to do *anything*. It might print garbage, crash, or quietly let an attacker take over. The *Programming Rust* authors open their book with a four-line C program that writes past the end of a one-element array; on one laptop it ended up printing a message from an unrelated password routine and then crashed.\n"
+    },
+    {
+      "type": "code",
+      "lang": "c",
+      "title": "Four lines of C that misbehave",
+      "caption": "From *Programming Rust*, ch. 1. The array `a` has one slot, but the code writes to slot number 3.",
+      "code": "int main(int argc, char **argv) {\n  unsigned long a[1];\n  a[3] = 0x7ffff7b36cebUL;\n  return 0;\n}\n",
+      "explain": "A C compiler accepts this happily. Nothing checks that slot 3 exists, so the value lands on top of whatever happens to live next to the array in memory.\n"
+    },
+    {
+      "type": "text",
+      "title": "Rust's promise",
+      "md": "Rust makes a simple promise: **if your program passes the compiler's checks, it is free of undefined behavior.** Reading memory that was already freed, freeing the same memory twice, and using a \"nothing\" pointer are all caught *before the program ever runs*. Array accesses are checked too: reading past the end stops the program with a clear error instead of silently reading a stranger's data.\n\nStudies by Microsoft and by the Chromium browser team found that around 70% of serious security bugs come from exactly this kind of invalid memory access. Rust removes that whole class of bugs, and it does so without a **garbage collector** (a helper that runs alongside your program to clean up memory, costing time).\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch01-play-bounds",
+      "title": "See it yourself: Rust checks array access",
+      "lang": "rust",
+      "md": "This is the Rust version of the C mistake: a vector (a growable list) with three items, and an attempt to read item number 10. Press **Run** and read what Rust says. Then change `10` to `2` and run it again.\n",
+      "code": "fn main() {\n    let fruit = vec![\"apple\", \"banana\", \"cherry\"];\n    let index = 10;\n    println!(\"Reading item {index}...\");\n    println!(\"Got: {}\", fruit[index]);\n}\n",
+      "hints": [
+        "Items are counted from 0, so the three items have positions 0, 1 and 2."
+      ]
+    },
+    {
+      "type": "reveal",
+      "prompt": "When you ran the program with `index = 10`, did Rust read some random memory, or did it stop? Why is stopping better?",
+      "md": "It stopped with a **panic**: `index out of bounds: the len is 3 but the index is 10`. Stopping is better because the program never works with data it does not own. A crash with a clear message is annoying; silently using a stranger's data is dangerous and can go unnoticed for years.\n"
+    },
+    {
+      "type": "table",
+      "title": "Rust's three goals (from *Rust in Action*)",
+      "headers": [
+        "Goal",
+        "What it means for you",
+        "Example you will meet"
+      ],
+      "rows": [
+        [
+          "**Safety**",
+          "Whole families of bugs cannot compile: dangling references, data races, reading past the end of a buffer.",
+          "Using a value after it was given away is a compile error (chapter 4)."
+        ],
+        [
+          "**Productivity**",
+          "Helpful error messages, a built-in build tool and package manager, tests and docs out of the box.",
+          "`cargo new`, `cargo run`, `cargo test` (this chapter)."
+        ],
+        [
+          "**Control**",
+          "You decide where data lives and how it is laid out, like in C, with sensible defaults.",
+          "Choosing between a value on the stack and one in a `Box` on the heap (chapter 15)."
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Fast, too",
+      "md": "Rust follows the **zero-cost abstraction** idea it shares with C++: features you do not use cost nothing, and the ones you do use are as fast as code you could have written by hand. Because there is no garbage collector, Rust starts quickly and uses little memory. That is why it shows up in command-line tools, databases, game engines, web servers, browsers, operating systems and even inside other languages as fast extensions.\n\nRust is also built for **concurrency**, doing several things at the same time. The same rules that keep memory safe also stop two threads from changing the same data at once. The community calls this *fearless concurrency*.\n"
+    },
+    {
+      "type": "callout",
+      "kind": "warning",
+      "title": "The honest costs",
+      "md": "*Rust in Action* lists the downsides plainly, and you should know them before you start:\n\n- **Strictness.** Programs do not compile until everything is right. Early on you will \"fight the compiler\". Everyone does; it gets much easier.\n- **Compile times.** Rust compiles more slowly than many languages, because it checks and optimizes a lot.\n- **Size.** The language is big. This course introduces it one small piece at a time.\n- **Cyclic data.** Structures where things point at each other in a loop (like a doubly linked list) are awkward in safe Rust. Avoid them while learning.\n"
+    },
+    {
+      "type": "quiz",
+      "id": "ch01-quiz-why",
+      "title": "Check your understanding",
+      "questions": [
+        {
+          "type": "single",
+          "q": "What does the Rust compiler promise about a program that compiles?",
+          "options": [
+            "It has no bugs at all.",
+            "It is free of undefined behavior such as reading freed memory.",
+            "It runs faster than any C program.",
+            "It never stops with an error at run time."
+          ],
+          "answer": 1,
+          "hints": [
+            "Think about which *kind* of bug Rust is designed around.",
+            "Logic mistakes (like adding instead of subtracting) are still possible."
+          ],
+          "explanation": "Rust rules out **undefined behavior**: invalid memory access, data races and similar. It cannot know whether your logic is right, so \"no bugs at all\" is too strong. And a program can still stop at run time on purpose, for example with the out-of-bounds panic you just saw.\n"
+        },
+        {
+          "type": "truefalse",
+          "q": "Rust keeps memory safe by running a garbage collector next to your program.",
+          "answer": false,
+          "hints": [
+            "Look again at the paragraph about speed and memory use."
+          ],
+          "explanation": "False. Rust has **no garbage collector**. The safety checks happen at compile time, through the ownership rules you will learn in chapter 4. That is why Rust programs start fast and use little memory.\n"
+        },
+        {
+          "type": "multi",
+          "q": "Which of these are real downsides of Rust that the books mention? (Choose all that apply.)",
+          "options": [
+            "Compile times are longer than in many languages.",
+            "The compiler is strict, so it takes time to get code accepted.",
+            "Rust programs cannot use more than one CPU core.",
+            "Data structures with cycles, like doubly linked lists, are awkward."
+          ],
+          "answer": [
+            0,
+            1,
+            3
+          ],
+          "hints": [
+            "One option contradicts the 'fearless concurrency' paragraph."
+          ],
+          "explanation": "Compile times, strictness and cyclic data are the honest costs. Using many CPU cores is a **strength** of Rust: its rules make concurrent code safe, not impossible.\n"
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Languages like C let you touch any memory, so mistakes become undefined behavior that can crash or be exploited.",
+        "Rust's promise: if it compiles, it is free of undefined behavior, and it achieves this without a garbage collector.",
+        "Rust's three goals are safety, productivity and control, and its abstractions are designed to cost nothing extra at run time.",
+        "The price is a strict compiler, slower compiles and a large language, which this course takes in small steps."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "compiler",
+      "def": "A program that checks your source code and translates it into a program the computer can run. For Rust it is called `rustc`."
+    },
+    {
+      "term": "undefined behavior",
+      "def": "What happens when a C or C++ program breaks a language rule, such as writing past the end of an array: the program is allowed to do anything at all."
+    },
+    {
+      "term": "garbage collector",
+      "def": "A helper that runs alongside a program and frees memory that is no longer used. Rust does not have one."
+    },
+    {
+      "term": "panic",
+      "def": "Rust stopping a program on purpose with an error message, for example when you read past the end of a vector."
+    },
+    {
+      "term": "zero-cost abstraction",
+      "def": "A language feature that adds no run-time cost compared with writing the same thing by hand."
+    }
+  ]
+}
