@@ -1,0 +1,7 @@
+title: "Structs"
+summary: "Give your data a shape: define structs with named fields, build and update them, print them for debugging, and attach behavior with methods and associated functions."
+goals:
+  - Define structs, create instances, and use field init shorthand and struct update syntax
+  - Know when to use tuple structs and unit-like structs
+  - Refactor loose variables into a struct, and print it with Debug and dbg!
+  - Write methods taking self, &self or &mut self, and associated functions like new

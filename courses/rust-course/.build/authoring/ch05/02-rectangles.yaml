@@ -1,0 +1,210 @@
+title: "From loose variables to a struct"
+summary: "Refactor a small program three times, from separate variables to a tuple to a struct, and learn to print structs with Debug, {:#?} and dbg!."
+minutes: 22
+source:
+  chapter: ch05
+  sections: ["TRPL 5.2 An Example Program Using Structs", "TRPL 5.2 Refactoring with Tuples", "TRPL 5.2 Refactoring with Structs", "TRPL 5.2 Adding Functionality with Derived Traits", "PR ch9 Deriving Common Traits for Struct Types"]
+blocks:
+  - type: text
+    md: |
+      When should you reach for a struct? This lesson follows one small program, which computes the area of a rectangle, through three versions. Each version works. What changes is how clearly the code says what it means.
+
+  - type: stepper
+    title: Three versions of the same program
+    lang: rust
+    steps:
+      - title: "1. Separate variables"
+        md: "It works, but nothing in `area(width: u32, height: u32)` says the two numbers belong together. A caller could pass two unrelated numbers, or swap them."
+        code: |
+          fn main() {
+              let width1 = 30;
+              let height1 = 50;
+              println!("The area of the rectangle is {} square pixels.", area(width1, height1));
+          }
+
+          fn area(width: u32, height: u32) -> u32 {
+              width * height
+          }
+        highlight: [7]
+      - title: "2. A tuple"
+        md: "Now there is one argument, so the values travel together. But `dimensions.0` and `dimensions.1` have no names: which one is the width? For area it does not matter; for drawing the rectangle on screen it would."
+        code: |
+          fn main() {
+              let rect1 = (30, 50);
+              println!("The area of the rectangle is {} square pixels.", area(rect1));
+          }
+
+          fn area(dimensions: (u32, u32)) -> u32 {
+              dimensions.0 * dimensions.1
+          }
+        highlight: [6, 7]
+      - title: "3. A struct"
+        md: "The signature now reads as a sentence: the area of a rectangle. It borrows the rectangle (`&Rectangle`), so `main` keeps ownership, and the body says `width * height`."
+        code: |
+          struct Rectangle {
+              width: u32,
+              height: u32,
+          }
+
+          fn main() {
+              let rect1 = Rectangle { width: 30, height: 50 };
+              println!("The area of the rectangle is {} square pixels.", area(&rect1));
+          }
+
+          fn area(rectangle: &Rectangle) -> u32 {
+              rectangle.width * rectangle.height
+          }
+        highlight: [1, 2, 3, 4, 11, 12]
+
+  - type: text
+    title: Printing a struct
+    md: |
+      `println!("{rect1}")` does not compile: `Rectangle` does not implement `std::fmt::Display`. Rust does not guess how your type should look to users. For debugging, though, Rust can write a printer for you. Add `#[derive(Debug)]` above the struct and use `{:?}`, or `{:#?}` for one field per line:
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      struct Rectangle {
+          width: u32,
+          height: u32,
+      }
+
+      fn main() {
+          let rect1 = Rectangle { width: 30, height: 50 };
+          println!("rect1 is {rect1:?}");
+          println!("rect1 is {rect1:#?}");
+      }
+    output: |
+      rect1 is Rectangle { width: 30, height: 50 }
+      rect1 is Rectangle {
+          width: 30,
+          height: 50,
+      }
+    explain: "`#[derive(Debug)]` is an **attribute** that asks the compiler to generate an implementation of the `Debug` trait. Traits are chapter 10's topic; for now, `derive` is the line you add to make a struct printable with `{:?}`."
+
+  - type: text
+    title: dbg!
+    md: |
+      The `dbg!` macro prints the file, line, the expression you wrote, and its value, to **standard error**, then hands the value back. Because it returns the value, you can wrap it around part of an expression without changing what the program does. It takes ownership of what you pass, so pass a reference (`dbg!(&rect1)`) when you want to keep using the value.
+
+  - type: code
+    lang: rust
+    code: |
+      #[derive(Debug)]
+      struct Rectangle {
+          width: u32,
+          height: u32,
+      }
+
+      fn main() {
+          let scale = 2;
+          let rect1 = Rectangle {
+              width: dbg!(30 * scale),
+              height: 50,
+          };
+          dbg!(&rect1);
+      }
+    output: |
+      [src/main.rs:10:16] 30 * scale = 60
+      [src/main.rs:13:5] &rect1 = Rectangle {
+          width: 60,
+          height: 50,
+      }
+    output_label: Standard error
+    explain: "Because `dbg!` writes to stderr and `println!` to stdout, debug output does not get mixed into a program's real output when it is redirected to a file."
+
+  - type: playground
+    id: ch05-play-rect
+    title: "Perimeter and a square check"
+    lang: rust
+    md: |
+      Add two functions next to `area`: `perimeter(&Rectangle) -> u32` and `is_square(&Rectangle) -> bool`, and print them for both rectangles in `main` as shown in the task. Keep `#[derive(Debug)]` and the first `println!`.
+    task: "Print `Rectangle { width: 30, height: 50 }: area 1500, perimeter 160, square false`, then the same for a 20 × 20 rectangle (`area 400, perimeter 80, square true`)."
+    code: |
+      #[derive(Debug)]
+      struct Rectangle {
+          width: u32,
+          height: u32,
+      }
+
+      fn area(r: &Rectangle) -> u32 {
+          r.width * r.height
+      }
+
+      fn main() {
+          let shapes = [Rectangle { width: 30, height: 50 }, Rectangle { width: 20, height: 20 }];
+          for r in &shapes {
+              println!("{r:?}: area {}", area(r));
+          }
+      }
+    expected_output: |
+      Rectangle { width: 30, height: 50 }: area 1500, perimeter 160, square false
+      Rectangle { width: 20, height: 20 }: area 400, perimeter 80, square true
+    solution_code: |
+      #[derive(Debug)]
+      struct Rectangle {
+          width: u32,
+          height: u32,
+      }
+
+      fn area(r: &Rectangle) -> u32 {
+          r.width * r.height
+      }
+
+      fn perimeter(r: &Rectangle) -> u32 {
+          2 * (r.width + r.height)
+      }
+
+      fn is_square(r: &Rectangle) -> bool {
+          r.width == r.height
+      }
+
+      fn main() {
+          let shapes = [Rectangle { width: 30, height: 50 }, Rectangle { width: 20, height: 20 }];
+          for r in &shapes {
+              println!("{r:?}: area {}, perimeter {}, square {}", area(r), perimeter(r), is_square(r));
+          }
+      }
+    hints:
+      - "`for r in &shapes` borrows each element, so `r` is already a `&Rectangle`: call `perimeter(r)`, not `perimeter(&r)`."
+      - "`2 * (r.width + r.height)` and `r.width == r.height`."
+
+  - type: quiz
+    id: ch05-quiz-rect
+    title: Check yourself
+    questions:
+      - type: single
+        q: "Why is `fn area(rectangle: &Rectangle)` better than `fn area(width: u32, height: u32)`?"
+        options: ["It runs faster", "It says the values belong together and names them", "It is the only way to multiply", "It avoids heap allocation"]
+        answer: 1
+        explanation: "The struct carries meaning: the function works on a rectangle, and its fields have names."
+      - type: single
+        q: "Which line makes `println!(\"{:?}\", r)` work for a struct?"
+        options: ["`use std::fmt;`", "`#[derive(Debug)]` above the struct", "`impl Print for Rectangle`", "`#[debug]` on each field"]
+        answer: 1
+        explanation: "Deriving `Debug` generates the debug printer."
+      - type: multi
+        q: "Which are true about `dbg!`?"
+        options: ["It prints to standard error", "It shows the file and line", "It returns the value it was given", "It only works on numbers"]
+        answer: [0, 1, 2]
+        explanation: "It works on any `Debug` value and takes ownership unless you pass a reference."
+      - type: single
+        q: "What is the difference between `{:?}` and `{:#?}`?"
+        options: ["`{:#?}` prints in hexadecimal", "`{:#?}` pretty-prints over several lines", "`{:#?}` prints only field names", "No difference"]
+        answer: 1
+        explanation: "The `#` asks for the indented, multi-line form."
+
+  - type: summary
+    points:
+      - "Group values that belong together in a struct; names make code say what it means."
+      - "Borrow structs (`&Rectangle`) in functions that only read them."
+      - "`#[derive(Debug)]` enables `{:?}` and pretty `{:#?}` printing."
+      - "`dbg!(expr)` prints file, line, expression and value to stderr, and returns the value."
+terms:
+  - term: attribute
+    def: "Metadata in #[...] that tells the compiler something about the item below it, like #[derive(Debug)]."
+  - term: derive
+    def: "An attribute that asks the compiler to generate a standard trait implementation, such as Debug, Clone or PartialEq."
+  - term: "dbg!"
+    def: "A macro that prints an expression and its value with the file and line to stderr, and returns the value."

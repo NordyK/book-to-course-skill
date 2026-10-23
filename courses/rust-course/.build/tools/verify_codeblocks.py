@@ -9,8 +9,9 @@ def run(code):
         os.makedirs(t+"/src"); src=t+"/src/main.rs"; open(src,"w").write(code)
         c=subprocess.run(["rustc","--edition","2024","-A","warnings","-o",t+"/m","src/main.rs"],cwd=t,capture_output=True,text=True)
         if c.returncode: return "CE", c.stderr
-        r=subprocess.run([t+"/m"],capture_output=True,text=True,timeout=10)
-        return ("ok" if r.returncode==0 else "panic"), r.stdout
+        r=subprocess.run([t+"/m"],cwd=t,capture_output=True,text=True,timeout=10)
+        return ("ok" if r.returncode==0 else "panic"), (r.stderr if STDERR[0] else r.stdout)
+STDERR=[False]
 n=lambda s:"\n".join(l.rstrip() for l in s.strip().split("\n"))
 for ch in chs:
     for fn in sorted(os.listdir(f"{course}/content/{ch}")):
@@ -19,6 +20,7 @@ for ch in chs:
             code=b["code"]
             if "fn main(" not in code: continue
             if re.search(r"^use (rand)", code, re.M): continue
+            STDERR[0]=b.get("output_label")=="Standard error"
             st,out=run(code)
             if b.get("output_label")=="Compiler output":
                 exp=b["output"].strip().split("\n")[0]

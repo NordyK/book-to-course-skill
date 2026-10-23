@@ -90,5 +90,17 @@
  "ch04-play-last-word": {
   "solution_code": "fn last_word(s: &str) -> &str {\n    match s.rfind(' ') {\n        Some(i) => &s[i + 1..],\n        None => s,\n    }\n}\n\nfn main() {\n    println!(\"{}\", last_word(\"hello world\"));\n    println!(\"{}\", last_word(\"Ferris\"));\n    let owned = String::from(\"Ferris the crab\");\n    println!(\"{}\", last_word(&owned));\n}\n",
   "starter_ok": "run"
+ },
+ "ch05-play-counter": {
+  "solution_code": "struct Counter {\n    count: u32,\n}\n\nimpl Counter {\n    fn new() -> Self {\n        Self { count: 0 }\n    }\n\n    fn increment(&mut self) {\n        self.count += 1;\n    }\n\n    fn add(&mut self, n: u32) {\n        self.count += n;\n    }\n\n    fn get(&self) -> u32 {\n        self.count\n    }\n}\n\nfn main() {\n    let mut c = Counter::new();\n    c.increment();\n    c.add(2);\n    println!(\"count: {}\", c.get());\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch05-play-rect": {
+  "solution_code": "#[derive(Debug)]\nstruct Rectangle {\n    width: u32,\n    height: u32,\n}\n\nfn area(r: &Rectangle) -> u32 {\n    r.width * r.height\n}\n\nfn perimeter(r: &Rectangle) -> u32 {\n    2 * (r.width + r.height)\n}\n\nfn is_square(r: &Rectangle) -> bool {\n    r.width == r.height\n}\n\nfn main() {\n    let shapes = [Rectangle { width: 30, height: 50 }, Rectangle { width: 20, height: 20 }];\n    for r in &shapes {\n        println!(\"{r:?}: area {}, perimeter {}, square {}\", area(r), perimeter(r), is_square(r));\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch05-play-update": {
+  "solution_code": "struct User {\n    username: String,\n    sign_in_count: u64,\n}\n\nfn main() {\n    let user1 = User { username: String::from(\"ferris\"), sign_in_count: 2 };\n    let user2 = User { username: String::from(\"other\"), ..user1 };\n    println!(\"{} ({} sign-ins)\", user1.username, user1.sign_in_count);\n    println!(\"{} ({} sign-ins)\", user2.username, user2.sign_in_count);\n}\n",
+  "starter_ok": "compile_error"
  }
 }

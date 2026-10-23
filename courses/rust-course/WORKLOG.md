@@ -55,3 +55,5 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
 - Tooling: `.build/tools/fix_compiler_output.py . chNN` rewrites "Compiler output" blocks to match the real rustc.
   **Always `rm -rf .cargo-target` before `verify_exercises.py`**: a reused target dir can serve a stale build, and
   then every starter "passes".
+- Chapter 5 done (Structs): 3 lessons + 10-question test; exercises ch05-structs, ch05-bank-account (verified);
+  3 playgrounds verified. `verify_codeblocks.py` compares stderr for blocks labelled "Standard error" (dbg!).

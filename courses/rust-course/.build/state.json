@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created": "2026-10-23T02:32:57+00:00",
-  "updated": "2026-10-23T03:27:10+00:00",
+  "updated": "2026-10-23T03:30:09+00:00",
   "book": {
     "title": "Rust: From First Program to Systems Programming",
     "author": "Merged from 5 books (see .build/plan.md)",
@@ -52,8 +52,8 @@
       "title": "Structs: Grouping Related Data",
       "words": 26149,
       "file": "chapters/ch05.md",
-      "status": "pending",
-      "lessons_built": 0,
+      "status": "done",
+      "lessons_built": 4,
       "note": ""
     },
     {
@@ -264,6 +264,10 @@
     {
       "at": "2026-10-23T03:27:10+00:00",
       "msg": "ch04 → done"
+    },
+    {
+      "at": "2026-10-23T03:30:09+00:00",
+      "msg": "ch05 → done"
     }
   ]
 }
