@@ -1,0 +1,210 @@
+{
+  "title": "Controlling how tests are run",
+  "summary": "Command-line options for cargo test: running tests in parallel or one at a time, showing output, running a subset by name, ignoring slow tests, and the two kinds of arguments.",
+  "minutes": 15,
+  "source": {
+    "chapter": "ch11",
+    "sections": [
+      "TRPL 11.2 Controlling How Tests Are Run",
+      "TRPL 11.2 Running Tests in Parallel or Consecutively",
+      "TRPL 11.2 Showing Function Output",
+      "TRPL 11.2 Running a Subset of Tests by Name",
+      "TRPL 11.2 Ignoring Tests Unless Specifically Requested"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "`cargo test` compiles your code in test mode and runs the resulting binary. Some options go to Cargo, others to the test binary. They are separated by `--`:\n\n```bash\ncargo test --release -- --test-threads=1\n#          ^ for cargo   ^ for the test binary\n```\n\n`cargo test --help` lists the first kind, `cargo test -- --help` the second.\n"
+    },
+    {
+      "type": "text",
+      "title": "Parallel or one at a time",
+      "md": "By default tests run **in parallel** on several threads, which is fast. It means tests must not depend on each other or on shared state, such as a file they all write to. If they do, either make each test use its own resources (a unique file name) or run them on one thread:\n\n```bash\ncargo test -- --test-threads=1\n```\n"
+    },
+    {
+      "type": "text",
+      "title": "Showing output",
+      "md": "For passing tests, the test runner **captures** anything printed with `println!` and throws it away, so the report stays readable. For a failing test, its output is shown in the failure section. To see output from passing tests too:\n\n```bash\ncargo test -- --show-output\n```\n\n(`--nocapture` also shows output, as it happens, interleaved between threads.)\n"
+    },
+    {
+      "type": "text",
+      "title": "Running a subset by name",
+      "md": "Pass a string to run only tests whose **full path contains it**. With these tests:\n\n```rust\n#[test] fn add_two_and_two() { ... }\n#[test] fn add_three_and_two() { ... }\n#[test] fn one_hundred() { ... }\n```\n"
+    },
+    {
+      "type": "table",
+      "title": "Filtering examples",
+      "headers": [
+        "Command",
+        "Runs"
+      ],
+      "rows": [
+        [
+          "`cargo test`",
+          "all three"
+        ],
+        [
+          "`cargo test one_hundred`",
+          "only `one_hundred`; the report says `2 filtered out`"
+        ],
+        [
+          "`cargo test add`",
+          "both tests whose names contain `add`"
+        ],
+        [
+          "`cargo test tests::`",
+          "every test in the `tests` module (the module name is part of the path)"
+        ],
+        [
+          "`cargo test one_hundred -- --exact`",
+          "only a test whose full path is exactly that"
+        ]
+      ]
+    },
+    {
+      "type": "callout",
+      "kind": "note",
+      "title": "Only one filter",
+      "md": "You can pass only one name filter to `cargo test`. To pick several unrelated tests, choose a common part of their names, or run them separately."
+    },
+    {
+      "type": "text",
+      "title": "Ignoring slow tests",
+      "md": "A few tests may be expensive: a long simulation, a network call. Mark them with **`#[ignore]`** so normal runs skip them, and run them when you want:\n\n```rust\n#[test]\n#[ignore = \"takes about a minute\"]\nfn expensive_test() {\n    // ...\n}\n```\n"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ cargo test\nrunning 2 tests\ntest tests::expensive_test ... ignored, takes about a minute\ntest tests::it_works ... ok\n\ntest result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n$ cargo test -- --ignored            # only the ignored ones\n$ cargo test -- --include-ignored    # everything\n"
+    },
+    {
+      "type": "table",
+      "title": "Cheat sheet",
+      "headers": [
+        "You want to...",
+        "Run"
+      ],
+      "rows": [
+        [
+          "run everything",
+          "`cargo test`"
+        ],
+        [
+          "run tests matching a name",
+          "`cargo test name_part`"
+        ],
+        [
+          "see println! output of passing tests",
+          "`cargo test -- --show-output`"
+        ],
+        [
+          "run tests one at a time",
+          "`cargo test -- --test-threads=1`"
+        ],
+        [
+          "run only ignored tests",
+          "`cargo test -- --ignored`"
+        ],
+        [
+          "run only integration tests in tests/api.rs",
+          "`cargo test --test api`"
+        ],
+        [
+          "run only doc tests",
+          "`cargo test --doc`"
+        ],
+        [
+          "see a backtrace on failure",
+          "`RUST_BACKTRACE=1 cargo test`"
+        ]
+      ]
+    },
+    {
+      "type": "quiz",
+      "id": "ch11-quiz-running",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Two tests write to the same file `out.txt` and fail randomly. What is the quick fix?",
+          "options": [
+            "`cargo test --release`",
+            "`cargo test -- --test-threads=1`",
+            "`cargo test -- --ignored`",
+            "`cargo test --show-output`"
+          ],
+          "answer": 1,
+          "explanation": "Running on one thread removes the race; a better fix is separate files."
+        },
+        {
+          "type": "single",
+          "q": "`cargo test parse` runs...",
+          "options": [
+            "only a test named exactly `parse`",
+            "every test whose path contains `parse`",
+            "tests in a file called parse.rs",
+            "nothing; it is an error"
+          ],
+          "answer": 1,
+          "explanation": "Filters match substrings of the test path."
+        },
+        {
+          "type": "single",
+          "q": "Why do you not see `println!` output from a passing test by default?",
+          "options": [
+            "println! does not work in tests",
+            "The test runner captures it and shows output only for failures",
+            "Tests run in release mode",
+            "It goes to a log file"
+          ],
+          "answer": 1,
+          "explanation": "Use `-- --show-output` to see it."
+        },
+        {
+          "type": "fill",
+          "q": "In `cargo test -- --test-threads=1`, the arguments after ___ go to the test binary, not to Cargo.",
+          "answer": [
+            "--"
+          ],
+          "explanation": "The double dash separates the two."
+        },
+        {
+          "type": "single",
+          "q": "How do you run tests marked `#[ignore]`?",
+          "options": [
+            "They cannot be run",
+            "`cargo test -- --ignored`",
+            "`cargo test --all`",
+            "Remove the attribute"
+          ],
+          "answer": 1,
+          "explanation": "Or `--include-ignored` for all tests."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Options before `--` go to Cargo, options after it to the test binary.",
+        "Tests run in parallel; keep them independent or use `--test-threads=1`.",
+        "Output of passing tests is captured; show it with `--show-output`.",
+        "`cargo test name` filters by substring; `#[ignore]` skips slow tests until `--ignored`."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "test filter",
+      "def": "A name fragment passed to cargo test so only matching tests run."
+    },
+    {
+      "term": "#[ignore]",
+      "def": "An attribute that skips a test unless cargo test is run with --ignored or --include-ignored."
+    },
+    {
+      "term": "output capture",
+      "def": "The test runner hiding stdout of passing tests to keep the report short."
+    }
+  ]
+}

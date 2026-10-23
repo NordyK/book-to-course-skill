@@ -1,0 +1,228 @@
+{
+  "title": "Test organization",
+  "summary": "Unit tests next to the code (including private functions), integration tests in the tests directory, shared helpers, binary crates, and documentation tests.",
+  "minutes": 30,
+  "source": {
+    "chapter": "ch11",
+    "sections": [
+      "TRPL 11.3 Test Organization",
+      "TRPL 11.3 Unit Tests",
+      "TRPL 11.3 Testing Private Functions",
+      "TRPL 11.3 Integration Tests",
+      "TRPL 11.3 The tests Directory",
+      "TRPL 11.3 Submodules in Integration Tests",
+      "TRPL 11.3 Integration Tests for Binary Crates",
+      "TRPL 14.2 Documentation Comments as Tests",
+      "PR ch8 Integration Tests",
+      "PR ch8 Documentation",
+      "PR ch8 Doc-Tests",
+      "CR Day 4 Other Types of Tests"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "The Rust community thinks of tests in two groups:\n\n- **Unit tests** are small and focused. Each tests one module in isolation, sits in the same file as the code, and may test **private** details.\n- **Integration tests** are external. They use your library exactly as another crate would, only through its public API, and often exercise several modules together.\n\nA third kind, **doc tests**, checks that the examples in your documentation still work.\n"
+    },
+    {
+      "type": "text",
+      "title": "Unit tests can reach private items",
+      "md": "Because the `tests` module is a child of the module it tests, Rust's privacy rules let it use everything in its parent, private or not (chapter 7: children can see their ancestors' items). Whether to test private functions is a matter of taste; Rust allows it.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "pub fn add_two(a: u64) -> u64 {\n    internal_adder(a, 2)\n}\n\nfn internal_adder(left: u64, right: u64) -> u64 {\n    left + right\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn internal() {\n        assert_eq!(internal_adder(2, 2), 4); // private, but visible here\n    }\n}\n\nfn main() {\n    println!(\"{}\", add_two(40));\n}\n",
+      "output": "42"
+    },
+    {
+      "type": "text",
+      "title": "Integration tests",
+      "md": "Integration tests live in a **`tests` directory** next to `src`. Cargo compiles **each file** in it as a separate crate, which imports your library by name:\n"
+    },
+    {
+      "type": "code",
+      "lang": "text",
+      "code": "adder\n├── Cargo.lock\n├── Cargo.toml\n├── src\n│   └── lib.rs\n└── tests\n    ├── common\n    │   └── mod.rs        (shared helpers, not a test file)\n    └── integration_test.rs\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "tests/integration_test.rs",
+      "code": "use adder::add_two;\n\nmod common;\n\n#[test]\nfn it_adds_two() {\n    common::setup();\n    let result = add_two(2);\n    assert_eq!(result, 4);\n}\n",
+      "explain": "No `#[cfg(test)]` is needed: Cargo only compiles the `tests` directory for `cargo test`. Only `pub` items of `adder` are reachable, just as for any user of your crate."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ cargo test\n     Running unittests src/lib.rs (target/debug/deps/adder-1082c4b063a8fbe6)\nrunning 1 test\ntest tests::internal ... ok\ntest result: ok. 1 passed; 0 failed; ...\n\n     Running tests/integration_test.rs (target/debug/deps/integration_test-1082c4b063a8fbe6)\nrunning 1 test\ntest it_adds_two ... ok\ntest result: ok. 1 passed; 0 failed; ...\n\n   Doc-tests adder\nrunning 0 tests\n",
+      "explain": "Three sections: unit tests, then one section per integration test file, then doc tests. If a unit test fails, Cargo stops before running the integration tests."
+    },
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Why tests/common/mod.rs and not tests/common.rs",
+      "md": "Every `.rs` file directly in `tests/` is a test crate and appears in the report, even if it has no tests. Putting shared code in `tests/common/mod.rs` (a subdirectory) tells Cargo it is a module, not a test crate. Each test file then declares `mod common;`."
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "title": "Binary crates",
+      "md": "Integration tests can only `use` a **library** crate. A project with only `src/main.rs` cannot be integration-tested this way. That is one reason Rust projects keep `main.rs` small and put the logic in `src/lib.rs`: then `main` just calls into the library, and the library is fully testable. Chapter 12's project does exactly this."
+    },
+    {
+      "type": "text",
+      "title": "Documentation tests",
+      "md": "Documentation comments start with `///` and support Markdown. Code blocks in them are **compiled and run by `cargo test`** as doc tests. Examples in documentation therefore cannot silently go stale: if the API changes, the example fails.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/lib.rs",
+      "code": "/// Adds one to the number given.\n///\n/// # Examples\n///\n/// ```\n/// let arg = 5;\n/// let answer = my_crate::add_one(arg);\n///\n/// assert_eq!(6, answer);\n/// ```\npub fn add_one(x: i32) -> i32 {\n    x + 1\n}\n",
+      "explain": "Common sections are `# Examples`, `# Panics`, `# Errors` (what errors a `Result` function returns and why) and `# Safety` (for `unsafe` functions). `cargo doc --open` turns these comments into HTML documentation (chapter 14)."
+    },
+    {
+      "type": "table",
+      "title": "Where tests go",
+      "headers": [
+        "Kind",
+        "Location",
+        "Can test",
+        "Runs with"
+      ],
+      "rows": [
+        [
+          "Unit",
+          "`#[cfg(test)] mod tests` in the same file",
+          "private and public items",
+          "`cargo test`"
+        ],
+        [
+          "Integration",
+          "`tests/*.rs`, one crate per file",
+          "only the public API of a library",
+          "`cargo test` or `cargo test --test name`"
+        ],
+        [
+          "Doc",
+          "code blocks in `///` comments",
+          "the public API, as a reader sees it",
+          "`cargo test` or `cargo test --doc`"
+        ]
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch11-ex-unit",
+      "exercise_dir": "ch11-unit",
+      "title": "A tested word-wrap",
+      "difficulty": "hard",
+      "goal": "Implement a public function on top of private helpers, where unit tests check both the helpers and the public behavior.",
+      "behavior": "`pub fn wrap(text: &str, width: usize) -> Vec<String>` splits text into lines of at most `width` characters, breaking only at spaces. A single word longer than `width` goes on its own line unbroken. Runs of whitespace collapse to single spaces. Empty text gives an empty vector.\n\nThe tests also call two **private** helpers you must write (they test your building blocks):\n- `fn words(text: &str) -> Vec<&str>`: the whitespace-separated words.\n- `fn fits(line: &str, word: &str, width: usize) -> bool`: whether `word` can be added to `line` (with one space if `line` is not empty) without exceeding `width`. Count characters, not bytes.\n",
+      "examples": [
+        {
+          "input": "wrap(\"the quick brown fox\", 10)",
+          "output": "[\"the quick\", \"brown fox\"]"
+        },
+        {
+          "input": "wrap(\"a extraordinarily b\", 5)",
+          "output": "[\"a\", \"extraordinarily\", \"b\"]"
+        }
+      ],
+      "hints": [
+        "`words` is `text.split_whitespace().collect()`.",
+        "`fits`: if `line` is empty, `word.chars().count() <= width`; otherwise `line.chars().count() + 1 + word.chars().count() <= width`.",
+        "In `wrap`: keep a `current: String`; for each word, if it fits, push a space (when needed) and the word; otherwise push `current` into the result (if not empty) and start a new line with the word. Push the last line at the end."
+      ],
+      "solution_explain": "The tests module is a child of the crate root, so it can call the private `words` and `fits`. Testing small helpers separately makes a failure in `wrap` easier to locate. An integration test in `tests/` could only call `wrap`."
+    },
+    {
+      "type": "quiz",
+      "id": "ch11-quiz-organizing",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Can an integration test in `tests/api.rs` call a private function of your library?",
+          "options": [
+            "Yes",
+            "No, it uses the crate like any external user: only `pub` items",
+            "Only with `use super::*`",
+            "Only in debug builds"
+          ],
+          "answer": 1,
+          "explanation": "Each file in tests/ is a separate crate."
+        },
+        {
+          "type": "single",
+          "q": "Why put shared helpers in `tests/common/mod.rs` rather than `tests/common.rs`?",
+          "options": [
+            "Cargo requires it",
+            "Files directly in tests/ are compiled as test crates and show up in the output",
+            "mod.rs is faster",
+            "It makes the helpers public"
+          ],
+          "answer": 1,
+          "explanation": "A subdirectory module is not treated as a test crate."
+        },
+        {
+          "type": "single",
+          "q": "A project has only `src/main.rs`. What is the usual way to make its logic integration-testable?",
+          "options": [
+            "Move the logic to `src/lib.rs` and keep main small",
+            "Add `#[test]` to main",
+            "Integration tests are impossible in Rust",
+            "Rename main.rs to test.rs"
+          ],
+          "answer": 0,
+          "explanation": "Integration tests can only use a library crate."
+        },
+        {
+          "type": "truefalse",
+          "q": "Code examples in `///` comments are compiled and run by `cargo test`.",
+          "answer": true,
+          "explanation": "They are doc tests."
+        },
+        {
+          "type": "order",
+          "q": "Put the sections of `cargo test` output in the order they run.",
+          "items": [
+            "Unit tests (src/lib.rs)",
+            "Integration tests (tests/*.rs)",
+            "Doc-tests"
+          ],
+          "explanation": "Unit, integration, then documentation tests."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Unit tests sit next to the code in `#[cfg(test)] mod tests` and may test private items.",
+        "Integration tests live in `tests/`; each file is its own crate using only the public API.",
+        "Shared test helpers go in `tests/common/mod.rs`.",
+        "Keep `main.rs` thin and logic in `lib.rs` so it can be integration-tested.",
+        "Examples in `///` doc comments run as doc tests, so documentation stays correct."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "unit test",
+      "def": "A small test next to the code it tests, able to reach private items."
+    },
+    {
+      "term": "integration test",
+      "def": "A test in the tests/ directory that uses the library only through its public API."
+    },
+    {
+      "term": "doc test",
+      "def": "A code example in a documentation comment that cargo test compiles and runs."
+    },
+    {
+      "term": "documentation comment",
+      "def": "A /// comment that documents the next item in Markdown and is turned into HTML by cargo doc."
+    }
+  ]
+}

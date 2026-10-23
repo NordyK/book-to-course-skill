@@ -158,5 +158,9 @@
  "ch10-play-trait": {
   "solution_code": "struct Circle { r: f64 }\nstruct Rect { w: f64, h: f64 }\n\ntrait Area {\n    fn area(&self) -> f64;\n\n    fn describe(&self) -> String {\n        format!(\"area = {:.2}\", self.area())\n    }\n}\n\nimpl Area for Circle {\n    fn area(&self) -> f64 {\n        std::f64::consts::PI * self.r * self.r\n    }\n}\n\nimpl Area for Rect {\n    fn area(&self) -> f64 {\n        self.w * self.h\n    }\n}\n\nfn total_area<T: Area>(shapes: &[T]) -> f64 {\n    let mut total = 0.0;\n    for s in shapes {\n        total += s.area();\n    }\n    total\n}\n\nfn main() {\n    println!(\"{}\", Circle { r: 1.0 }.describe());\n    println!(\"{}\", Rect { w: 2.0, h: 3.0 }.describe());\n    let rects = [Rect { w: 2.0, h: 3.0 }, Rect { w: 1.0, h: 6.0 }];\n    println!(\"{:.2}\", total_area(&rects));\n}\n",
   "starter_ok": "compile_error"
+ },
+ "ch11-play-asserts": {
+  "solution_code": "/// The middle value of a sorted copy; the mean of the two middle values for an even length.\nfn median(values: &[f64]) -> Option<f64> {\n    if values.is_empty() {\n        return None;\n    }\n    let mut v = values.to_vec();\n    v.sort_by(|a, b| a.partial_cmp(b).unwrap());\n    let mid = v.len() / 2;\n    if v.len() % 2 == 0 {\n        Some((v[mid - 1] + v[mid]) / 2.0)\n    } else {\n        Some(v[mid])\n    }\n}\n\nfn main() {\n    assert_eq!(median(&[]), None);\n    assert_eq!(median(&[3.0, 1.0, 2.0]), Some(2.0));\n    assert_eq!(median(&[4.0, 1.0, 3.0, 2.0]), Some(2.5), \"even length\");\n    println!(\"ok\");\n}\n",
+  "starter_ok": "panic"
  }
 }

@@ -72,3 +72,6 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
   orphan rule, bounds, where, impl Trait, blanket impls, associated types), lifetimes (elision rules, structs,
   'static), standard traits (derives, Display, From/TryFrom, AsRef, Drop, operator overloading); 12-question test;
   exercises ch10-generics, ch10-traits, ch10-lifetimes, ch10-std-traits (verified); 3 playgrounds verified.
+- Chapter 11 done (Writing Automated Tests): writing tests (asserts, should_panic, Result tests), running them
+  (filters, ignore, threads, output), organizing (unit/private, tests/, common/mod.rs, doc tests); 10-question test;
+  exercises ch11-tested (tests as a spec) and ch11-unit (private helpers under test), verified; 1 playground.

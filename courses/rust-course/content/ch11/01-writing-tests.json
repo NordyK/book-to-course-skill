@@ -1,0 +1,258 @@
+{
+  "title": "How to write tests",
+  "summary": "The anatomy of a test function, assert!, assert_eq! and assert_ne!, custom failure messages, testing for panics with should_panic, and tests that return Result.",
+  "minutes": 35,
+  "source": {
+    "chapter": "ch11",
+    "sections": [
+      "TRPL 11 Writing Automated Tests",
+      "TRPL 11.1 How to Write Tests",
+      "TRPL 11.1 Structuring Test Functions",
+      "TRPL 11.1 Checking Results with assert!",
+      "TRPL 11.1 Testing Equality with assert_eq! and assert_ne!",
+      "TRPL 11.1 Adding Custom Failure Messages",
+      "TRPL 11.1 Checking for Panics with should_panic",
+      "TRPL 11.1 Using Result<T, E> in Tests",
+      "PR ch8 Tests and Documentation",
+      "CR Day 4 Testing",
+      "CR Day 4 Unit Tests"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Edsger Dijkstra wrote that testing can show the presence of bugs, but never their absence. The type system catches a whole class of mistakes, but it cannot know that `add_two(2)` should be `4`. **Tests** check that: they run your code with known inputs and compare the result with what you expect.\n\nYou have been running tests all course long: every exercise is checked by a test file. Now you learn to write them.\n"
+    },
+    {
+      "type": "text",
+      "title": "The anatomy of a test",
+      "md": "A test is an ordinary function marked with the **`#[test]`** attribute. `cargo test` builds a special test binary that runs every such function and reports which passed and which failed. A test **fails if it panics**; otherwise it passes.\n\n`cargo new adder --lib` creates a library with a test already in `src/lib.rs`:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/lib.rs",
+      "code": "pub fn add(left: u64, right: u64) -> u64 {\n    left + right\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn it_works() {\n        let result = add(2, 2);\n        assert_eq!(result, 4);\n    }\n}\n",
+      "explain": "`#[cfg(test)]` compiles the `tests` module only when testing, so it costs nothing in the real build. `use super::*;` brings the parent module's items, here `add`, into scope. Exercises in this course use the same layout, with the tests in their own file `src/tests.rs`."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "$ cargo test\n   Compiling adder v0.1.0 (file:///projects/adder)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.57s\n     Running unittests src/lib.rs (target/debug/deps/adder-01b1a3d9d0c3f4a5)\n\nrunning 1 test\ntest tests::it_works ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n   Doc-tests adder\n\nrunning 0 tests\n\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n",
+      "explain": "Each test is listed with its path (`tests::it_works`) and result. *ignored*, *measured* and *filtered out* are explained in the next lesson. *Doc-tests* are examples in documentation comments, compiled and run as tests (lesson 3)."
+    },
+    {
+      "type": "text",
+      "md": "When a test fails, the output shows which one and why:\n"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "running 2 tests\ntest tests::exploration ... ok\ntest tests::another ... FAILED\n\nfailures:\n\n---- tests::another stdout ----\n\nthread 'tests::another' panicked at src/lib.rs:17:9:\nMake this test fail\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\nfailures:\n    tests::another\n\ntest result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n"
+    },
+    {
+      "type": "table",
+      "title": "Assertion macros",
+      "headers": [
+        "Macro",
+        "Panics when",
+        "On failure it shows"
+      ],
+      "rows": [
+        [
+          "`assert!(cond)`",
+          "`cond` is `false`",
+          "the condition's source text"
+        ],
+        [
+          "`assert_eq!(left, right)`",
+          "`left != right`",
+          "both values, with `Debug`"
+        ],
+        [
+          "`assert_ne!(left, right)`",
+          "`left == right`",
+          "both values"
+        ],
+        [
+          "`assert!(cond, \"fmt\", args...)`",
+          "as above",
+          "your message, formatted like `format!`"
+        ],
+        [
+          "`debug_assert!` family",
+          "as above, but only in debug builds",
+          "same"
+        ]
+      ]
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "#[derive(Debug)]\nstruct Rectangle {\n    width: u32,\n    height: u32,\n}\n\nimpl Rectangle {\n    fn can_hold(&self, other: &Rectangle) -> bool {\n        self.width > other.width && self.height > other.height\n    }\n}\n\nfn add_two(a: u64) -> u64 {\n    a + 2\n}\n\nfn greeting(name: &str) -> String {\n    format!(\"Hello {name}!\")\n}\n\nfn main() {\n    let larger = Rectangle { width: 8, height: 7 };\n    let smaller = Rectangle { width: 5, height: 1 };\n    assert!(larger.can_hold(&smaller));\n    assert!(!smaller.can_hold(&larger));\n    assert_eq!(add_two(2), 4);\n    assert_ne!(add_two(2), 5);\n    let result = greeting(\"Carol\");\n    assert!(result.contains(\"Carol\"), \"Greeting did not contain name, value was `{result}`\");\n    println!(\"all assertions passed\");\n}\n",
+      "output": "all assertions passed",
+      "explain": "These are the checks from *The Rust Programming Language*, run in `main` here so you can see them pass. In a test file each would be its own `#[test]` function. Assertion macros work anywhere, not only in tests."
+    },
+    {
+      "type": "callout",
+      "kind": "tip",
+      "title": "Left and right",
+      "md": "`assert_eq!` does not care which argument is the expected value; failures print them as `left` and `right`. To compare your own types, they need `PartialEq` (for the comparison) and `Debug` (for the message): `#[derive(PartialEq, Debug)]`."
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "code": "---- tests::it_adds_two stdout ----\n\nthread 'tests::it_adds_two' panicked at src/lib.rs:12:9:\nassertion `left == right` failed\n  left: 5\n right: 4\n",
+      "explain": "What a failing `assert_eq!(add_two(2), 4)` prints when `add_two` wrongly adds 3."
+    },
+    {
+      "type": "playground",
+      "id": "ch11-play-asserts",
+      "title": "Let the assertions find the bug",
+      "lang": "rust",
+      "md": "`median` has a bug, and one of the assertions in `main` catches it. Run it, read the `left`/`right` values in the panic message, and fix `median` (not the assertions).\n",
+      "task": "Fix median so every assertion passes and the program prints `ok`.",
+      "code": "/// The middle value of a sorted copy; the mean of the two middle values for an even length.\nfn median(values: &[f64]) -> Option<f64> {\n    if values.is_empty() {\n        return None;\n    }\n    let mut v = values.to_vec();\n    v.sort_by(|a, b| a.partial_cmp(b).unwrap());\n    let mid = v.len() / 2;\n    Some(v[mid])\n}\n\nfn main() {\n    assert_eq!(median(&[]), None);\n    assert_eq!(median(&[3.0, 1.0, 2.0]), Some(2.0));\n    assert_eq!(median(&[4.0, 1.0, 3.0, 2.0]), Some(2.5), \"even length\");\n    println!(\"ok\");\n}\n",
+      "expected_output": "ok",
+      "hints": [
+        "The failing assertion says `left: Some(3.0)`, `right: Some(2.5)`. Which case does the code not handle?",
+        "For an even length, average `v[mid - 1]` and `v[mid]`."
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Testing that code panics",
+      "md": "Sometimes the correct behavior **is** a panic, like `Guess::new(200)` from chapter 9. Add **`#[should_panic]`** under `#[test]`: the test passes if the function panics and fails if it does not. Plain `should_panic` passes for any panic, even an unrelated one, so add **`expected = \"...\"`** with a substring of the message you expect:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/lib.rs",
+      "code": "pub struct Guess {\n    value: i32,\n}\n\nimpl Guess {\n    pub fn new(value: i32) -> Guess {\n        if value < 1 {\n            panic!(\"Guess value must be greater than or equal to 1, got {value}.\");\n        } else if value > 100 {\n            panic!(\"Guess value must be less than or equal to 100, got {value}.\");\n        }\n        Guess { value }\n    }\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    #[should_panic(expected = \"less than or equal to 100\")]\n    fn greater_than_100() {\n        Guess::new(200);\n    }\n}\n",
+      "explain": "If the two `panic!` messages were swapped by mistake, `Guess::new(200)` would still panic, but with the wrong message, and the test would fail with `panic did not contain expected string`."
+    },
+    {
+      "type": "text",
+      "title": "Tests that return Result",
+      "md": "A test may return `Result<(), E>` instead of panicking: `Ok(())` passes, `Err` fails. This lets you use `?` inside the test, so a test that calls several fallible functions reads cleanly:\n\n```rust\n#[test]\nfn parses_config() -> Result<(), String> {\n    let cfg = parse_config(\"threads=4\")?;\n    if cfg.threads == 4 {\n        Ok(())\n    } else {\n        Err(format!(\"expected 4 threads, got {}\", cfg.threads))\n    }\n}\n```\n\nYou cannot use `#[should_panic]` on a test that returns `Result`. To check that an operation returns an error, use `assert!(value.is_err())` or `assert!(matches!(value, Err(MyError::Missing)))`.\n"
+    },
+    {
+      "type": "exercise",
+      "id": "ch11-ex-tested",
+      "exercise_dir": "ch11-tested",
+      "title": "Make the tests pass",
+      "difficulty": "medium",
+      "goal": "Read a test file as a specification, including should_panic tests and tests that return Result, and implement code that satisfies it.",
+      "behavior": "Read `src/tests.rs` first: it is the specification. Implement:\n- `pub fn clamp_percent(v: i32) -> u8`: clamps to 0..=100.\n- `pub struct Temperature { kelvin: f64 }` with `pub fn from_kelvin(k: f64) -> Temperature` that **panics** with a message containing `\"below absolute zero\"` for `k < 0.0`, and `pub fn celsius(&self) -> f64`.\n- `pub fn parse_kv(s: &str) -> Result<(String, i32), String>`: `\"key=12\"` gives `(\"key\", 12)`; no `=` gives `Err(\"missing =\")`; a bad number gives `Err(\"bad number\")`; an empty key gives `Err(\"empty key\")`. Spaces around key and value are trimmed.\n",
+      "examples": [
+        {
+          "input": "clamp_percent(150)",
+          "output": "100"
+        },
+        {
+          "input": "Temperature::from_kelvin(273.15).celsius()",
+          "output": "0.0"
+        },
+        {
+          "input": "parse_kv(\" depth = 3 \")",
+          "output": "Ok((\"depth\", 3))"
+        }
+      ],
+      "hints": [
+        "`v.clamp(0, 100) as u8`",
+        "`if k < 0.0 { panic!(\"temperature below absolute zero: {k}\"); }`",
+        "`let (k, v) = s.split_once('=').ok_or(\"missing =\")?;` (convert with `.to_string()` or `String::from`)."
+      ],
+      "solution_explain": "The test file told you everything: the exact error strings, the panic message fragment, and the trimming. Reading tests as a specification is a skill in itself; it is how you learn an unfamiliar codebase fast."
+    },
+    {
+      "type": "quiz",
+      "id": "ch11-quiz-writing",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "When does a Rust test fail?",
+          "options": [
+            "When it prints to stderr",
+            "When it panics (or returns Err)",
+            "When it takes longer than 1 second",
+            "When it has no assertions"
+          ],
+          "answer": 1,
+          "explanation": "No panic and no Err means a pass."
+        },
+        {
+          "type": "single",
+          "q": "What does `#[cfg(test)]` on the tests module do?",
+          "options": [
+            "Runs the tests at compile time",
+            "Compiles the module only for `cargo test`",
+            "Makes the tests public",
+            "Disables warnings"
+          ],
+          "answer": 1,
+          "explanation": "The code is left out of normal builds."
+        },
+        {
+          "type": "single",
+          "q": "Your struct is compared with `assert_eq!`. What must it implement?",
+          "options": [
+            "`Display` and `Eq`",
+            "`PartialEq` and `Debug`",
+            "`Clone`",
+            "`Copy`"
+          ],
+          "answer": 1,
+          "explanation": "PartialEq for ==, Debug to print the values on failure."
+        },
+        {
+          "type": "single",
+          "q": "Why add `expected = \"...\"` to `#[should_panic]`?",
+          "options": [
+            "It is required",
+            "So the test only passes if the panic message contains that text, not for any panic",
+            "It speeds up the test",
+            "It changes the panic message"
+          ],
+          "answer": 1,
+          "explanation": "A panic for the wrong reason should not count as a pass."
+        },
+        {
+          "type": "truefalse",
+          "q": "A test returning `Result<(), String>` can use `?`.",
+          "answer": true,
+          "explanation": "An `Err` makes the test fail."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "A test is a `#[test]` function; it fails if it panics.",
+        "Put unit tests in a `#[cfg(test)] mod tests` with `use super::*;`.",
+        "`assert!`, `assert_eq!` and `assert_ne!` check conditions; add a message after the arguments.",
+        "`#[should_panic(expected = \"...\")]` tests that code panics with the right message.",
+        "Tests may return `Result<(), E>` and use `?`."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "#[test]",
+      "def": "The attribute that marks a function as a test for cargo test to run."
+    },
+    {
+      "term": "assert_eq!",
+      "def": "A macro that panics, printing both values, if its two arguments are not equal."
+    },
+    {
+      "term": "should_panic",
+      "def": "A test attribute that makes a test pass only if the code panics (optionally with a given message)."
+    },
+    {
+      "term": "#[cfg(test)]",
+      "def": "Conditional compilation: the item is compiled only when building tests."
+    }
+  ]
+}
