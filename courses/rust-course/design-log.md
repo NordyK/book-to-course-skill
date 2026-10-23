@@ -151,3 +151,34 @@ Lukasz chose this direction on the decision card.
 
 Checked in Chromium: the `ch02-play-mutable` playground underlines `count = 2` on line 3 (E0384), and the
 jump puts the caret on line 3. Screenshots are in `.impeccable/review/v4/`.
+
+## 17. quieter / bolder (evaluated, not run)
+
+Neither applies. After distill the course page has one lit surface (the band) and lessons have one (the console),
+which is the balance DESIGN-1 asks for. Making it louder would break the Lit Console Rule, and making it quieter
+would lose the ledger character.
+
+## 18. polish
+
+- No critique snapshot was current, because `index.html` changed after the critique, so this was an independent pass.
+- Fixed the drift the scan found: a 3px inline-code radius became the 4px control radius, 17px glossary terms
+  became the 18px title size, and 11px flow-step numbers became the 12px label size.
+- The console output and editor borders use Ledger Navy instead of translucent black.
+
+## 19. extract
+
+Values used across the console and editor became tokens on `:root`. They are always dark, so they have no dark
+override: `--con-pass`, `--con-fail`, `--con-out`, `--con-out-fg`, `--con-out-dim`, `--con-idle`, `--con-offline`,
+`--ed-err`, `--ed-warn`, `--code-gutter` and `--code-btn`. `--navy-hover` and `--warn-rule` were also added, and
+`--warn-rule` has a dark value. No components were extracted: the player is one file of small DOM helpers, and each
+block type is already a single function.
+
+The exception is the two wavy-underline SVGs, which keep literal colours because CSS variables cannot reach into a
+data URI.
+
+## 20. document
+
+`DESIGN.md` (with token frontmatter) and `.impeccable/design.json` were written in scan mode. The qualitative language
+(the North Star "The Verification Console", colour names and rules) comes from Lukasz's DESIGN-1 guide instead of a
+new interview, since that guide is his statement of the visual world. Once DESIGN.md existed, the detector checked
+the CSS against it. Every finding was fixed except the deliberate grid background (see the departures above).
