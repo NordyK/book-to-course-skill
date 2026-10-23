@@ -1,0 +1,275 @@
+title: "Inside a floating-point number"
+summary: "Scientific notation in binary, the IEEE 754 layout of f32 (sign, biased exponent, mantissa with its implicit bit), taking 42.42 apart and rebuilding it by hand, special values (zero, infinities, NaN, subnormals), precision and rounding, and comparing floats safely."
+minutes: 35
+source:
+  chapter: ch21
+  sections: ["RiA 5.3 Decimal Numbers", "RiA 5.3.1 About floating point", "RiA 5.3.2 Looking inside an f32", "RiA 5.3.3 About the sign bit", "RiA 5.3.4 About the exponent", "RiA 5.3.5 About the mantissa", "PR ch3 Floating-Point Types"]
+blocks:
+  - type: text
+    md: |
+      Floating-point numbers store **scientific notation** in binary. The mass of Jupiter is 1.898 × 10^27 kg and an ant weighs 3.801 × 10^-4 kg: the same few digits describe wildly different scales because an **exponent** says where the point goes. A float does the same with powers of two:
+
+      **value = (-1)^sign × mantissa × 2^exponent**
+
+      The **IEEE 754** standard fixes the layout. An `f32` has 32 bits:
+
+  - type: svg
+    caption: "The layout of an f32: 1 sign bit, 8 exponent bits, 23 mantissa bits"
+    svg: |
+      <svg viewBox="0 0 640 130" xmlns="http://www.w3.org/2000/svg" font-family="monospace" font-size="13" fill="none" stroke="currentColor">
+        <rect x="20" y="30" width="20" height="40"/>
+        <rect x="40" y="30" width="160" height="40" stroke-dasharray="4 3"/>
+        <rect x="200" y="30" width="420" height="40"/>
+        <text x="30" y="55" text-anchor="middle" fill="currentColor" stroke="none">0</text>
+        <text x="120" y="55" text-anchor="middle" fill="currentColor" stroke="none">10000100</text>
+        <text x="410" y="55" text-anchor="middle" fill="currentColor" stroke="none">01010011010111000010100</text>
+        <text x="30" y="22" text-anchor="middle" fill="currentColor" stroke="none">31</text>
+        <text x="120" y="22" text-anchor="middle" fill="currentColor" stroke="none">30 … 23</text>
+        <text x="410" y="22" text-anchor="middle" fill="currentColor" stroke="none">22 … 0</text>
+        <text x="30" y="92" text-anchor="middle" fill="currentColor" stroke="none">sign</text>
+        <text x="120" y="92" text-anchor="middle" fill="currentColor" stroke="none">exponent (biased by 127)</text>
+        <text x="410" y="92" text-anchor="middle" fill="currentColor" stroke="none">mantissa (fraction; 1. is implicit)</text>
+        <text x="320" y="120" text-anchor="middle" fill="currentColor" stroke="none">42.42 = +1.325625 × 2^5</text>
+      </svg>
+
+  - type: table
+    title: f32 and f64
+    headers: ["", "f32", "f64"]
+    rows:
+      - ["sign bits", "1", "1"]
+      - ["exponent bits", "8 (bias 127)", "11 (bias 1023)"]
+      - ["mantissa bits", "23 (+1 implicit)", "52 (+1 implicit)"]
+      - ["decimal digits of precision", "about 7", "about 15–16"]
+      - ["largest finite value", "about 3.4 × 10^38", "about 1.8 × 10^308"]
+
+  - type: stepper
+    title: Taking 42.42 apart
+    steps:
+      - title: Get the bits
+        md: "`42.42_f32.to_bits()` is `0b0_10000100_01010011010111000010100`."
+      - title: The sign
+        md: "Shift everything else away: `bits >> 31` is `0`, so the number is positive. A sign of 1 means negative, and `(-1)^sign` turns it into a factor."
+      - title: The exponent
+        md: "Shift right by 23 and mask 8 bits: `(bits >> 23) & 0xff` is 132. The stored exponent is **biased**: subtract 127 to get the real one, 5. The bias lets the exponent be negative without a sign bit of its own."
+      - title: The mantissa
+        md: "The low 23 bits are fractions: bit 22 is worth 2^-1 = 0.5, bit 21 is 2^-2 = 0.25, down to bit 0 at 2^-23. Start at 1.0 (the **implicit** 24th bit, always 1 for normal numbers) and add the weight of every set bit: 1.325625."
+      - title: Put it back together
+        md: "+1 × 1.325625 × 2^5 = 42.42 (up to rounding: the stored value is 42.41999816894531, the closest `f32` to 42.42)."
+
+  - type: code
+    lang: rust
+    code: |
+      const BIAS: i32 = 127;
+      const RADIX: f32 = 2.0;
+
+      fn to_parts(n: f32) -> (u32, u32, u32) {
+          let bits = n.to_bits();
+
+          let sign = (bits >> 31) & 1;
+          let exponent = (bits >> 23) & 0xff;
+          let fraction = bits & 0x7fffff;
+
+          (sign, exponent, fraction)
+      }
+
+      fn decode(sign: u32, exponent: u32, fraction: u32) -> (f32, f32, f32) {
+          let signed_1 = (-1.0_f32).powf(sign as f32);
+
+          let exponent = (exponent as i32) - BIAS;
+          let exponent = RADIX.powf(exponent as f32);
+
+          let mut mantissa: f32 = 1.0;
+          for i in 0..23 {
+              let mask = 1 << i;
+              let one_at_bit_i = fraction & mask;
+              if one_at_bit_i != 0 {
+                  let i_ = i as f32;
+                  let weight = 2_f32.powf(i_ - 23.0);
+                  mantissa += weight;
+              }
+          }
+
+          (signed_1, exponent, mantissa)
+      }
+
+      fn from_parts(sign: f32, exponent: f32, mantissa: f32) -> f32 {
+          sign * exponent * mantissa
+      }
+
+      fn main() {
+          let n: f32 = 42.42;
+
+          let (sign, exp, frac) = to_parts(n);
+          let (sign_, exp_, mant) = decode(sign, exp, frac);
+          let n_ = from_parts(sign_, exp_, mant);
+
+          println!("{} -> {}", n, n_);
+          println!("field    |  as bits | as real number");
+          println!("sign     |        {:01b} | {}", sign, sign_);
+          println!("exponent | {:08b} | {}", exp, exp_);
+          println!("mantissa | {:023b} | {}", frac, mant);
+      }
+    output: |
+      42.42 -> 42.42
+      field    |  as bits | as real number
+      sign     |        0 | 1
+      exponent | 10000100 | 32
+      mantissa | 01010011010111000010100 | 1.325625
+    explain: "This is *Rust in Action*'s decoder, rewritten with `to_bits` instead of `transmute`. The exponent column shows 2^5 = 32, the factor the mantissa is multiplied by."
+
+  - type: text
+    title: Special values
+    md: |
+      Some exponent values are reserved:
+
+      - exponent all **zeros**, mantissa zero: **±0.0**. Yes, there is a negative zero; it compares equal to `0.0`.
+      - exponent all zeros, mantissa non-zero: **subnormal** numbers, tiny values without the implicit 1, which fill the gap near zero.
+      - exponent all **ones**, mantissa zero: **±infinity** (`1.0 / 0.0`).
+      - exponent all ones, mantissa non-zero: **NaN**, "not a number" (`0.0 / 0.0`, `(-1.0).sqrt()`). NaN is not equal to anything, **not even itself**.
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let nan = f32::NAN;
+          println!("{} {} {}", 1.0_f32 / 0.0, -1.0_f32 / 0.0, (0.0_f32 / 0.0).is_nan());
+          println!("nan == nan: {}", nan == nan);
+          println!("-0.0 == 0.0: {}, bits differ: {}", -0.0_f32 == 0.0, (-0.0_f32).to_bits() != 0.0_f32.to_bits());
+          println!("{:032b}", f32::INFINITY.to_bits());
+          println!("smallest positive normal {:e}, subnormal {:e}", f32::MIN_POSITIVE, f32::from_bits(1));
+          println!("max {:e}, epsilon {:e}", f32::MAX, f32::EPSILON);
+      }
+    output: |
+      inf -inf true
+      nan == nan: false
+      -0.0 == 0.0: true, bits differ: true
+      01111111100000000000000000000000
+      smallest positive normal 1.1754944e-38, subnormal 1e-45
+      max 3.4028235e38, epsilon 1.1920929e-7
+
+  - type: callout
+    kind: warning
+    title: "Why f32 is not Ord"
+    md: "Because `NaN != NaN`, floats implement only `PartialEq` and `PartialOrd`, not `Eq` and `Ord`. That is why `v.sort()` does not compile on a `Vec<f64>` and you write `v.sort_by(|a, b| a.total_cmp(b))` instead, and why floats cannot be `HashMap` keys directly."
+
+  - type: text
+    title: Precision and rounding
+    md: |
+      With only 23 (or 52) bits of fraction, most decimal numbers cannot be stored exactly: 0.1 in binary repeats forever, like 1/3 in decimal. Results are rounded to the nearest representable value, so `0.1 + 0.2 != 0.3`. Compare floats with a **tolerance**, and use integers (counting cents, say) when exact decimal results matter, such as money.
+
+  - type: code
+    lang: rust
+    code: |
+      fn approx_eq(a: f64, b: f64) -> bool {
+          (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0)
+      }
+
+      fn main() {
+          println!("{}", 0.1 + 0.2);
+          println!("{}", 0.1 + 0.2 == 0.3);
+          println!("{}", approx_eq(0.1 + 0.2, 0.3));
+          println!("{:.20}", 0.1_f64);
+          println!("{}", 16_777_216.0_f32 + 1.0);
+          let mut v = vec![2.5, f64::NAN, -1.0, 0.5];
+          v.sort_by(|a, b| a.total_cmp(b));
+          println!("{v:?}");
+      }
+    output: |
+      0.30000000000000004
+      false
+      true
+      0.10000000000000000555
+      16777216
+      [-1.0, 0.5, 2.5, NaN]
+    explain: "16,777,216 is 2^24. Above it, an `f32` cannot represent every integer, so adding 1 rounds back down. `total_cmp` puts NaN at the end."
+
+  - type: playground
+    id: ch21-play-float
+    title: "Build a float from its fields"
+    lang: rust
+    md: |
+      Write `make_f32(sign, exponent, fraction)` that assembles the 32 bits with shifts and `|` and turns them into an `f32` with `f32::from_bits`. The exponent you pass is the **real** one, so add the bias.
+    task: "Print `42.42`, `-0.75` and `1`."
+    code: |
+      fn make_f32(sign: u32, exponent: i32, fraction: u32) -> f32 {
+          0.0 // TODO
+      }
+
+      fn main() {
+          println!("{}", make_f32(0, 5, 0b01010011010111000010100));
+          println!("{}", make_f32(1, -1, 1 << 22));
+          println!("{}", make_f32(0, 0, 0));
+      }
+    expected_output: |
+      42.42
+      -0.75
+      1
+    solution_code: |
+      fn make_f32(sign: u32, exponent: i32, fraction: u32) -> f32 {
+          let biased = (exponent + 127) as u32;
+          f32::from_bits((sign << 31) | (biased << 23) | fraction)
+      }
+
+      fn main() {
+          println!("{}", make_f32(0, 5, 0b01010011010111000010100));
+          println!("{}", make_f32(1, -1, 1 << 22));
+          println!("{}", make_f32(0, 0, 0));
+      }
+    hints:
+      - "The biased exponent is `exponent + 127`, placed at bit 23."
+      - "-0.75 is -1 × 1.5 × 2^-1, and 1.5 has only the top fraction bit (2^-1) set: `1 << 22`."
+
+  - type: quiz
+    id: ch21-quiz-floats
+    title: Check yourself
+    questions:
+      - type: single
+        q: "How many exponent bits does an f32 have?"
+        options: ["1", "8", "11", "23"]
+        answer: 1
+        explanation: "1 sign, 8 exponent, 23 mantissa."
+      - type: single
+        q: "The stored exponent field of an f32 is 130. What is the real exponent?"
+        options: ["130", "3", "-3", "257"]
+        answer: 1
+        explanation: "130 - 127 = 3."
+      - type: single
+        q: "Why does the mantissa start at 1.0 when decoding?"
+        options: ["Rounding", "Normal numbers have an implicit leading 1 bit that is not stored", "The sign bit", "It does not"]
+        answer: 1
+        explanation: "One free bit of precision."
+      - type: single
+        q: "What is `f32::NAN == f32::NAN`?"
+        options: ["true", "false", "Compile error", "Panics"]
+        answer: 1
+        explanation: "Use is_nan()."
+      - type: single
+        q: "Why can't you call `.sort()` on a `Vec<f64>`?"
+        options: ["Vectors of floats are immutable", "f64 is not Ord because of NaN", "sort only works on strings", "You can"]
+        answer: 1
+        explanation: "Use sort_by with total_cmp."
+      - type: truefalse
+        q: "0.1 + 0.2 == 0.3 is true for f64."
+        answer: false
+        explanation: "Compare with a tolerance."
+
+  - type: summary
+    points:
+      - "A float is sign × mantissa × 2^exponent; f32 uses 1 + 8 + 23 bits."
+      - "The exponent is stored with a bias (127 for f32); the mantissa has an implicit leading 1."
+      - "Shifts and masks on to_bits() take a float apart; from_bits puts it back."
+      - "Special values: ±0, subnormals, ±infinity and NaN, which is unequal to itself."
+      - "Most decimals are rounded; compare with a tolerance and use integers for exact money."
+terms:
+  - term: IEEE 754
+    def: "The standard that defines the layout and behavior of floating-point numbers."
+  - term: mantissa
+    def: "The fraction part of a float, with an implicit leading 1 for normal numbers; also called the significand."
+  - term: exponent bias
+    def: "A constant (127 for f32) added to the real exponent so it can be stored as an unsigned field."
+  - term: NaN
+    def: "Not a Number: the result of undefined operations like 0/0; it is not equal to itself."
+  - term: subnormal
+    def: "A very small float with a zero exponent field and no implicit leading 1."
+  - term: epsilon
+    def: "The gap between 1.0 and the next larger representable float."

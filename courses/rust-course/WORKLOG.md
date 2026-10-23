@@ -111,3 +111,8 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
   read-only snippets). 12-question test; exercises ch20-unsafe, ch20-traits, ch20-fns, ch20-macros; 4 playgrounds.
   46 exercises verified. fix_compiler_output.py now anchors its replacement so identical first lines elsewhere
   (steppers, other blocks) are not rewritten.
+- Chapter 21 done (Data in Depth, Rust in Action ch5): bit patterns and types, overflow/two's complement/overflow
+  method families/bitwise ops/endianness; f32 taken apart (sign, biased exponent, mantissa) and special values;
+  Q7 fixed-point and mock_rand; the CHIP-8 style CPU emulator (adder, loop over memory, CALL/RET stack).
+  10-question test; exercises ch21-bits, ch21-fixed (Q8.8), ch21-cpu (jumps, skips, loops in machine code);
+  4 playgrounds. 49 exercises verified.

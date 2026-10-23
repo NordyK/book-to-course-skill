@@ -1,0 +1,134 @@
+{
+  "title": "Chapter test: Data in Depth",
+  "kind": "test",
+  "summary": "Ten questions on bit patterns, integers, floats, fixed-point numbers and the CPU emulator. You need 70% to pass; you can retry and your best score is kept.",
+  "blocks": [
+    {
+      "type": "quiz",
+      "id": "ch21-test",
+      "pass_score": 0.7,
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which is the safe way to see the bits of an f32?",
+          "options": [
+            "`std::mem::transmute`",
+            "`x.to_bits()`",
+            "`x as u32`",
+            "`format!(\"{:b}\", x)`"
+          ],
+          "answer": 1,
+          "explanation": "`x as u32` converts the value (42.42 → 42), not the bits."
+        },
+        {
+          "type": "single",
+          "q": "What is `200u8.saturating_add(100)`?",
+          "options": [
+            "44",
+            "255",
+            "300",
+            "None"
+          ],
+          "answer": 1,
+          "explanation": "It stops at the maximum."
+        },
+        {
+          "type": "single",
+          "q": "In two's complement, how do you negate an integer?",
+          "options": [
+            "Flip the top bit",
+            "Invert all bits and add one",
+            "Subtract from 255",
+            "Reverse the bits"
+          ],
+          "answer": 1,
+          "explanation": "And -128i8 has no positive counterpart."
+        },
+        {
+          "type": "single",
+          "q": "Which byte order do network protocols usually use?",
+          "options": [
+            "Little-endian",
+            "Big-endian",
+            "Native",
+            "Random"
+          ],
+          "answer": 1,
+          "explanation": "Also called network byte order."
+        },
+        {
+          "type": "single",
+          "q": "An f32 has sign 1, exponent field 128 and mantissa bits all zero. What value is it?",
+          "options": [
+            "2.0",
+            "-2.0",
+            "-1.0",
+            "128.0"
+          ],
+          "answer": 1,
+          "explanation": "-1 × 1.0 × 2^(128-127)."
+        },
+        {
+          "type": "single",
+          "q": "Which f32 values have an exponent field of all ones?",
+          "options": [
+            "Zeros",
+            "Subnormals",
+            "Infinities and NaN",
+            "The largest normal numbers"
+          ],
+          "answer": 2,
+          "explanation": "Mantissa zero is infinity, non-zero is NaN."
+        },
+        {
+          "type": "single",
+          "q": "What is the Q7 byte -64 as a number?",
+          "options": [
+            "-64",
+            "-0.5",
+            "-0.25",
+            "0.5"
+          ],
+          "answer": 1,
+          "explanation": "-64 / 128."
+        },
+        {
+          "type": "single",
+          "q": "Why does mock_rand use exponent 126?",
+          "options": [
+            "126 is random",
+            "It fixes the float into [0.5, 1) so the mantissa bits alone choose the value",
+            "To make it negative",
+            "It is the bias"
+          ],
+          "answer": 1,
+          "explanation": "2^(126-127) = 0.5."
+        },
+        {
+          "type": "single",
+          "q": "In the emulator, what does `self.position_in_memory += 2` after fetching do?",
+          "options": [
+            "Skips an instruction",
+            "Moves to the next instruction, since each opcode is two bytes",
+            "Calls a function",
+            "Nothing"
+          ],
+          "answer": 1,
+          "explanation": "Fetch, then advance."
+        },
+        {
+          "type": "single",
+          "q": "Which opcode returns from a function in CHIP-8?",
+          "options": [
+            "0x0000",
+            "0x00EE",
+            "0x2nnn",
+            "0x1nnn"
+          ],
+          "answer": 1,
+          "explanation": "It pops the return address."
+        }
+      ]
+    }
+  ]
+}

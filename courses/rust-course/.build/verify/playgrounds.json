@@ -266,5 +266,21 @@
  "ch20-play-swap": {
   "solution_code": "fn swap_ends(v: &mut [i32]) {\n    if v.is_empty() {\n        return;\n    }\n    let len = v.len();\n    let p = v.as_mut_ptr();\n    // SAFETY: v is non-empty, so p and p.add(len - 1) are both in bounds; ptr::swap allows them to be equal\n    unsafe {\n        std::ptr::swap(p, p.add(len - 1));\n    }\n}\n\nfn main() {\n    let mut a = [1, 2, 3, 4, 5];\n    let mut b = [7];\n    let mut c: [i32; 0] = [];\n    swap_ends(&mut a);\n    swap_ends(&mut b);\n    swap_ends(&mut c);\n    println!(\"{a:?}\");\n    println!(\"{b:?}\");\n    println!(\"{c:?}\");\n}\n",
   "starter_ok": "run"
+ },
+ "ch21-play-bits": {
+  "solution_code": "fn pack(year: u16, month: u16, day: u16) -> u16 {\n    ((year - 1980) << 9) | (month << 5) | day\n}\n\nfn unpack(bits: u16) -> (u16, u16, u16) {\n    ((bits >> 9) + 1980, (bits >> 5) & 0b1111, bits & 0b1_1111)\n}\n\nfn main() {\n    let p = pack(2025, 3, 23);\n    println!(\"{p:016b}\");\n    println!(\"{:?}\", unpack(p));\n}\n",
+  "starter_ok": "run"
+ },
+ "ch21-play-cpu": {
+  "solution_code": "struct CPU {\n    registers: [u8; 16],\n    pc: usize,\n    memory: [u8; 4096],\n    stack: [u16; 16],\n    sp: usize,\n}\n\nimpl CPU {\n    fn run(&mut self) {\n        loop {\n            let op = (self.memory[self.pc] as u16) << 8 | self.memory[self.pc + 1] as u16;\n            self.pc += 2;\n            let (c, x, y, d) = ((op >> 12) as u8, ((op >> 8) & 0xF) as usize, ((op >> 4) & 0xF) as usize, (op & 0xF) as u8);\n            match (c, x, y, d) {\n                (0, 0, 0, 0) => return,\n                (0, 0, 0xE, 0xE) => {\n                    self.sp -= 1;\n                    self.pc = self.stack[self.sp] as usize;\n                }\n                (0x2, _, _, _) => {\n                    self.stack[self.sp] = self.pc as u16;\n                    self.sp += 1;\n                    self.pc = (op & 0x0FFF) as usize;\n                }\n                (0x8, _, _, 0x4) => {\n                    let (v, o) = self.registers[x].overflowing_add(self.registers[y]);\n                    self.registers[x] = v;\n                    self.registers[0xF] = o as u8;\n                }\n                _ => panic!(\"unknown opcode {op:04x}\"),\n            }\n        }\n    }\n}\n\nfn main() {\n    let mut cpu = CPU { registers: [0; 16], pc: 0, memory: [0; 4096], stack: [0; 16], sp: 0 };\n    cpu.registers[1] = 5;\n\n    let program: &[u8] = &[\n        0x22, 0x00, // CALL 0x200\n        0x22, 0x00, // CALL 0x200\n        0x00, 0x00, // HALT\n    ];\n    cpu.memory[..program.len()].copy_from_slice(program);\n\n    let function: &[u8] = &[\n        0x80, 0x14, // ADD V0, V1\n        0x80, 0x14, // ADD V0, V1\n        0x00, 0xEE, // RETURN\n    ];\n    cpu.memory[0x200..0x200 + function.len()].copy_from_slice(function);\n\n    cpu.run();\n    println!(\"V0 = {}\", cpu.registers[0]);\n}\n",
+  "starter_ok": "run"
+ },
+ "ch21-play-float": {
+  "solution_code": "fn make_f32(sign: u32, exponent: i32, fraction: u32) -> f32 {\n    let biased = (exponent + 127) as u32;\n    f32::from_bits((sign << 31) | (biased << 23) | fraction)\n}\n\nfn main() {\n    println!(\"{}\", make_f32(0, 5, 0b01010011010111000010100));\n    println!(\"{}\", make_f32(1, -1, 1 << 22));\n    println!(\"{}\", make_f32(0, 0, 0));\n}\n",
+  "starter_ok": "run"
+ },
+ "ch21-play-q7": {
+  "solution_code": "use std::ops::{Add, Mul};\n\n#[derive(Debug, Clone, Copy, PartialEq, Eq)]\nstruct Q7(i8);\n\nimpl From<f64> for Q7 {\n    fn from(n: f64) -> Self {\n        if n >= 1.0 { Q7(127) } else if n <= -1.0 { Q7(-128) } else { Q7((n * 128.0) as i8) }\n    }\n}\n\nimpl From<Q7> for f64 {\n    fn from(n: Q7) -> f64 {\n        n.0 as f64 / 128.0\n    }\n}\n\nimpl Add for Q7 {\n    type Output = Q7;\n    fn add(self, other: Q7) -> Q7 {\n        Q7(self.0.saturating_add(other.0))\n    }\n}\n\nimpl Mul for Q7 {\n    type Output = Q7;\n    fn mul(self, other: Q7) -> Q7 {\n        Q7(((self.0 as i16 * other.0 as i16) >> 7) as i8)\n    }\n}\n\nfn main() {\n    let half = Q7::from(0.5);\n    let quarter = Q7::from(0.25);\n    let three_q = Q7::from(0.75);\n    println!(\"{}\", f64::from(half + quarter));\n    println!(\"{}\", f64::from(three_q + three_q));\n    println!(\"{}\", f64::from(half * half));\n}\n",
+  "starter_ok": "run"
  }
 }

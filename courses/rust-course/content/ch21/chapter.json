@@ -1,0 +1,11 @@
+{
+  "title": "Data in Depth: Bits, Integers and Floats",
+  "summary": "What values look like inside the machine: one bit pattern read as different types, integer ranges, overflow and two's complement, endianness, the IEEE 754 layout of floats taken apart by hand, a one-byte fixed-point format, turning random bytes into probabilities, and a small CPU emulator that shows code is data too.",
+  "goals": [
+    "Read and write bit patterns with binary formatting, to_bits/from_bits and bitwise operators",
+    "Explain integer overflow, two's complement and the checked, wrapping and saturating alternatives",
+    "Take an f32 apart into sign, exponent and mantissa and put it back together",
+    "Implement a fixed-point Q7 type and convert random bytes into floats between 0 and 1",
+    "Build a CHIP-8 style CPU emulator with registers, memory, a stack and function calls"
+  ]
+}
