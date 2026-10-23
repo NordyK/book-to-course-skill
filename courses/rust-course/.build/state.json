@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created": "2026-10-23T02:32:57+00:00",
-  "updated": "2026-10-23T03:21:17+00:00",
+  "updated": "2026-10-23T03:27:10+00:00",
   "book": {
     "title": "Rust: From First Program to Systems Programming",
     "author": "Merged from 5 books (see .build/plan.md)",
@@ -43,8 +43,8 @@
       "title": "Ownership, Borrowing and Slices",
       "words": 37714,
       "file": "chapters/ch04.md",
-      "status": "pending",
-      "lessons_built": 0,
+      "status": "done",
+      "lessons_built": 4,
       "note": ""
     },
     {
@@ -260,6 +260,10 @@
     {
       "at": "2026-10-23T03:21:17+00:00",
       "msg": "ch03 → done"
+    },
+    {
+      "at": "2026-10-23T03:27:10+00:00",
+      "msg": "ch04 → done"
     }
   ]
 }

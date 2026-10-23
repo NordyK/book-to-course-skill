@@ -74,5 +74,21 @@
  "ch03-play-tuple": {
   "solution_code": "fn divide(a: u32, b: u32) -> (u32, u32) {\n    (a / b, a % b)\n}\n\nfn main() {\n    let (q, r) = divide(17, 5);\n    println!(\"17 / 5 = {q} remainder {r}\");\n}\n",
   "starter_ok": "run"
+ },
+ "ch04-play-borrow-fix": {
+  "solution_code": "fn check_status(sat: &String) -> &'static str {\n    if sat.is_empty() { \"unknown\" } else { \"ok\" }\n}\n\nfn log_contact(sat: &mut String) {\n    sat.push_str(\" (contacted)\");\n}\n\nfn main() {\n    let mut sat_a = String::from(\"sat-a\");\n    println!(\"{sat_a}: {}\", check_status(&sat_a));\n    println!(\"{sat_a}: {}\", check_status(&sat_a));\n    log_contact(&mut sat_a);\n    println!(\"{sat_a}\");\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch04-play-borrow-order": {
+  "solution_code": "fn main() {\n    let mut s = String::from(\"hello\");\n    let first = &s[0..1];\n    println!(\"first: {first}\");\n    s.push('!');\n    println!(\"{s}\");\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch04-play-cubesat": {
+  "solution_code": "fn check_status(sat: String) -> (String, &'static str) {\n    let status = if sat.is_empty() { \"unknown\" } else { \"ok\" };\n    (sat, status)\n}\n\nfn main() {\n    let sat_a = String::from(\"sat-a\");\n    let (sat_a, status) = check_status(sat_a);\n    println!(\"{sat_a}: {status}\");\n    let (sat_a, status) = check_status(sat_a);\n    println!(\"{sat_a}: {status}\");\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch04-play-last-word": {
+  "solution_code": "fn last_word(s: &str) -> &str {\n    match s.rfind(' ') {\n        Some(i) => &s[i + 1..],\n        None => s,\n    }\n}\n\nfn main() {\n    println!(\"{}\", last_word(\"hello world\"));\n    println!(\"{}\", last_word(\"Ferris\"));\n    let owned = String::from(\"Ferris the crab\");\n    println!(\"{}\", last_word(&owned));\n}\n",
+  "starter_ok": "run"
  }
 }

@@ -1,0 +1,287 @@
+{
+  "title": "Slices: borrowing part of a collection",
+  "summary": "Refer to a run of elements instead of the whole: string slices (&str), why string literals are slices, array slices (&[T]), and why slices make APIs both safer and more flexible.",
+  "minutes": 28,
+  "source": {
+    "chapter": "ch04",
+    "sections": [
+      "TRPL 4.3 The Slice Type",
+      "TRPL 4.3 String Slices",
+      "TRPL 4.3 String Literals as Slices",
+      "TRPL 4.3 String Slices as Parameters",
+      "TRPL 4.3 Other Slices",
+      "PR ch3 Slices",
+      "PR ch3 String Literals",
+      "CR Day 1 Slices"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "A **slice** is a reference to a contiguous run of elements in a collection, rather than the whole collection. Because it is a reference, it does not own anything. This lesson follows *The Rust Programming Language*'s example, a function that finds the first word of a sentence, and shows how slices turn a subtle bug into a compile error.\n"
+    },
+    {
+      "type": "text",
+      "title": "The problem",
+      "md": "Write a function that takes a string of words separated by spaces and returns the first word. Without slices, the best we can return is the **index** where the first word ends:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn first_word(s: &String) -> usize {\n    let bytes = s.as_bytes();\n    for (i, &item) in bytes.iter().enumerate() {\n        if item == b' ' {\n            return i;\n        }\n    }\n    s.len()\n}\n\nfn main() {\n    let mut s = String::from(\"hello world\");\n    let word = first_word(&s); // word = 5\n    s.clear();                 // empties the String\n    println!(\"{word}\");        // 5, but there is no word any more!\n}\n",
+      "output": "5",
+      "explain": "`as_bytes` gives the String's bytes; `enumerate` pairs each with its index; `b' '` is the byte for a space. The bug: `word` is just a number with no connection to `s`. After `s.clear()` the number is meaningless, and nothing warns us. Keeping such indexes in sync by hand is fragile."
+    },
+    {
+      "type": "text",
+      "title": "String slices",
+      "md": "A **string slice** is a reference to part of a String, written with a range in brackets:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn main() {\n    let s = String::from(\"hello world\");\n    let hello = &s[0..5];\n    let world = &s[6..11];\n    let all = &s[..];      // the whole string\n    let start = &s[..2];   // from the beginning: \"he\"\n    let end = &s[8..];     // to the end: \"rld\"\n    println!(\"{hello}|{world}|{all}|{start}|{end}\");\n}\n",
+      "output": "hello|world|hello world|he|rld",
+      "explain": "`[a..b]` includes `a` and stops before `b`; either end can be left out. Internally a slice stores a pointer to the starting byte and a length, so `world` points at byte 6 of `s` with length 5."
+    },
+    {
+      "type": "callout",
+      "kind": "warning",
+      "title": "Slice indexes are bytes, not characters",
+      "md": "String slice ranges count **bytes** of UTF-8. Slicing in the middle of a multi-byte character, like `&\"Здравствуйте\"[0..1]` (each Cyrillic letter is 2 bytes), panics with `byte index 1 is not a char boundary`. For ASCII text bytes and characters are the same; chapter 8 shows how to work with characters safely."
+    },
+    {
+      "type": "text",
+      "title": "first_word, fixed",
+      "md": "The type of a string slice is written `&str`. Returning one ties the result to the String it came from:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn first_word(s: &String) -> &str {\n    let bytes = s.as_bytes();\n    for (i, &item) in bytes.iter().enumerate() {\n        if item == b' ' {\n            return &s[0..i];\n        }\n    }\n    &s[..]\n}\n\nfn main() {\n    let s = String::from(\"hello world\");\n    let word = first_word(&s);\n    println!(\"the first word is: {word}\");\n}\n",
+      "output": "the first word is: hello"
+    },
+    {
+      "type": "text",
+      "md": "Now try the bug from before. `word` is a shared borrow of `s`, and `s.clear()` needs a mutable borrow while `word` is still used. The borrowing rules from the last lesson forbid exactly that, so the compiler catches the bug:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/main.rs",
+      "code": "fn first_word(s: &String) -> &str {\n    &s[..s.find(' ').unwrap_or(s.len())]\n}\n\nfn main() {\n    let mut s = String::from(\"hello world\");\n    let word = first_word(&s);\n    s.clear();\n    println!(\"the first word is: {word}\");\n}\n",
+      "output": "error[E0502]: cannot borrow `s` as mutable because it is also borrowed as immutable\n --> src/main.rs:8:5\n  |\n7 |     let word = first_word(&s);\n  |                           -- immutable borrow occurs here\n8 |     s.clear();\n  |     ^^^^^^^^^ mutable borrow occurs here\n9 |     println!(\"the first word is: {word}\");\n  |                                   ---- immutable borrow later used here\n",
+      "output_label": "Compiler output",
+      "explain": "`s.find(' ')` returns the byte index of the first space, or `None`; `unwrap_or(s.len())` uses the full length when there is no space. It is a shorter way to write the loop above."
+    },
+    {
+      "type": "text",
+      "title": "String literals are slices",
+      "md": "Remember `let s = \"Hello, world!\";`? The type of `s` is `&str`: a slice pointing to text stored inside the program's binary. That is why literals are immutable: `&str` is a shared reference.\n\nThis also means a function that takes `&str` can accept both literals and Strings, because a `&String` converts to a `&str` automatically (this is called **deref coercion**, chapter 15). So the better signature for `first_word` is:\n\n```rust\nfn first_word(s: &str) -> &str\n```\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn first_word(s: &str) -> &str {\n    &s[..s.find(' ').unwrap_or(s.len())]\n}\n\nfn main() {\n    let my_string = String::from(\"hello world\");\n    println!(\"{}\", first_word(&my_string[0..6])); // a slice of a String\n    println!(\"{}\", first_word(&my_string));       // a whole String\n    println!(\"{}\", first_word(\"hi there\"));       // a literal\n}\n",
+      "output": "hello\nhello\nhi\n"
+    },
+    {
+      "type": "callout",
+      "kind": "key",
+      "title": "&str versus String",
+      "md": "`String` owns growable text on the heap. `&str` borrows some text that lives elsewhere: in a String, in the binary, anywhere. Store `String` in your data; take `&str` as a parameter when you only read text. This is one of the most common pairs of types you will use."
+    },
+    {
+      "type": "playground",
+      "id": "ch04-play-last-word",
+      "title": "Write last_word",
+      "lang": "rust",
+      "md": "Write `last_word`, returning a slice of everything after the last space (or the whole text when there is no space). `rfind` is like `find` but searches from the end. The program should print the three lines in the task.\n",
+      "task": "Print `world`, `Ferris` and `crab`, one per line.",
+      "code": "fn last_word(s: &str) -> &str {\n    s // replace with a slice after the last space\n}\n\nfn main() {\n    println!(\"{}\", last_word(\"hello world\"));\n    println!(\"{}\", last_word(\"Ferris\"));\n    let owned = String::from(\"Ferris the crab\");\n    println!(\"{}\", last_word(&owned));\n}\n",
+      "expected_output": "world\nFerris\ncrab\n",
+      "hints": [
+        "`s.rfind(' ')` returns `Some(index)` of the last space, or `None`.",
+        "The word starts one byte after the space: `&s[i + 1..]`. Use `match` as in the guessing game, or `if let Some(i) = s.rfind(' ')`."
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Other slices",
+      "md": "Slices are not just for text. A slice of an array (or, later, a `Vec`) has type `&[T]`, and `&mut [T]` is a slice you can change. Functions that take `&[T]` work for arrays of any length, which plain arrays cannot do because the length is part of their type.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "fn sum(values: &[i32]) -> i32 {\n    let mut total = 0;\n    for v in values {\n        total += v;\n    }\n    total\n}\n\nfn double_all(values: &mut [i32]) {\n    for v in values {\n        *v *= 2;\n    }\n}\n\nfn main() {\n    let mut a = [1, 2, 3, 4, 5];\n    println!(\"{}\", sum(&a));        // the whole array\n    println!(\"{}\", sum(&a[1..3]));  // [2, 3]\n    double_all(&mut a[3..]);        // only the last two\n    println!(\"{a:?}\");\n}\n",
+      "output": "15\n5\n[1, 2, 3, 8, 10]\n"
+    },
+    {
+      "type": "flashcards",
+      "id": "ch04-cards-slices",
+      "title": "Ownership and borrowing vocabulary",
+      "cards": [
+        {
+          "front": "`String`",
+          "back": "Owned, growable UTF-8 text on the heap."
+        },
+        {
+          "front": "`&str`",
+          "back": "A borrowed string slice: pointer + length into text owned elsewhere. String literals have this type."
+        },
+        {
+          "front": "`&[T]`",
+          "back": "A borrowed slice of elements of type T, from an array, a Vec or another slice."
+        },
+        {
+          "front": "`&mut [T]`",
+          "back": "A mutable slice: lets a function change elements, but not add or remove them."
+        },
+        {
+          "front": "`&s[2..5]`",
+          "back": "A slice of bytes 2, 3 and 4 of `s`."
+        },
+        {
+          "front": "E0502",
+          "back": "Cannot borrow as mutable because it is also borrowed as immutable: a shared borrow is still in use."
+        },
+        {
+          "front": "E0382",
+          "back": "Use of a moved value."
+        }
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch04-ex-slices",
+      "exercise_dir": "ch04-slices",
+      "title": "Slicing text and numbers",
+      "difficulty": "medium",
+      "goal": "Write functions that take and return slices, so they work on Strings, literals, arrays and parts of them.",
+      "behavior": "- `pub fn first_word(s: &str) -> &str`: everything before the first space (the whole text if there is none).\n- `pub fn nth_word(s: &str, n: usize) -> Option<&str>`: the n-th word (0-based) when words are separated by single spaces, or `None` if there are fewer words.\n- `pub fn largest(values: &[i32]) -> Option<i32>`: the largest value, or `None` for an empty slice.\n- `pub fn zero_negatives(values: &mut [i32])`: replace every negative number with 0, in place.\n",
+      "examples": [
+        {
+          "input": "first_word(\"ground control\")",
+          "output": "\"ground\""
+        },
+        {
+          "input": "nth_word(\"to be or not\", 2)",
+          "output": "Some(\"or\")"
+        },
+        {
+          "input": "largest(&[3, 9, -1])",
+          "output": "Some(9)"
+        },
+        {
+          "input": "zero_negatives on [4, -2, 0, -7]",
+          "output": "[4, 0, 0, 0]"
+        }
+      ],
+      "hints": [
+        "`first_word`: `&s[..s.find(' ').unwrap_or(s.len())]`.",
+        "`nth_word`: `s.split(' ')` gives the words one by one; count them in a `for` loop with a counter, and `return Some(word)` when the counter equals `n`. After the loop, `None`.",
+        "`largest`: return `None` if `values.is_empty()`, else start from `values[0]` and loop.",
+        "`zero_negatives`: `for v in values { if *v < 0 { *v = 0; } }`."
+      ],
+      "solution_explain": "Every function borrows, so callers keep ownership and can pass whole collections or parts of them. `for &v in values` destructures each `&i32` into an `i32`. Later chapters replace these loops with iterator methods such as `s.split(' ').nth(n)` and `values.iter().max()`."
+    },
+    {
+      "type": "quiz",
+      "id": "ch04-quiz-slices",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "`let s = String::from(\"rustacean\");` What is `&s[4..]`?",
+          "options": [
+            "\"rust\"",
+            "\"acean\"",
+            "\"tacean\"",
+            "\"cean\""
+          ],
+          "answer": 1,
+          "explanation": "Bytes 4 to the end: r-u-s-t are 0 to 3, so the slice starts at `a`."
+        },
+        {
+          "type": "single",
+          "q": "What is the type of the literal `\"hi\"`?",
+          "options": [
+            "`String`",
+            "`&String`",
+            "`&str`",
+            "`[char; 2]`"
+          ],
+          "answer": 2,
+          "explanation": "A string literal is a slice of text stored in the binary."
+        },
+        {
+          "type": "single",
+          "q": "Why is `fn f(s: &str)` usually better than `fn f(s: &String)`?",
+          "options": [
+            "`&str` is faster to copy",
+            "It accepts both literals and Strings (and slices of them)",
+            "`&String` cannot be read",
+            "`&str` can be changed"
+          ],
+          "answer": 1,
+          "explanation": "A `&String` coerces to `&str`, but not the other way round, so `&str` accepts more."
+        },
+        {
+          "type": "truefalse",
+          "q": "Holding a slice of a String while calling `clear()` on that String compiles, and the slice becomes empty.",
+          "answer": false,
+          "explanation": "The slice is a shared borrow; `clear` needs a mutable one. The compiler reports E0502."
+        },
+        {
+          "type": "single",
+          "q": "Which signature lets a function sum arrays of **any** length?",
+          "options": [
+            "`fn sum(a: [i32; 5]) -> i32`",
+            "`fn sum(a: &[i32; 5]) -> i32`",
+            "`fn sum(a: &[i32]) -> i32`",
+            "`fn sum(a: i32...) -> i32`"
+          ],
+          "answer": 2,
+          "explanation": "A slice type has no length in it, so any array (or part of one) fits."
+        },
+        {
+          "type": "single",
+          "q": "What happens with `&\"héllo\"[0..2]`? (`é` takes 2 bytes)",
+          "options": [
+            "Returns \"hé\"",
+            "Returns \"h\" and half of é",
+            "Panics: byte index 2 is not a char boundary",
+            "Compile error"
+          ],
+          "answer": 2,
+          "explanation": "Byte 2 falls inside `é` (bytes 1 and 2), and string slices must start and end on character boundaries."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "A slice borrows a contiguous part of a collection: `&s[a..b]`, `&s[..b]`, `&s[a..]`, `&s[..]`.",
+        "`&str` is a string slice; string literals are `&str`.",
+        "Returning a slice ties it to its source, so the borrow checker catches uses after the source changes.",
+        "Prefer `&str` parameters to `&String`, and `&[T]` to `&[T; N]` or `&Vec<T>`.",
+        "String slice indexes are byte positions and must fall on character boundaries.",
+        "`&mut [T]` lets a function change elements in place."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "slice",
+      "def": "A reference to a contiguous sequence of elements in a collection: a pointer and a length."
+    },
+    {
+      "term": "&str",
+      "def": "A string slice: borrowed UTF-8 text. String literals have this type."
+    },
+    {
+      "term": "deref coercion",
+      "def": "Automatic conversion of a reference to another reference type, such as &String to &str."
+    }
+  ]
+}

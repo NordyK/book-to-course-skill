@@ -50,3 +50,8 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
   output. Add it to the per-chapter loop. (The ch02 `cargo run -- 4 8 15` block needs arguments and is the one
   expected difference.)
 - Next: chapter 4 (Ownership), following `.build/plan.md`.
+- Chapter 4 done (Ownership, Borrowing and Slices): 3 lessons + 12-question test; exercises ch04-ownership,
+  ch04-borrowing, ch04-slices (verified); 4 playgrounds verified; compiler-error examples match rustc exactly.
+- Tooling: `.build/tools/fix_compiler_output.py . chNN` rewrites "Compiler output" blocks to match the real rustc.
+  **Always `rm -rf .cargo-target` before `verify_exercises.py`**: a reused target dir can serve a stale build, and
+  then every starter "passes".
