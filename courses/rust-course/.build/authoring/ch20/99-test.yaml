@@ -1,0 +1,67 @@
+title: "Chapter test: Advanced Features"
+kind: test
+summary: Twelve questions on unsafe, advanced traits, advanced types and functions, and macros. You need 70% to pass; you can retry and your best score is kept.
+blocks:
+  - type: quiz
+    id: ch20-test
+    pass_score: 0.7
+    questions:
+      - type: multi
+        q: "Which require an unsafe block?"
+        options: ["Dereferencing `*const T`", "Calling an `unsafe fn`", "Creating a raw pointer with `&raw const x`", "Reading a `static mut`", "Reading a union field"]
+        answer: [0, 1, 3, 4]
+        explanation: "Creating raw pointers is safe."
+      - type: single
+        q: "What is the job of the `assert!(mid <= len)` in split_at_mut?"
+        options: ["Speed", "It guarantees the unsafe code stays in bounds for every input, so the function can be safe", "Nothing", "It is required by the compiler"]
+        answer: 1
+        explanation: "A safe function must be sound for all inputs."
+      - type: single
+        q: "Where do you document what callers of an unsafe fn must guarantee?"
+        options: ["In a `# Safety` section of its doc comment", "In the function name", "In Cargo.toml", "Nowhere"]
+        answer: 0
+        explanation: "And justify each unsafe block with a SAFETY comment."
+      - type: single
+        q: "When should a trait use an associated type instead of a generic parameter?"
+        options: ["Always", "When each type should implement it only once", "When performance matters", "Never"]
+        answer: 1
+        explanation: "Like Iterator::Item."
+      - type: single
+        q: "Which trait makes `a += b` work?"
+        options: ["Add", "AddAssign", "PlusEq", "Assign"]
+        answer: 1
+        explanation: "add_assign(&mut self, rhs)."
+      - type: fill
+        q: "Complete the fully qualified call: `<Dog __ Animal>::baby_name()`"
+        answer: ["as"]
+        explanation: "<Type as Trait>::function."
+      - type: single
+        q: "What can a type alias NOT give you that a newtype can?"
+        options: ["A shorter name", "Type safety between the alias and the original", "Use in signatures", "Generic parameters"]
+        answer: 1
+        explanation: "An alias is the same type."
+      - type: single
+        q: "What is the type of `panic!(\"...\")`?"
+        options: ["()", "!", "String", "Result"]
+        answer: 1
+        explanation: "It never returns."
+      - type: single
+        q: "What does `T: ?Sized` allow?"
+        options: ["T must be unsized", "T may be a dynamically sized type like str", "T is a trait object", "Nothing"]
+        answer: 1
+        explanation: "Use T behind a pointer."
+      - type: single
+        q: "Which return type lets one function return different closures from different branches?"
+        options: ["`impl Fn(i32) -> i32`", "`Box<dyn Fn(i32) -> i32>`", "`fn(i32) -> i32` for capturing closures", "`Fn(i32) -> i32`"]
+        answer: 1
+        explanation: "impl Trait is one concrete type."
+      - type: single
+        q: "In `macro_rules!`, what does `$(,)?` at the end of a matcher allow?"
+        options: ["Any number of commas", "One optional trailing comma", "No commas", "A comma-separated list"]
+        answer: 1
+        explanation: "? means zero or one."
+      - type: single
+        q: "What does a custom derive macro receive?"
+        options: ["A String of source code", "A TokenStream of the item it is attached to", "The compiled struct", "Nothing"]
+        answer: 1
+        explanation: "It returns new tokens added after the item."

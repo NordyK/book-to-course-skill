@@ -1,0 +1,281 @@
+{
+  "title": "Advanced traits",
+  "summary": "Associated types versus generic parameters, default type parameters and operator overloading with std::ops, fully qualified syntax for identically named methods, supertraits, and the newtype pattern for implementing external traits on external types.",
+  "minutes": 40,
+  "source": {
+    "chapter": "ch20",
+    "sections": [
+      "TRPL 20.2 Advanced Traits",
+      "TRPL 20.2 Defining Traits with Associated Types",
+      "TRPL 20.2 Using Default Generic Parameters and Operator Overloading",
+      "TRPL 20.2 Disambiguating Between Identically Named Methods",
+      "TRPL 20.2 Using Supertraits",
+      "TRPL 20.2 Implementing External Traits with the Newtype Pattern",
+      "PR ch12 Operator Overloading",
+      "PR ch12 Arithmetic and Bitwise Operators",
+      "PR ch12 Compound Assignment Operators",
+      "PR ch12 Index and IndexMut",
+      "PR ch11 Associated Types",
+      "PR ch11 Fully Qualified Method Calls"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "title": "Associated types",
+      "md": "An **associated type** is a type placeholder inside a trait that each implementation fills in. `Iterator` is the standard example:\n\n```rust\npub trait Iterator {\n    type Item;\n    fn next(&mut self) -> Option<Self::Item>;\n}\n```\n\nWhy not a generic, `trait Iterator<T>`? With a generic, a type could implement `Iterator<u32>` **and** `Iterator<String>`, and every call to `next` would need an annotation saying which. An associated type allows **one** implementation per type, so `counter.next()` is unambiguous. Rule of thumb: if a type should implement the trait once, use an associated type; if many times with different types, use a generic parameter.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "struct Counter {\n    count: u32,\n}\n\nimpl Iterator for Counter {\n    type Item = u32;\n\n    fn next(&mut self) -> Option<Self::Item> {\n        if self.count < 5 {\n            self.count += 1;\n            Some(self.count)\n        } else {\n            None\n        }\n    }\n}\n\nfn main() {\n    let total: u32 = Counter { count: 0 }.zip(Counter { count: 0 }.skip(1)).map(|(a, b)| a * b).sum();\n    println!(\"{total}\");\n}\n",
+      "output": "40",
+      "explain": "`1*2 + 2*3 + 3*4 + 4*5 = 40`. Implementing only `next` gave `Counter` every iterator adapter."
+    },
+    {
+      "type": "text",
+      "title": "Default type parameters and operator overloading",
+      "md": "A generic parameter can have a **default**: `trait Add<Rhs = Self>`. Implementations that do not name `Rhs` get `Self`. This is how operators work: `a + b` is `Add::add(a, b)`, and the traits in **`std::ops`** let your types use the operators. You cannot invent new operators, only implement the existing ones.\n\nThe standard library declares:\n\n```rust\ntrait Add<Rhs = Self> {\n    type Output;\n    fn add(self, rhs: Rhs) -> Self::Output;\n}\n```\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::ops::{Add, AddAssign, Index, Mul, Neg};\n\n#[derive(Debug, Copy, Clone, PartialEq)]\nstruct Point {\n    x: i32,\n    y: i32,\n}\n\nimpl Add for Point {\n    type Output = Point;\n    fn add(self, other: Point) -> Point {\n        Point { x: self.x + other.x, y: self.y + other.y }\n    }\n}\n\nimpl Mul<i32> for Point {\n    type Output = Point;\n    fn mul(self, k: i32) -> Point {\n        Point { x: self.x * k, y: self.y * k }\n    }\n}\n\nimpl Neg for Point {\n    type Output = Point;\n    fn neg(self) -> Point {\n        Point { x: -self.x, y: -self.y }\n    }\n}\n\nimpl AddAssign for Point {\n    fn add_assign(&mut self, other: Point) {\n        self.x += other.x;\n        self.y += other.y;\n    }\n}\n\nimpl Index<usize> for Point {\n    type Output = i32;\n    fn index(&self, i: usize) -> &i32 {\n        match i {\n            0 => &self.x,\n            1 => &self.y,\n            _ => panic!(\"Point index {i} out of range\"),\n        }\n    }\n}\n\nfn main() {\n    let mut p = Point { x: 1, y: 0 } + Point { x: 2, y: 3 };\n    println!(\"{p:?}\");\n    println!(\"{:?}\", -(p * 2));\n    p += Point { x: 10, y: 10 };\n    println!(\"x = {}, y = {}\", p[0], p[1]);\n}\n",
+      "output": "Point { x: 3, y: 3 }\nPoint { x: -6, y: -6 }\nx = 13, y = 13\n"
+    },
+    {
+      "type": "text",
+      "md": "Setting `Rhs` to something other than `Self` lets you add **different** types. *The Rust Programming Language* adds meters to millimeters, using newtypes so the units cannot be mixed up by accident:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::ops::Add;\n\n#[derive(Debug)]\nstruct Millimeters(u32);\nstruct Meters(u32);\n\nimpl Add<Meters> for Millimeters {\n    type Output = Millimeters;\n\n    fn add(self, other: Meters) -> Millimeters {\n        Millimeters(self.0 + (other.0 * 1000))\n    }\n}\n\nfn main() {\n    println!(\"{:?}\", Millimeters(500) + Meters(2));\n}\n",
+      "output": "Millimeters(2500)"
+    },
+    {
+      "type": "table",
+      "title": "Common std::ops traits",
+      "headers": [
+        "Operator",
+        "Trait",
+        "Method"
+      ],
+      "rows": [
+        [
+          "`a + b`, `a - b`, `a * b`, `a / b`, `a % b`",
+          "`Add`, `Sub`, `Mul`, `Div`, `Rem`",
+          "`add(self, rhs)` ..."
+        ],
+        [
+          "`-a`, `!a`",
+          "`Neg`, `Not`",
+          "`neg(self)`, `not(self)`"
+        ],
+        [
+          "`a += b` (and `-=`, `*=` ...)",
+          "`AddAssign`, `SubAssign` ...",
+          "`add_assign(&mut self, rhs)`"
+        ],
+        [
+          "`a & b`, `a | b`, `a ^ b`, `a << n`",
+          "`BitAnd`, `BitOr`, `BitXor`, `Shl`",
+          "..."
+        ],
+        [
+          "`v[i]`, `v[i] = x`",
+          "`Index`, `IndexMut`",
+          "`index(&self, i)`, `index_mut(&mut self, i)`"
+        ],
+        [
+          "`a == b`, `a < b`",
+          "`PartialEq`, `PartialOrd` (in `std::cmp`)",
+          "`eq`, `partial_cmp`"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Fully qualified syntax",
+      "md": "Two traits may define methods with the same name, and a type may implement both, plus have its own inherent method of that name. By default `person.fly()` calls the **inherent** method. To call a trait's version, name the trait: `Pilot::fly(&person)`.\n\nAssociated **functions** without `self` are harder: `Animal::baby_name()` does not say which type's implementation you want. **Fully qualified syntax** names both: `<Dog as Animal>::baby_name()`. In general: `<Type as Trait>::function(receiver_if_method, next_arg, ...)`.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "trait Pilot {\n    fn fly(&self);\n}\n\ntrait Wizard {\n    fn fly(&self);\n}\n\nstruct Human;\n\nimpl Pilot for Human {\n    fn fly(&self) {\n        println!(\"This is your captain speaking.\");\n    }\n}\n\nimpl Wizard for Human {\n    fn fly(&self) {\n        println!(\"Up!\");\n    }\n}\n\nimpl Human {\n    fn fly(&self) {\n        println!(\"*waving arms furiously*\");\n    }\n}\n\ntrait Animal {\n    fn baby_name() -> String;\n}\n\nstruct Dog;\n\nimpl Dog {\n    fn baby_name() -> String {\n        String::from(\"Spot\")\n    }\n}\n\nimpl Animal for Dog {\n    fn baby_name() -> String {\n        String::from(\"puppy\")\n    }\n}\n\nfn main() {\n    let person = Human;\n    Pilot::fly(&person);\n    Wizard::fly(&person);\n    person.fly();\n\n    println!(\"A baby dog is called a {}\", Dog::baby_name());\n    println!(\"A baby dog is called a {}\", <Dog as Animal>::baby_name());\n}\n",
+      "output": "This is your captain speaking.\nUp!\n*waving arms furiously*\nA baby dog is called a Spot\nA baby dog is called a puppy\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "trait Animal {\n    fn baby_name() -> String;\n}\n\nstruct Dog;\n\nimpl Animal for Dog {\n    fn baby_name() -> String {\n        String::from(\"puppy\")\n    }\n}\n\nfn main() {\n    println!(\"A baby dog is called a {}\", Animal::baby_name());\n}\n",
+      "output": "error[E0790]: cannot call associated function on trait without specifying the corresponding `impl` type\n  --> src/main.rs:14:43\n   |\n 2 |     fn baby_name() -> String;\n   |     ------------------------- `Animal::baby_name` defined here\n...\n14 |     println!(\"A baby dog is called a {}\", Animal::baby_name());\n   |                                           ^^^^^^^^^^^^^^^^^^^ cannot call associated function of trait\n   |\nhelp: use the fully-qualified path to the only available implementation\n   |\n14 |     println!(\"A baby dog is called a {}\", <Dog as Animal>::baby_name());\n   |                                           +++++++       +\n",
+      "output_label": "Compiler output"
+    },
+    {
+      "type": "text",
+      "title": "Supertraits",
+      "md": "A trait can depend on another: `trait OutlinePrint: fmt::Display` means every `OutlinePrint` type must also be `Display`, so the default method may call `to_string()`. You met this in chapter 18. Forgetting the supertrait's impl gives a clear error:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::fmt;\n\ntrait OutlinePrint: fmt::Display {\n    fn outline_print(&self) {\n        let output = self.to_string();\n        let len = output.len();\n        println!(\"{}\", \"*\".repeat(len + 4));\n        println!(\"*{}*\", \" \".repeat(len + 2));\n        println!(\"* {output} *\");\n        println!(\"*{}*\", \" \".repeat(len + 2));\n        println!(\"{}\", \"*\".repeat(len + 4));\n    }\n}\n\nstruct Point {\n    x: i32,\n    y: i32,\n}\n\nimpl OutlinePrint for Point {}\n\nfn main() {}\n",
+      "output": "error[E0277]: `Point` doesn't implement `std::fmt::Display`\n  --> src/main.rs:20:23\n   |\n20 | impl OutlinePrint for Point {}\n   |                       ^^^^^ unsatisfied trait bound\n   |\nhelp: the trait `std::fmt::Display` is not implemented for `Point`\n  --> src/main.rs:15:1\n   |\n15 | struct Point {\n   | ^^^^^^^^^^^^\nnote: required by a bound in `OutlinePrint`\n  --> src/main.rs:3:21\n   |\n 3 | trait OutlinePrint: fmt::Display {\n   |                     ^^^^^^^^^^^^ required by this bound in `OutlinePrint`\n",
+      "output_label": "Compiler output"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::fmt;\n\ntrait OutlinePrint: fmt::Display {\n    fn outline_print(&self) {\n        let output = self.to_string();\n        let len = output.len();\n        println!(\"{}\", \"*\".repeat(len + 4));\n        println!(\"*{}*\", \" \".repeat(len + 2));\n        println!(\"* {output} *\");\n        println!(\"*{}*\", \" \".repeat(len + 2));\n        println!(\"{}\", \"*\".repeat(len + 4));\n    }\n}\n\nstruct Point {\n    x: i32,\n    y: i32,\n}\n\nimpl fmt::Display for Point {\n    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {\n        write!(f, \"({}, {})\", self.x, self.y)\n    }\n}\n\nimpl OutlinePrint for Point {}\n\nfn main() {\n    Point { x: 1, y: 3 }.outline_print();\n}\n",
+      "output": "**********\n*        *\n* (1, 3) *\n*        *\n**********\n"
+    },
+    {
+      "type": "text",
+      "title": "The newtype pattern and the orphan rule",
+      "md": "The **orphan rule** (chapter 10) says you may implement a trait for a type only if the trait or the type is local to your crate. So you cannot implement `Display` for `Vec<String>`: both are from the standard library.\n\nThe workaround is a **newtype**: a tuple struct with one field, `struct Wrapper(Vec<String>);`. `Wrapper` is local, so you can implement anything on it. There is no run-time cost; the wrapper disappears at compile time. The downside is that `Wrapper` does not have `Vec`'s methods; implement `Deref` to get them all, or forward only the ones you want.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::fmt;\nuse std::ops::Deref;\n\nstruct Wrapper(Vec<String>);\n\nimpl fmt::Display for Wrapper {\n    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {\n        write!(f, \"[{}]\", self.0.join(\", \"))\n    }\n}\n\nimpl Deref for Wrapper {\n    type Target = Vec<String>;\n    fn deref(&self) -> &Vec<String> {\n        &self.0\n    }\n}\n\nfn main() {\n    let w = Wrapper(vec![String::from(\"hello\"), String::from(\"world\")]);\n    println!(\"w = {w}\");\n    println!(\"{} items, first is {}\", w.len(), w[0]);\n}\n",
+      "output": "w = [hello, world]\n2 items, first is hello\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch20-play-money",
+      "title": "Money that cannot be mixed up",
+      "lang": "rust",
+      "md": "`Cents(i64)` is a newtype. Implement `Add` (cents + cents), `Mul<i64>` (cents * count), `Sum` so `iter().copied().sum::<Cents>()` works, and `Display` that prints `€12.34` (and `-€0.50` for negatives).\n",
+      "task": "Print `€12.34`, `€7.50`, `-€0.50`.",
+      "code": "use std::fmt;\nuse std::iter::Sum;\nuse std::ops::{Add, Mul};\n\n#[derive(Debug, Copy, Clone, PartialEq)]\nstruct Cents(i64);\n\n// impl Add, Mul<i64>, Sum, Display\n\nfn main() {\n    let price = Cents(617);\n    // println!(\"{}\", price * 2);\n    // println!(\"{}\", [Cents(250), Cents(500)].iter().copied().sum::<Cents>());\n    // println!(\"{}\", Cents(-50));\n    println!(\"{price:?}\");\n}\n",
+      "expected_output": "€12.34\n€7.50\n-€0.50\n",
+      "hints": [
+        "`impl Sum for Cents { fn sum<I: Iterator<Item = Cents>>(iter: I) -> Cents { iter.fold(Cents(0), |a, b| a + b) } }`",
+        "`{:02}` pads the cents to two digits."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch20-ex-traits",
+      "exercise_dir": "ch20-traits",
+      "title": "A 2D vector type",
+      "difficulty": "medium",
+      "goal": "Overload arithmetic, compound assignment, negation and indexing, use a default type parameter, and disambiguate same-named trait methods.",
+      "behavior": "`#[derive(Debug, Clone, Copy, PartialEq)] pub struct Vec2 { pub x: f64, pub y: f64 }` with:\n- `Add`, `Sub` (Vec2 with Vec2), `Mul<f64>` (scale), `Mul<Vec2>` with `Output = f64` (dot product), `Neg`, `AddAssign`;\n- `Index<usize>` and `IndexMut<usize>` (0 is x, 1 is y, anything else panics);\n- `pub fn length(self) -> f64`.\nThen two traits that both have a `name` method: `pub trait Shape { fn name(&self) -> String; }` and `pub trait Label { fn name(&self) -> String; }`. Implement `Shape` for `Vec2` returning `\"vector\"`, and `Label` returning `\"(x, y)\"` using `{}` formatting, e.g. `\"(3, 4)\"`. Write `pub fn both_names(v: &Vec2) -> (String, String)` returning `(shape name, label name)`.\n",
+      "examples": [
+        {
+          "input": "Vec2 { x: 1.0, y: 2.0 } * Vec2 { x: 3.0, y: 4.0 }",
+          "output": "11.0"
+        },
+        {
+          "input": "both_names(&Vec2 { x: 3.0, y: 4.0 })",
+          "output": "(\"vector\", \"(3, 4)\")"
+        }
+      ],
+      "hints": [
+        "Two impls of `Mul` with different `Rhs`: `impl Mul<f64> for Vec2` and `impl Mul<Vec2> for Vec2`.",
+        "`IndexMut` requires `Index`: `fn index_mut(&mut self, i: usize) -> &mut f64`.",
+        "Call the two methods as `Shape::name(v)` and `Label::name(v)`."
+      ],
+      "solution_explain": "`Mul` is implemented twice with different `Rhs` type parameters, and each picks its own associated `Output`. A plain `v.name()` would be ambiguous because both traits are in scope; naming the trait settles it."
+    },
+    {
+      "type": "quiz",
+      "id": "ch20-quiz-traits",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Why is `Iterator::Item` an associated type rather than a generic parameter?",
+          "options": [
+            "Associated types are faster",
+            "So each type implements Iterator once, and next() needs no annotations",
+            "Generics cannot be used in traits",
+            "For backwards compatibility"
+          ],
+          "answer": 1,
+          "explanation": "One implementation per type."
+        },
+        {
+          "type": "single",
+          "q": "What does `Rhs = Self` in `trait Add<Rhs = Self>` mean?",
+          "options": [
+            "Rhs must be Self",
+            "Rhs defaults to Self when an impl does not specify it",
+            "Self is renamed Rhs",
+            "Nothing"
+          ],
+          "answer": 1,
+          "explanation": "A default type parameter."
+        },
+        {
+          "type": "single",
+          "q": "How do you call `Animal`'s `baby_name` for `Dog` when Dog also has an inherent `baby_name`?",
+          "options": [
+            "`Dog::baby_name()`",
+            "`Animal::baby_name()`",
+            "`<Dog as Animal>::baby_name()`",
+            "`Dog.Animal::baby_name()`"
+          ],
+          "answer": 2,
+          "explanation": "Fully qualified syntax."
+        },
+        {
+          "type": "single",
+          "q": "Why use a newtype to implement Display for Vec<String>?",
+          "options": [
+            "For speed",
+            "The orphan rule forbids implementing a foreign trait on a foreign type",
+            "Vec cannot be printed",
+            "Display needs a struct"
+          ],
+          "answer": 1,
+          "explanation": "The wrapper is local."
+        },
+        {
+          "type": "truefalse",
+          "q": "Rust lets you define brand-new operators like `<=>`.",
+          "answer": false,
+          "explanation": "Only the operators in std::ops and std::cmp can be overloaded."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "Associated types: one implementation per type; generics: many.",
+        "Default type parameters (`Rhs = Self`) keep common impls short.",
+        "std::ops traits overload operators, including `+=`, unary `-` and indexing.",
+        "`<Type as Trait>::f()` disambiguates identically named functions.",
+        "Supertraits require other traits; newtypes get around the orphan rule at no cost."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "associated type",
+      "def": "A type placeholder declared in a trait with type Name; and chosen by each implementation."
+    },
+    {
+      "term": "default type parameter",
+      "def": "A generic parameter with a default, such as Rhs = Self."
+    },
+    {
+      "term": "operator overloading",
+      "def": "Implementing std::ops traits so operators like + work on your types."
+    },
+    {
+      "term": "fully qualified syntax",
+      "def": "<Type as Trait>::function(...), naming both the type and the trait."
+    },
+    {
+      "term": "orphan rule",
+      "def": "You may implement a trait for a type only if the trait or the type is defined in your crate."
+    },
+    {
+      "term": "newtype",
+      "def": "A tuple struct with one field that wraps another type to give it a new identity."
+    }
+  ]
+}

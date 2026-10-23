@@ -1,0 +1,547 @@
+title: "Unsafe Rust"
+summary: "Why unsafe exists, the five unsafe superpowers, raw pointers, unsafe functions and the 2024-edition rules, building split_at_mut as a safe abstraction, extern functions and FFI, mutable statics, unsafe traits, unions, undefined behavior, SAFETY comments and Miri."
+minutes: 45
+source:
+  chapter: ch20
+  sections: ["TRPL 20.1 Unsafe Rust", "TRPL 20.1 Performing Unsafe Superpowers", "TRPL 20.1 Dereferencing a Raw Pointer", "TRPL 20.1 Calling an Unsafe Function or Method", "TRPL 20.1 Creating a Safe Abstraction over Unsafe Code", "TRPL 20.1 Using extern Functions to Call External Code", "TRPL 20.1 Accessing or Modifying a Mutable Static Variable", "TRPL 20.1 Implementing an Unsafe Trait", "TRPL 20.1 Accessing Fields of a Union", "TRPL 20.1 Using Miri to Check Unsafe Code", "PR ch22 Unsafe Code", "PR ch22 Unsafe from What?", "PR ch22 Unsafe Blocks", "PR ch22 Undefined Behavior", "PR ch22 Unsafe Functions", "PR ch22 Raw Pointers", "PR ch22 Unsafe Traits", "CR Unsafe Rust", "CR Dereferencing Raw Pointers", "CR Mutable Static Variables", "CR Unions", "CR Unsafe Functions", "CR Unsafe Traits"]
+blocks:
+  - type: text
+    md: |
+      Everything so far was **safe Rust**: the compiler proved your program free of data races, dangling pointers and use-after-free. Its checks are conservative, though. Some correct programs cannot be proven correct by the compiler, and some work (talking to hardware, calling C, building data structures like `Vec`) needs operations the checks cannot reason about.
+
+      **`unsafe`** is how you tell the compiler: "for this block, I take responsibility for the rules you cannot check." It does **not** turn off the borrow checker or any other check. It unlocks exactly five extra abilities.
+
+  - type: table
+    title: The five unsafe superpowers
+    headers: ["Superpower", "Example"]
+    rows:
+      - ["dereference a raw pointer", "`*ptr` where `ptr: *const i32`"]
+      - ["call an unsafe function or method", "`slice::from_raw_parts(ptr, len)`, a C function"]
+      - ["access or modify a mutable static variable", "`COUNTER += 1` where `static mut COUNTER`"]
+      - ["implement an unsafe trait", "`unsafe impl Send for MyType {}`"]
+      - ["access fields of a union", "`u.as_float`"]
+
+  - type: callout
+    kind: key
+    title: "Undefined behavior"
+    md: "*Programming Rust* frames unsafe in terms of **undefined behavior** (UB): things like reading freed memory, creating two `&mut` to the same data, or producing an invalid `bool`. Safe Rust cannot cause UB. Inside `unsafe`, **you** must make sure it cannot happen, because the compiler assumes it never does and optimizes accordingly. A program with UB may seem to work today and break with the next compiler version."
+
+  - type: text
+    title: Raw pointers
+    md: |
+      Raw pointers come in two kinds: `*const T` and `*mut T`. Unlike references, they:
+
+      - may ignore the borrowing rules (several `*mut` to the same place are allowed);
+      - are not guaranteed to point to valid memory;
+      - may be null;
+      - have no automatic cleanup.
+
+      **Creating** a raw pointer is safe. Use the raw borrow operators `&raw const` and `&raw mut`, or cast a reference with `as`. Only **dereferencing** one needs `unsafe`:
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let mut num = 5;
+
+          let r1 = &raw const num;
+          let r2 = &raw mut num;
+
+          unsafe {
+              *r2 += 1;
+              println!("r1 is: {}", *r1);
+              println!("r2 is: {}", *r2);
+          }
+
+          let address = 0x012345usize;
+          let _r = address as *const i32; // creating it is fine; dereferencing it would be UB
+      }
+    output: |
+      r1 is: 6
+      r2 is: 6
+
+  - type: code
+    lang: rust
+    code: |
+      fn main() {
+          let mut num = 5;
+          let r1 = &raw const num;
+          println!("r1 is: {}", *r1);
+      }
+    output: |
+      error[E0133]: dereference of raw pointer is unsafe and requires unsafe function or block
+       --> src/main.rs:4:27
+        |
+      4 |     println!("r1 is: {}", *r1);
+        |                           ^^^ dereference of raw pointer
+        |
+        = note: raw pointers may be null, dangling or unaligned; they can violate aliasing rules and cause data races: all of these are undefined behavior
+    output_label: Compiler output
+
+  - type: text
+    title: Unsafe functions and SAFETY comments
+    md: |
+      An `unsafe fn` has requirements (a **contract**) the compiler cannot check. Callers must uphold them, so calling it needs an `unsafe` block. Document the contract in a `# Safety` section of the doc comment, and justify each `unsafe` block with a `// SAFETY:` comment saying why the contract holds there.
+
+      Since the 2024 edition, the body of an `unsafe fn` is **not** automatically an unsafe block: unsafe operations inside it still need their own `unsafe { }` (the `unsafe_op_in_unsafe_fn` lint warns otherwise). That keeps each dangerous step visible.
+
+  - type: code
+    lang: rust
+    code: |
+      /// Returns the element at `index` without bounds checking.
+      ///
+      /// # Safety
+      ///
+      /// `index` must be less than `values.len()`.
+      unsafe fn get_unchecked(values: &[i32], index: usize) -> i32 {
+          // SAFETY: the caller promises index < values.len()
+          unsafe { *values.as_ptr().add(index) }
+      }
+
+      fn main() {
+          let v = [10, 20, 30];
+          // SAFETY: 2 < 3
+          let x = unsafe { get_unchecked(&v, 2) };
+          println!("{x}");
+      }
+    output: "30"
+
+  - type: text
+    title: A safe abstraction over unsafe code
+    md: |
+      Most unsafe code is wrapped inside a **safe function**: the function checks whatever it must, then uses unsafe internally, and callers never see the danger. *The Rust Programming Language*'s example is `split_at_mut`, which splits one mutable slice into two that do not overlap. Written in safe Rust, the borrow checker refuses it:
+
+  - type: code
+    lang: rust
+    code: |
+      fn split_at_mut(values: &mut [i32], mid: usize) -> (&mut [i32], &mut [i32]) {
+          let len = values.len();
+
+          assert!(mid <= len);
+
+          (&mut values[..mid], &mut values[mid..])
+      }
+
+      fn main() {}
+    output: |
+      error[E0499]: cannot borrow `*values` as mutable more than once at a time
+       --> src/main.rs:6:31
+        |
+      1 | fn split_at_mut(values: &mut [i32], mid: usize) -> (&mut [i32], &mut [i32]) {
+        |                         - let's call the lifetime of this reference `'1`
+      ...
+      6 |     (&mut values[..mid], &mut values[mid..])
+        |     --------------------------^^^^^^--------
+        |     |     |                   |
+        |     |     |                   second mutable borrow occurs here
+        |     |     first mutable borrow occurs here
+        |     returning this value requires that `*values` is borrowed for `'1`
+        |
+        = help: use `.split_at_mut(position)` to obtain two mutable non-overlapping sub-slices
+    output_label: Compiler output
+    explain: "We know the two halves do not overlap, but the borrow checker only sees two mutable borrows of the same slice."
+
+  - type: code
+    lang: rust
+    code: |
+      use std::slice;
+
+      fn split_at_mut(values: &mut [i32], mid: usize) -> (&mut [i32], &mut [i32]) {
+          let len = values.len();
+          let ptr = values.as_mut_ptr();
+
+          assert!(mid <= len);
+
+          // SAFETY: ptr is valid for len elements; [0, mid) and [mid, len) do not overlap,
+          // and both stay within the original slice, which is borrowed mutably for the result's lifetime.
+          unsafe {
+              (
+                  slice::from_raw_parts_mut(ptr, mid),
+                  slice::from_raw_parts_mut(ptr.add(mid), len - mid),
+              )
+          }
+      }
+
+      fn main() {
+          let mut v = vec![1, 2, 3, 4, 5, 6];
+          let (a, b) = split_at_mut(&mut v, 3);
+          a[0] = 100;
+          b[0] = 400;
+          println!("{a:?} {b:?}");
+      }
+    output: "[100, 2, 3] [400, 5, 6]"
+    explain: "The `assert!` is what makes the function safe: without it, a `mid` past the end would create a slice over memory we do not own. A function marked safe must be safe for **every** input."
+
+  - type: stepper
+    title: What makes split_at_mut sound
+    steps:
+      - title: The signature ties lifetimes together
+        md: "Elided lifetimes give both returned slices the lifetime of `values`. While they live, nobody else can touch `v`."
+      - title: The assert checks the input
+        md: "`mid <= len` guarantees both ranges are inside the allocation."
+      - title: The ranges do not overlap
+        md: "`[0, mid)` and `[mid, len)` share no element, so the two `&mut` never alias."
+      - title: The unsafe block is small
+        md: "Only the two `from_raw_parts_mut` calls are unsafe, and the SAFETY comment says why their contract holds. Reviewers can check the reasoning in one place."
+
+  - type: text
+    title: extern functions and FFI
+    md: |
+      Rust can call functions written in other languages through a **foreign function interface** (FFI). Declare them in an `unsafe extern "C"` block; `"C"` names the **ABI**, the calling convention. Rust cannot check foreign code, so in the 2024 edition the block itself is marked `unsafe`, and each function is either `safe fn` (you vouch that any call is fine) or plain `fn`, whose calls need `unsafe`. Chapter 24 does this in depth.
+
+      Going the other way, `#[unsafe(no_mangle)] pub extern "C" fn call_from_c() { ... }` exports a Rust function with a C name.
+
+  - type: code
+    lang: rust
+    code: |
+      unsafe extern "C" {
+          safe fn abs(input: i32) -> i32;
+          fn strlen(s: *const std::ffi::c_char) -> usize;
+      }
+
+      fn main() {
+          println!("Absolute value of -3 according to C: {}", abs(-3));
+
+          let text = c"hello";
+          // SAFETY: text is a valid, NUL-terminated C string
+          let n = unsafe { strlen(text.as_ptr()) };
+          println!("strlen says {n}");
+      }
+    output: |
+      Absolute value of -3 according to C: 3
+      strlen says 5
+    explain: "`c\"hello\"` is a C-string literal (`&CStr`) with the terminating NUL byte added."
+
+  - type: text
+    title: Mutable statics
+    md: |
+      A `static` has one fixed address for the whole program. A `static mut` can be changed, but any thread could do so at any time, so **every access is unsafe**. Since the 2024 edition, even creating a shared reference to one (which `println!` does) is a hard error; read it through a raw pointer instead. In real code prefer atomics (`AtomicU32`) or a `Mutex` in a plain `static`, which need no unsafe at all.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::sync::atomic::{AtomicU32, Ordering};
+
+      static mut COUNTER: u32 = 0;
+      static SAFE_COUNTER: AtomicU32 = AtomicU32::new(0);
+
+      /// # Safety
+      ///
+      /// Calling this from more than one thread at a time is undefined behavior.
+      unsafe fn add_to_count(inc: u32) {
+          // SAFETY: the caller guarantees single-threaded access
+          unsafe {
+              COUNTER += inc;
+          }
+      }
+
+      fn main() {
+          unsafe {
+              // SAFETY: main is the only thread
+              add_to_count(3);
+              println!("COUNTER: {}", *(&raw const COUNTER));
+          }
+
+          SAFE_COUNTER.fetch_add(3, Ordering::Relaxed);
+          println!("SAFE_COUNTER: {}", SAFE_COUNTER.load(Ordering::Relaxed));
+      }
+    output: |
+      COUNTER: 3
+      SAFE_COUNTER: 3
+
+  - type: text
+    title: Unsafe traits and unions
+    md: |
+      A trait is `unsafe` when implementing it promises something the compiler cannot check. `Send` and `Sync` are the main ones: the compiler implements them automatically, but a type holding raw pointers loses them, and `unsafe impl Send for MyType {}` asserts "I checked this is safe to move across threads".
+
+      A **union** is like a struct where all fields share the same memory. Only one field is valid at a time, and Rust cannot know which, so reading a field is unsafe. Unions exist mainly for C interop.
+
+  - type: code
+    lang: rust
+    code: |
+      #[repr(C)]
+      union IntOrFloat {
+          i: u32,
+          f: f32,
+      }
+
+      struct RawHandle(*mut u8);
+
+      // SAFETY: the pointer is only used by the thread that owns the handle
+      unsafe impl Send for RawHandle {}
+
+      fn main() {
+          let u = IntOrFloat { f: 1.0 };
+          // SAFETY: every bit pattern is a valid u32
+          let bits = unsafe { u.i };
+          println!("1.0f32 has bits {bits:#010x}");
+
+          let h = RawHandle(std::ptr::null_mut());
+          let t = std::thread::spawn(move || {
+              let h = h; // capture the whole handle, not just its field
+              h.0.is_null()
+          });
+          println!("null in thread: {}", t.join().unwrap());
+      }
+    output: |
+      1.0f32 has bits 0x3f800000
+      null in thread: true
+
+  - type: callout
+    kind: tip
+    title: Miri
+    md: "**Miri** is an interpreter for Rust's intermediate code that detects many kinds of undefined behavior at run time: out-of-bounds access, use after free, invalid aliasing. Install it with `rustup +nightly component add miri` and run `cargo +nightly miri test`. It finds bugs that tests alone miss, but only on code paths your tests execute."
+
+  - type: playground
+    id: ch20-play-swap
+    title: "Swapping through raw pointers"
+    lang: rust
+    md: |
+      Write `fn swap_ends(v: &mut [i32])` that swaps the first and last elements using raw pointers and `std::ptr::swap`. Handle the empty slice safely first (an empty slice has no first element), and add a SAFETY comment explaining why your unsafe block is sound.
+    task: "Print `[5, 2, 3, 4, 1]`, `[7]`, `[]`."
+    code: |
+      fn swap_ends(v: &mut [i32]) {
+          // TODO
+      }
+
+      fn main() {
+          let mut a = [1, 2, 3, 4, 5];
+          let mut b = [7];
+          let mut c: [i32; 0] = [];
+          swap_ends(&mut a);
+          swap_ends(&mut b);
+          swap_ends(&mut c);
+          println!("{a:?}");
+          println!("{b:?}");
+          println!("{c:?}");
+      }
+    expected_output: |
+      [5, 2, 3, 4, 1]
+      [7]
+      []
+    solution_code: |
+      fn swap_ends(v: &mut [i32]) {
+          if v.is_empty() {
+              return;
+          }
+          let len = v.len();
+          let p = v.as_mut_ptr();
+          // SAFETY: v is non-empty, so p and p.add(len - 1) are both in bounds; ptr::swap allows them to be equal
+          unsafe {
+              std::ptr::swap(p, p.add(len - 1));
+          }
+      }
+
+      fn main() {
+          let mut a = [1, 2, 3, 4, 5];
+          let mut b = [7];
+          let mut c: [i32; 0] = [];
+          swap_ends(&mut a);
+          swap_ends(&mut b);
+          swap_ends(&mut c);
+          println!("{a:?}");
+          println!("{b:?}");
+          println!("{c:?}");
+      }
+    hints:
+      - "`let p = v.as_mut_ptr();` then `p.add(len - 1)` points at the last element."
+      - "`std::ptr::swap(a, b)` is an unsafe function taking two `*mut T`."
+
+  - type: exercise
+    id: ch20-ex-unsafe
+    exercise_dir: ch20-unsafe
+    title: "Safe wrappers over unsafe code"
+    difficulty: hard
+    goal: "Write small unsafe blocks behind safe APIs, checking every precondition so callers can never cause undefined behavior."
+    behavior: |
+      - `pub fn split_at_mut<T>(v: &mut [T], mid: usize) -> (&mut [T], &mut [T])`: like the lesson, generic. Panic if `mid > v.len()`.
+      - `pub fn first_last_mut<T>(v: &mut [T]) -> Option<(&mut T, &mut T)>`: mutable references to the first and last element at once; `None` if fewer than **two** elements (with one element they would alias).
+      - `pub fn read_u32_le(bytes: &[u8], offset: usize) -> Option<u32>`: read 4 bytes at `offset` as a little-endian `u32` with `std::ptr::read_unaligned` (then `u32::from_le`); `None` if out of range. Watch out for `offset + 4` overflowing.
+      - `pub fn sum_raw(ptr: *const i32, len: usize) -> i32`, an **`unsafe fn`** with a `# Safety` doc section, and a safe `pub fn sum(v: &[i32]) -> i32` that calls it.
+    examples:
+      - input: "read_u32_le(&[1, 0, 0, 0, 255], 0)"
+        output: "Some(1)"
+      - input: "read_u32_le(&[1, 2, 3], 0)"
+        output: "None"
+    hints:
+      - "`first_last_mut`: `let p = v.as_mut_ptr(); unsafe { Some((&mut *p, &mut *p.add(len - 1))) }` after checking `len >= 2`."
+      - "`offset.checked_add(4)` returns `None` on overflow; compare the result with `bytes.len()`."
+      - "`std::ptr::read_unaligned(bytes.as_ptr().add(offset) as *const u32)`."
+      - "In `sum_raw`, `std::slice::from_raw_parts(ptr, len)` turns the pointer back into a slice."
+    rust:
+      starter: |
+        pub fn split_at_mut<T>(v: &mut [T], mid: usize) -> (&mut [T], &mut [T]) {
+            todo!()
+        }
+
+        pub fn first_last_mut<T>(v: &mut [T]) -> Option<(&mut T, &mut T)> {
+            todo!()
+        }
+
+        pub fn read_u32_le(bytes: &[u8], offset: usize) -> Option<u32> {
+            todo!()
+        }
+
+        /// Sums `len` integers starting at `ptr`.
+        ///
+        /// # Safety
+        ///
+        /// TODO: write the contract
+        pub unsafe fn sum_raw(ptr: *const i32, len: usize) -> i32 {
+            todo!()
+        }
+
+        pub fn sum(v: &[i32]) -> i32 {
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn split() {
+            let mut v = vec![String::from("a"), String::from("b"), String::from("c")];
+            let (a, b) = split_at_mut(&mut v, 1);
+            a[0].push('!');
+            b[1].push('?');
+            assert_eq!(v, ["a!", "b", "c?"]);
+            let mut e: Vec<i32> = vec![];
+            let (x, y) = split_at_mut(&mut e, 0);
+            assert!(x.is_empty() && y.is_empty());
+        }
+
+        #[test]
+        #[should_panic]
+        fn split_out_of_range() {
+            let mut v = [1, 2, 3];
+            split_at_mut(&mut v, 4);
+        }
+
+        #[test]
+        fn ends() {
+            let mut v = [1, 2, 3, 4];
+            if let Some((a, b)) = first_last_mut(&mut v) {
+                std::mem::swap(a, b);
+            }
+            assert_eq!(v, [4, 2, 3, 1]);
+            assert!(first_last_mut(&mut [9]).is_none());
+            assert!(first_last_mut::<i32>(&mut []).is_none());
+        }
+
+        #[test]
+        fn reading() {
+            let bytes = [0x78, 0x56, 0x34, 0x12, 0xff, 0x01, 0, 0, 0];
+            assert_eq!(read_u32_le(&bytes, 0), Some(0x12345678));
+            assert_eq!(read_u32_le(&bytes, 5), Some(1), "unaligned offset");
+            assert_eq!(read_u32_le(&bytes, 6), None);
+            assert_eq!(read_u32_le(&bytes, usize::MAX), None, "offset + 4 must not overflow");
+        }
+
+        #[test]
+        fn sums() {
+            assert_eq!(sum(&[1, 2, 3, 4]), 10);
+            assert_eq!(sum(&[]), 0);
+            let v = [5, 5];
+            assert_eq!(unsafe { sum_raw(v.as_ptr(), 2) }, 10);
+        }
+      solution: |
+        pub fn split_at_mut<T>(v: &mut [T], mid: usize) -> (&mut [T], &mut [T]) {
+            let len = v.len();
+            assert!(mid <= len);
+            let p = v.as_mut_ptr();
+            // SAFETY: [0, mid) and [mid, len) are in bounds and disjoint
+            unsafe {
+                (
+                    std::slice::from_raw_parts_mut(p, mid),
+                    std::slice::from_raw_parts_mut(p.add(mid), len - mid),
+                )
+            }
+        }
+
+        pub fn first_last_mut<T>(v: &mut [T]) -> Option<(&mut T, &mut T)> {
+            let len = v.len();
+            if len < 2 {
+                return None;
+            }
+            let p = v.as_mut_ptr();
+            // SAFETY: len >= 2, so indices 0 and len - 1 are in bounds and distinct
+            unsafe { Some((&mut *p, &mut *p.add(len - 1))) }
+        }
+
+        pub fn read_u32_le(bytes: &[u8], offset: usize) -> Option<u32> {
+            let end = offset.checked_add(4)?;
+            if end > bytes.len() {
+                return None;
+            }
+            // SAFETY: offset..offset + 4 is in bounds; read_unaligned has no alignment requirement
+            let raw = unsafe { std::ptr::read_unaligned(bytes.as_ptr().add(offset) as *const u32) };
+            Some(u32::from_le(raw))
+        }
+
+        /// Sums `len` integers starting at `ptr`.
+        ///
+        /// # Safety
+        ///
+        /// `ptr` must be valid for reads of `len` consecutive, initialized `i32` values
+        /// (it may dangle only when `len` is 0, and must still be non-null and aligned).
+        pub unsafe fn sum_raw(ptr: *const i32, len: usize) -> i32 {
+            // SAFETY: guaranteed by the caller
+            let s = unsafe { std::slice::from_raw_parts(ptr, len) };
+            s.iter().sum()
+        }
+
+        pub fn sum(v: &[i32]) -> i32 {
+            // SAFETY: a slice's pointer and length always satisfy sum_raw's contract
+            unsafe { sum_raw(v.as_ptr(), v.len()) }
+        }
+    solution_explain: "Every safe function checks its inputs before the unsafe block, so no argument can lead to undefined behavior; that is what makes it OK to call them safe. `first_last_mut` refuses a one-element slice because two `&mut` to the same element would alias. `checked_add` closes the overflow hole an `offset + 4 > len` test would leave."
+
+  - type: quiz
+    id: ch20-quiz-unsafe
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What does `unsafe` turn off?"
+        options: ["The borrow checker", "All checks", "Nothing; it only unlocks five extra operations", "Type checking"]
+        answer: 2
+        explanation: "References inside unsafe are still borrow-checked."
+      - type: single
+        q: "Which needs unsafe?"
+        options: ["Creating a raw pointer", "Dereferencing a raw pointer", "Comparing raw pointers", "Printing a raw pointer's address"]
+        answer: 1
+        explanation: "Only dereferencing can touch invalid memory."
+      - type: single
+        q: "When may a function that uses unsafe inside be marked safe?"
+        options: ["Always", "When no input whatsoever can cause undefined behavior", "When it has a SAFETY comment", "When it is private"]
+        answer: 1
+        explanation: "Safe means safe for every caller and every argument."
+      - type: single
+        q: "In the 2024 edition, inside an `unsafe fn`, do unsafe operations need an `unsafe {}` block?"
+        options: ["No", "Yes; the body is not implicitly unsafe", "Only for FFI", "Only in tests"]
+        answer: 1
+        explanation: "The unsafe_op_in_unsafe_fn lint warns otherwise."
+      - type: multi
+        q: "Which are good alternatives to `static mut`?"
+        options: ["`AtomicU32` in a static", "`Mutex<T>` in a static", "A global `&mut`", "`static` with interior mutability like `OnceLock`"]
+        answer: [0, 1, 3]
+        explanation: "They need no unsafe."
+
+  - type: summary
+    points:
+      - "unsafe unlocks five things: raw pointer deref, unsafe calls, mutable statics, unsafe traits, union fields."
+      - "Inside unsafe you must prevent undefined behavior yourself."
+      - "Wrap unsafe in small blocks behind safe functions that validate inputs; document contracts with `# Safety` and `// SAFETY:`."
+      - "FFI goes through `unsafe extern \"C\"` blocks."
+      - "Prefer atomics and Mutex over static mut; check unsafe code with Miri."
+terms:
+  - term: unsafe
+    def: "A keyword marking code where the programmer, not the compiler, guarantees memory safety."
+  - term: raw pointer
+    def: "*const T or *mut T: a pointer with no borrowing or validity guarantees."
+  - term: undefined behavior
+    def: "An operation the language gives no meaning to, such as reading freed memory; the compiler assumes it never happens."
+  - term: FFI
+    def: "Foreign function interface: calling code written in another language, or being called from it."
+  - term: ABI
+    def: "Application binary interface: how functions are called at the machine level, such as \"C\"."
+  - term: Miri
+    def: "An interpreter that detects undefined behavior while running Rust tests."

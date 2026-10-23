@@ -21,6 +21,7 @@ for fn in sorted(os.listdir(f"{course}/content/{ch}")):
         if not err.startswith(old.split("\n")[0]): print("first line differs!",fn,err[:200]); continue
         if new==old: continue
         ind=lambda s:"\n".join(("      "+l) if l else "" for l in s.split("\n"))
-        if ind(old) in ys: ys=ys.replace(ind(old),ind(new)); changed=True; print("fixed",fn,old.split("\n")[0][:60])
+        # anchor on the next 4-space key so a stepper or an identical first line elsewhere is not rewritten
+        if ind(old)+"\n    " in ys: ys=ys.replace(ind(old)+"\n    ",ind(new)+"\n    ",1); changed=True; print("fixed",fn,old.split("\n")[0][:60])
         else: print("could not locate",fn)
     if changed: open(y,"w").write(ys)

@@ -1,0 +1,11 @@
+{
+  "title": "Advanced Features",
+  "summary": "The parts of Rust you reach for rarely but need to recognize: unsafe code and its five superpowers, safe abstractions over unsafe code, associated types, operator overloading, fully qualified syntax, the newtype pattern, type aliases, the never type, dynamically sized types, function pointers, returning closures, and macros, both declarative and procedural.",
+  "goals": [
+    "Explain what unsafe allows and write a safe abstraction over unsafe code with a SAFETY argument",
+    "Use associated types, default type parameters, operator overloading and fully qualified syntax",
+    "Apply the newtype pattern, type aliases, the never type and ?Sized",
+    "Pass function pointers and return closures",
+    "Write declarative macros with macro_rules! and recognize the three kinds of procedural macros"
+  ]
+}

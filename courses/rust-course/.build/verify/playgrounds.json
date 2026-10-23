@@ -250,5 +250,21 @@
  "ch19-play-places": {
   "solution_code": "fn main() {\n    let lines = [\"ana:12\", \"oops\", \"bob:7\", \"cy:x\"];\n    let mut scores: Vec<(&str, i32)> = Vec::new();\n\n    for (i, line) in lines.iter().enumerate() {\n        let Some((name, score)) = line.split_once(':') else {\n            continue;\n        };\n        if let Ok(score) = score.parse::<i32>() {\n            println!(\"{i} {name} {score}\");\n            scores.push((name, score));\n        }\n    }\n\n    let total: i32 = scores.iter().map(|&(_, s)| s).sum();\n    println!(\"total {total}\");\n}\n",
   "starter_ok": "run"
+ },
+ "ch20-play-calculator": {
+  "solution_code": "use std::collections::HashMap;\n\nfn main() {\n    let mut ops: HashMap<&str, fn(f64, f64) -> f64> = HashMap::new();\n    ops.insert(\"+\", |a, b| a + b);\n    ops.insert(\"-\", |a, b| a - b);\n    ops.insert(\"*\", |a, b| a * b);\n    ops.insert(\"/\", |a, b| a / b);\n    ops.insert(\"pow\", f64::powf);\n\n    for (a, op, b) in [(2.0, \"+\", 3.0), (2.0, \"pow\", 10.0), (9.0, \"/\", 2.0), (1.0, \"%\", 2.0)] {\n        match ops.get(op) {\n            Some(f) => println!(\"{a} {op} {b} = {}\", f(a, b)),\n            None => println!(\"{a} {op} {b}: unknown op\"),\n        }\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch20-play-macro": {
+  "solution_code": "use std::collections::HashMap;\n\nmacro_rules! hashmap {\n    ($($k:expr => $v:expr),* $(,)?) => {{\n        let mut map = HashMap::new();\n        $(\n            map.insert($k, $v);\n        )*\n        map\n    }};\n}\n\nfn main() {\n    let m: HashMap<&str, i32> = hashmap! { \"a\" => 1, \"b\" => 2, \"c\" => 3, };\n    let empty: HashMap<&str, i32> = hashmap! {};\n    let mut pairs: Vec<_> = m.into_iter().collect();\n    pairs.sort();\n    println!(\"{pairs:?}\");\n    println!(\"{}\", empty.len());\n}\n",
+  "starter_ok": "run"
+ },
+ "ch20-play-money": {
+  "solution_code": "use std::fmt;\nuse std::iter::Sum;\nuse std::ops::{Add, Mul};\n\n#[derive(Debug, Copy, Clone, PartialEq)]\nstruct Cents(i64);\n\nimpl Add for Cents {\n    type Output = Cents;\n    fn add(self, other: Cents) -> Cents {\n        Cents(self.0 + other.0)\n    }\n}\n\nimpl Mul<i64> for Cents {\n    type Output = Cents;\n    fn mul(self, k: i64) -> Cents {\n        Cents(self.0 * k)\n    }\n}\n\nimpl Sum for Cents {\n    fn sum<I: Iterator<Item = Cents>>(iter: I) -> Cents {\n        iter.fold(Cents(0), |a, b| a + b)\n    }\n}\n\nimpl fmt::Display for Cents {\n    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {\n        let sign = if self.0 < 0 { \"-\" } else { \"\" };\n        let abs = self.0.abs();\n        write!(f, \"{sign}€{}.{:02}\", abs / 100, abs % 100)\n    }\n}\n\nfn main() {\n    let price = Cents(617);\n    println!(\"{}\", price * 2);\n    println!(\"{}\", [Cents(250), Cents(500)].iter().copied().sum::<Cents>());\n    println!(\"{}\", Cents(-50));\n}\n",
+  "starter_ok": "run"
+ },
+ "ch20-play-swap": {
+  "solution_code": "fn swap_ends(v: &mut [i32]) {\n    if v.is_empty() {\n        return;\n    }\n    let len = v.len();\n    let p = v.as_mut_ptr();\n    // SAFETY: v is non-empty, so p and p.add(len - 1) are both in bounds; ptr::swap allows them to be equal\n    unsafe {\n        std::ptr::swap(p, p.add(len - 1));\n    }\n}\n\nfn main() {\n    let mut a = [1, 2, 3, 4, 5];\n    let mut b = [7];\n    let mut c: [i32; 0] = [];\n    swap_ends(&mut a);\n    swap_ends(&mut b);\n    swap_ends(&mut c);\n    println!(\"{a:?}\");\n    println!(\"{b:?}\");\n    println!(\"{c:?}\");\n}\n",
+  "starter_ok": "run"
  }
 }

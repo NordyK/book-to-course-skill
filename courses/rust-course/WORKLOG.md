@@ -104,3 +104,10 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
   (ranges, |, struct/enum/nested/slice destructuring, _ vs _x vs .., guards, @, & / ref / default binding modes);
   10-question test; exercises ch19-patterns and ch19-simplify (Box<Expr> rewriting), verified; 2 playgrounds.
   42 exercises verified in total.
+- Chapter 20 done (Advanced Features): unsafe (five superpowers, raw pointers, 2024 unsafe fn / unsafe extern rules,
+  split_at_mut, static mut vs atomics, unsafe traits, unions, Miri); advanced traits (associated types, std::ops
+  overloading, fully qualified syntax, supertraits, newtype); advanced types and functions (aliases, !, DSTs and
+  ?Sized, fn pointers, returning closures); macros (macro_rules! repetition/recursion/hygiene/export, proc macros as
+  read-only snippets). 12-question test; exercises ch20-unsafe, ch20-traits, ch20-fns, ch20-macros; 4 playgrounds.
+  46 exercises verified. fix_compiler_output.py now anchors its replacement so identical first lines elsewhere
+  (steppers, other blocks) are not rewritten.
