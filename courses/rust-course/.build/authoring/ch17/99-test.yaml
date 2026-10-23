@@ -1,0 +1,65 @@
+title: "Chapter test: Async Programming"
+kind: test
+summary: Ten questions on futures, executors, async concurrency and pinning. You need 70% to pass; you can retry and your best score is kept.
+blocks:
+  - type: quiz
+    id: ch17-test
+    pass_score: 0.7
+    questions:
+      - type: single
+        q: "What does this print?"
+        code: |
+          async fn hello() { println!("hello"); }
+          fn main() {
+              let f = hello();
+              println!("main");
+          }
+        lang: rust
+        options: ["hello then main", "main only", "main then hello", "Nothing"]
+        answer: 1
+        explanation: "The future is created but never polled."
+      - type: single
+        q: "What type does `async fn total() -> u32` return when called?"
+        options: ["`u32`", "`impl Future<Output = u32>`", "`Result<u32>`", "`Poll<u32>`"]
+        answer: 1
+        explanation: "The body runs when the future is polled."
+      - type: single
+        q: "Which crate provides a widely used async runtime?"
+        options: ["serde", "tokio", "rand", "clap"]
+        answer: 1
+        explanation: "Others include async-std, smol and embassy."
+      - type: single
+        q: "`a.await; b.await;` takes 3 s + 2 s. About how long does `join(a, b).await` take, if both just wait?"
+        options: ["5 s", "3 s", "2 s", "1 s"]
+        answer: 1
+        explanation: "The waits overlap; the longest one decides."
+      - type: single
+        q: "How is a timeout usually built?"
+        options: ["Killing a thread", "Racing the future against a sleep and dropping the loser", "A special keyword", "Polling in a loop"]
+        answer: 1
+        explanation: "Dropping a future cancels it."
+      - type: single
+        q: "Why is `std::thread::sleep` inside an async task a problem?"
+        options: ["It does not compile", "It blocks the executor thread, so no other task on it can run", "It sleeps forever", "It is not Send"]
+        answer: 1
+        explanation: "Use the runtime's async sleep."
+      - type: single
+        q: "What does a minimal `block_on` do when poll returns Pending?"
+        options: ["Spawns a task", "Parks the thread until the waker unparks it", "Returns early", "Drops the future"]
+        answer: 1
+        explanation: "The waker unparks the thread."
+      - type: single
+        q: "Which is the right way to hold a non-Unpin future in a struct and poll it?"
+        options: ["`fut: F` and `fut.poll(cx)`", "`fut: Pin<Box<F>>` and `fut.as_mut().poll(cx)`", "`fut: Rc<F>`", "`fut: &F`"]
+        answer: 1
+        explanation: "It must stay at one address."
+      - type: multi
+        q: "Which are good fits for async?"
+        options: ["A chat server with many idle connections", "A web crawler waiting on many HTTP requests", "Rendering a 3D scene", "Compressing a large file"]
+        answer: [0, 1]
+        explanation: "CPU-heavy work suits threads."
+      - type: single
+        q: "Which is the async counterpart of Iterator?"
+        options: ["Future", "Stream", "Poll", "Waker"]
+        answer: 1
+        explanation: "poll_next yields items over time."

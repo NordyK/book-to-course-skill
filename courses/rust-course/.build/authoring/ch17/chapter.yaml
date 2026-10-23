@@ -1,0 +1,7 @@
+title: "Async Programming"
+summary: "Concurrency without a thread per task: futures and the async/await syntax, runtimes and executors, running futures concurrently with join and race, async channels and streams, and the machinery underneath: Future, Poll, Context, Waker and Pin. Every runnable example uses only the standard library, including an executor you build yourself."
+goals:
+  - Explain what a future is, why futures are lazy, and what async fn and .await do
+  - Run futures with an executor, and build a minimal block_on from Waker and thread parking
+  - Run several futures concurrently with join and race, and compare tasks with threads
+  - Implement Future by hand with Poll and Waker, and explain Pin, Unpin and streams

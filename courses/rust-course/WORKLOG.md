@@ -93,3 +93,8 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
   producers, sync_channel, pipelines), shared state (Mutex, Arc, RwLock, atomics, Condvar, deadlock, poisoning),
   Send and Sync; 12-question test; exercises ch16-threads, ch16-channels, ch16-shared (verified); 4 playgrounds.
   Thread examples whose order varies show a sample run in a `lang: text` block, not a checked output.
+- Chapter 17 done (Async Programming): futures/async/await/laziness/runtimes and a std-only block_on, concurrency
+  (join, race/timeouts, tasks, async channels, blocking pitfalls, tasks vs threads) with a std-only sleep + join2,
+  Future/Poll/Waker/Pin/Unpin/streams/async traits; 10-question test; exercise ch17-futures (block_on, YieldN, Flag,
+  join), verified; 3 playgrounds. Every runnable async example is std-only (no tokio/trpl offline); trpl code from
+  the book is shown as unrun snippets.
