@@ -1,0 +1,133 @@
+{
+  "title": "Chapter test: the Guessing Game",
+  "kind": "test",
+  "summary": "Ten questions on input, crates, match, loops and error handling. You need 70% to pass; you can retry and your best score is kept.",
+  "blocks": [
+    {
+      "type": "quiz",
+      "id": "ch02-test",
+      "pass_score": 0.7,
+      "questions": [
+        {
+          "type": "single",
+          "q": "Which line reads a line from the keyboard into `guess`?",
+          "options": [
+            "`let guess = io::stdin();`",
+            "`io::stdin().read_line(&mut guess).expect(\"Failed to read line\");`",
+            "`guess = read_line();`",
+            "`println!(\"{guess}\");`"
+          ],
+          "answer": 1,
+          "explanation": "`read_line` needs a mutable reference to the String it fills, and returns a Result that `expect` unwraps."
+        },
+        {
+          "type": "single",
+          "q": "Why does this fail to compile?",
+          "code": "let guess = String::new();\nio::stdin().read_line(&mut guess).expect(\"read failed\");\n",
+          "lang": "rust",
+          "options": [
+            "`String::new` needs an argument",
+            "`guess` is not declared `mut`",
+            "`expect` needs a number",
+            "`io` was not imported"
+          ],
+          "answer": 1,
+          "hints": [
+            "What does `&mut` require from the variable?"
+          ],
+          "explanation": "You cannot borrow an immutable variable as mutable. `let mut guess` fixes it."
+        },
+        {
+          "type": "numeric",
+          "q": "`random_range(1..10)` can return how many different numbers?",
+          "answer": 9,
+          "explanation": "`..` excludes the end: 1 through 9, nine numbers. `1..=10` would give ten."
+        },
+        {
+          "type": "single",
+          "q": "A colleague clones your project and builds it. What makes sure they get the same `rand` version as you?",
+          "options": [
+            "`Cargo.toml`",
+            "`Cargo.lock`",
+            "`cargo update`",
+            "The `target/` folder"
+          ],
+          "answer": 1,
+          "explanation": "`Cargo.lock` records exact versions. `cargo update` would change them."
+        },
+        {
+          "type": "truefalse",
+          "q": "A `match` on an `Ordering` that only handles `Less` and `Greater` compiles, and does nothing when the values are equal.",
+          "answer": false,
+          "explanation": "`match` must be exhaustive; the compiler reports `Equal` not covered."
+        },
+        {
+          "type": "single",
+          "q": "What does this print?",
+          "code": "let typed = \" 12\\n\";\nlet n: u32 = typed.trim().parse().expect(\"number\");\nlet n = n * 2;\nprintln!(\"{n}\");\n",
+          "lang": "rust",
+          "options": [
+            "12",
+            "24",
+            "It does not compile: `n` is not `mut`",
+            "It panics"
+          ],
+          "answer": 1,
+          "hints": [
+            "Is the third line changing `n`, or making a new `n`?"
+          ],
+          "explanation": "The third line **shadows** `n` with a new variable, so no `mut` is needed. 12 × 2 = 24."
+        },
+        {
+          "type": "multi",
+          "q": "Which inputs make `\"...\".trim().parse::<u32>()` return `Err`?",
+          "options": [
+            "`\"7\"`",
+            "`\"-7\"`",
+            "`\"seven\"`",
+            "`\" 7 \"`",
+            "`\"\"`"
+          ],
+          "answer": [
+            1,
+            2,
+            4
+          ],
+          "explanation": "`u32` has no negative numbers, `seven` is not digits, and an empty string is not a number. `\" 7 \"` is trimmed first, so it parses."
+        },
+        {
+          "type": "order",
+          "q": "Order the pieces of one round of the finished game.",
+          "items": [
+            "Print `Please input your guess.`",
+            "Read a line into a new String",
+            "Parse it; on `Err`, `continue`",
+            "Print `You guessed: ...`",
+            "Compare with `cmp`; on `Equal`, print `You win!` and `break`"
+          ],
+          "explanation": "That is the body of the `loop` in the finished program."
+        },
+        {
+          "type": "fill",
+          "q": "The keyword that ends a `loop` immediately is ______.",
+          "answer": [
+            "break"
+          ],
+          "explanation": "`break` leaves the loop; `continue` only skips to the next round."
+        },
+        {
+          "type": "single",
+          "q": "Which statement about `expect` is true?",
+          "options": [
+            "It turns any error into the number 0",
+            "It returns the value inside `Ok`, or panics with your message on `Err`",
+            "It retries the operation until it succeeds",
+            "It is required on every function call"
+          ],
+          "answer": 1,
+          "explanation": "`expect` is the quick way to say 'this should not fail; if it does, stop with this message'."
+        }
+      ]
+    }
+  ]
+}

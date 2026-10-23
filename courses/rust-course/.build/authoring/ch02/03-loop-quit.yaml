@@ -1,0 +1,570 @@
+title: Play until you win
+summary: Repeat the game with loop, stop with break, and replace the crash on bad input with a second chance. Then build the game's logic yourself, checked by real tests.
+minutes: 40
+source:
+  chapter: ch02
+  sections: ["TRPL 2 Allowing Multiple Guesses with Looping", "TRPL 2 Quitting After a Correct Guess", "TRPL 2 Handling Invalid Input", "PR ch2 Writing and Running Unit Tests", "PR ch2 Handling Command-Line Arguments"]
+blocks:
+  - type: text
+    md: |
+      The game so far allows exactly one guess. In this lesson you make it repeat until the player wins, stop cleanly, and survive input like `foo` without crashing. Then you write the game's logic yourself as small functions, and Rust's test runner tells you when they are right.
+
+  - type: text
+    title: loop and break
+    md: |
+      `loop` repeats a block of code **forever**: when the end of the block is reached, it starts again at the top. To get out, use `break`, which ends the loop immediately. In the game we break when the guess is correct. Because `match` arms can hold several statements inside `{ }`, the `Equal` arm can both print and break:
+
+  - type: code
+    lang: rust
+    file: src/main.rs (part)
+    code: |
+      loop {
+          println!("Please input your guess.");
+
+          // ... read and parse the guess as before ...
+
+          match guess.cmp(&secret_number) {
+              Ordering::Less => println!("Too small!"),
+              Ordering::Greater => println!("Too big!"),
+              Ordering::Equal => {
+                  println!("You win!");
+                  break;
+              }
+          }
+      }
+    highlight: [1, 9, 10, 11, 12]
+
+  - type: text
+    title: A second chance instead of a crash
+    md: |
+      With `.expect`, typing `foo` still crashes the whole game. We want to ignore the bad line and ask again. Since `parse` returns a `Result`, we can `match` on it just like on `Ordering`:
+
+  - type: code
+    lang: rust
+    code: |
+      let guess: u32 = match guess.trim().parse() {
+          Ok(num) => num,
+          Err(_) => continue,
+      };
+    explain: |
+      - If parsing worked, the value is `Ok(num)`. The pattern `Ok(num)` **binds** the number inside to the name `num`, and the arm's result is `num`. That becomes the value of the whole `match`, which is stored in `guess`.
+      - If parsing failed, the value is `Err(...)`. The `_` is a **catch-all**: it matches any error, and we don't care which. `continue` jumps straight to the next round of the `loop`, so the game asks for another guess.
+
+      Moving from `expect` to `match` is the usual path in Rust: crash while you are sketching, then handle the error properly.
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    title: The finished game
+    code: |
+      use std::cmp::Ordering;
+      use std::io;
+
+      use rand::prelude::*;
+
+      fn main() {
+          println!("Guess the number!");
+
+          let secret_number = rand::rng().random_range(1..=100);
+
+          loop {
+              println!("Please input your guess.");
+
+              let mut guess = String::new();
+
+              io::stdin()
+                  .read_line(&mut guess)
+                  .expect("Failed to read line");
+
+              let guess: u32 = match guess.trim().parse() {
+                  Ok(num) => num,
+                  Err(_) => continue,
+              };
+
+              println!("You guessed: {guess}");
+
+              match guess.cmp(&secret_number) {
+                  Ordering::Less => println!("Too small!"),
+                  Ordering::Greater => println!("Too big!"),
+                  Ordering::Equal => {
+                      println!("You win!");
+                      break;
+                  }
+              }
+          }
+      }
+    output: |
+      Guess the number!
+      Please input your guess.
+      10
+      You guessed: 10
+      Too small!
+      Please input your guess.
+      foo
+      Please input your guess.
+      61
+      You guessed: 61
+      You win!
+    explain: "Copy this into your project and run `cargo run` to play. Notice that `foo` simply leads to another prompt."
+
+  - type: playground
+    id: ch02-play-loop
+    solution_code: |
+      use std::cmp::Ordering;
+
+      fn main() {
+          let secret_number: u32 = 61;
+          let inputs = ["oops", "10", "80", "61", "99"];
+
+          for typed in inputs {
+              let guess: u32 = match typed.trim().parse() {
+                  Ok(num) => num,
+                  Err(_) => {
+                      println!("Please type a number!");
+                      continue;
+                  }
+              };
+
+              println!("You guessed: {guess}");
+
+              match guess.cmp(&secret_number) {
+                  Ordering::Less => println!("Too small!"),
+                  Ordering::Greater => println!("Too big!"),
+                  Ordering::Equal => {
+                      println!("You win!");
+                      break;
+                  }
+              }
+          }
+      }
+    title: "A whole game, played by the computer"
+    lang: rust
+    md: |
+      Here the player's lines come from a list instead of the keyboard, so the console can run a full game. `for typed in inputs` runs the loop body once for each line in the list (you will learn `for` properly in chapter 3). Run it and read the output.
+    task: "Add `\"oops\"` as the first entry of `inputs`, and change `continue` so that, before skipping, the game prints `Please type a number!`. The output must then start with `Please type a number!`."
+    code: |
+      use std::cmp::Ordering;
+
+      fn main() {
+          let secret_number: u32 = 61;
+          let inputs = ["10", "80", "61", "99"];
+
+          for typed in inputs {
+              let guess: u32 = match typed.trim().parse() {
+                  Ok(num) => num,
+                  Err(_) => continue,
+              };
+
+              println!("You guessed: {guess}");
+
+              match guess.cmp(&secret_number) {
+                  Ordering::Less => println!("Too small!"),
+                  Ordering::Greater => println!("Too big!"),
+                  Ordering::Equal => {
+                      println!("You win!");
+                      break;
+                  }
+              }
+          }
+      }
+    expected_output: |
+      Please type a number!
+      You guessed: 10
+      Too small!
+      You guessed: 80
+      Too big!
+      You guessed: 61
+      You win!
+    hints:
+      - "The list becomes `[\"oops\", \"10\", \"80\", \"61\", \"99\"]`."
+      - "An arm can run several statements inside braces: `Err(_) => { println!(\"Please type a number!\"); continue; }`"
+      - "Why is `99` never used? `break` leaves the loop as soon as the player wins."
+
+  - type: text
+    title: Splitting logic out so it can be tested
+    md: |
+      Real Rust projects keep their logic in small **functions** that take values and return results, and leave reading the keyboard to `main`. Functions like that can be checked automatically by **unit tests**: small functions marked `#[test]` that call your code and check the result with `assert_eq!(actual, expected)`. `cargo test` finds and runs them all.
+
+      *Programming Rust* shows this right after its `gcd` function:
+
+  - type: code
+    lang: rust
+    code: |
+      #[test]
+      fn test_gcd() {
+          assert_eq!(gcd(14, 15), 1);
+          assert_eq!(gcd(2 * 3 * 5 * 11 * 17, 3 * 7 * 11 * 13 * 19), 3 * 11);
+      }
+    explain: |
+      `#[test]` is an **attribute**: a note to the compiler. It marks `test_gcd` as a test, so it is compiled and run by `cargo test` and left out of a normal build. If an `assert_eq!` sees two different values, the test fails and shows both. You will write tests yourself in chapter 11; for now you will *use* them to check your exercises.
+
+  - type: callout
+    kind: note
+    title: How the exercises below work
+    md: |
+      Press **Open in console**, write your code in `src/lib.rs`, and press **Run tests**. The tests in `src/tests.rs` are read-only; open that tab to see exactly what is checked. Each test turns green when your function returns the right value. With `start.sh` running, your edits are also saved into `exercises/<folder>/src/lib.rs`, so you can work in your own editor and run `cargo test` there.
+
+      `todo!()` in the starter code is a placeholder that panics when reached. Replace it with your code.
+
+  - type: exercise
+    id: ch02-ex-compare
+    exercise_dir: ch02-compare
+    title: "Too small, too big, you win"
+    difficulty: easy
+    goal: "Write the function at the heart of the game: given a guess and the secret, return the message the game prints."
+    behavior: |
+      `pub fn verdict(guess: u32, secret: u32) -> &'static str` returns:
+
+      - `"Too small!"` when `guess` is less than `secret`
+      - `"Too big!"` when `guess` is greater than `secret`
+      - `"You win!"` when they are equal
+
+      (`&'static str` is the type of a piece of fixed text written in quotes in your program. Chapter 4 explains the `&` and chapter 10 the `'static`.)
+    examples:
+      - input: "verdict(10, 61)"
+        output: "\"Too small!\""
+      - input: "verdict(80, 61)"
+        output: "\"Too big!\""
+      - input: "verdict(61, 61)"
+        output: "\"You win!\""
+    hints:
+      - "Start with `use std::cmp::Ordering;` at the top of the file."
+      - "`match guess.cmp(&secret) { ... }` with three arms; each arm's result is the text, with no `println!` and no semicolon."
+      - "A function returns the value of its last expression, so the `match` itself can be the last thing in the function."
+    rust:
+      starter: |
+        /// Returns what the game says for this guess.
+        pub fn verdict(guess: u32, secret: u32) -> &'static str {
+            // TODO: compare `guess` with `secret` and return
+            // "Too small!", "Too big!" or "You win!".
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn smaller_guess_is_too_small() {
+            assert_eq!(verdict(10, 61), "Too small!", "guess 10, secret 61");
+        }
+
+        #[test]
+        fn bigger_guess_is_too_big() {
+            assert_eq!(verdict(80, 61), "Too big!", "guess 80, secret 61");
+        }
+
+        #[test]
+        fn equal_guess_wins() {
+            assert_eq!(verdict(61, 61), "You win!", "guess 61, secret 61");
+        }
+
+        #[test]
+        fn edges_of_the_range() {
+            assert_eq!(verdict(1, 100), "Too small!", "guess 1, secret 100");
+            assert_eq!(verdict(100, 1), "Too big!", "guess 100, secret 1");
+            assert_eq!(verdict(1, 1), "You win!", "guess 1, secret 1");
+        }
+      solution: |
+        use std::cmp::Ordering;
+
+        /// Returns what the game says for this guess.
+        pub fn verdict(guess: u32, secret: u32) -> &'static str {
+            match guess.cmp(&secret) {
+                Ordering::Less => "Too small!",
+                Ordering::Greater => "Too big!",
+                Ordering::Equal => "You win!",
+            }
+        }
+    solution_explain: "The `match` is the last expression of the function, so its value is returned. Each arm produces a piece of text instead of printing it, which is what makes the function testable."
+
+  - type: exercise
+    id: ch02-ex-parse-guess
+    exercise_dir: ch02-parse-guess
+    title: "Read a guess safely"
+    difficulty: easy
+    goal: "Turn a line typed by the player into a guess, without ever crashing on bad input."
+    behavior: |
+      `pub fn parse_guess(line: &str) -> Option<u32>` returns:
+
+      - `Some(n)` when the line, after removing surrounding spaces and the newline, is a whole number `n` from **1 to 100**
+      - `None` for anything else: text, an empty line, negative numbers, 0, or numbers above 100
+
+      **Option** is a close cousin of Result for "maybe there is a value": it is either `Some(value)` or `None`. Chapter 6 covers it fully.
+    examples:
+      - input: "\"42\\n\""
+        output: "Some(42)"
+      - input: "\"  7  \""
+        output: "Some(7)"
+      - input: "\"foo\\n\""
+        output: "None"
+      - input: "\"101\\n\""
+        output: "None"
+        note: "Outside the game's range"
+    hints:
+      - "`match line.trim().parse::<u32>() { Ok(n) => ..., Err(_) => None }`. The `::<u32>` tells `parse` the target type without a `let` annotation."
+      - "Inside the `Ok(n)` arm, check the range: `if n >= 1 && n <= 100 { Some(n) } else { None }`. In Rust, `if` produces a value too."
+      - "Parsing `\"-5\"` as `u32` already fails, so negative numbers land in the `Err` arm by themselves."
+    rust:
+      starter: |
+        /// Turns one typed line into a guess from 1 to 100, or None if it is not one.
+        pub fn parse_guess(line: &str) -> Option<u32> {
+            // TODO: trim the line, parse it as u32,
+            // and return Some(number) only if it is between 1 and 100.
+            todo!()
+        }
+      tests: |
+        use super::*;
+
+        #[test]
+        fn plain_number_with_newline() {
+            assert_eq!(parse_guess("42\n"), Some(42), "input \"42\\n\"");
+        }
+
+        #[test]
+        fn spaces_and_windows_newline_are_ignored() {
+            assert_eq!(parse_guess("  7  "), Some(7), "input \"  7  \"");
+            assert_eq!(parse_guess("15\r\n"), Some(15), "input \"15\\r\\n\"");
+        }
+
+        #[test]
+        fn text_is_not_a_guess() {
+            assert_eq!(parse_guess("foo\n"), None, "input \"foo\\n\"");
+            assert_eq!(parse_guess("\n"), None, "an empty line");
+            assert_eq!(parse_guess("4 2"), None, "input \"4 2\"");
+        }
+
+        #[test]
+        fn numbers_outside_1_to_100_are_rejected() {
+            assert_eq!(parse_guess("0"), None, "input \"0\"");
+            assert_eq!(parse_guess("101"), None, "input \"101\"");
+            assert_eq!(parse_guess("-5"), None, "input \"-5\"");
+        }
+
+        #[test]
+        fn both_ends_of_the_range_are_allowed() {
+            assert_eq!(parse_guess("1"), Some(1), "input \"1\"");
+            assert_eq!(parse_guess("100"), Some(100), "input \"100\"");
+        }
+      solution: |
+        /// Turns one typed line into a guess from 1 to 100, or None if it is not one.
+        pub fn parse_guess(line: &str) -> Option<u32> {
+            match line.trim().parse::<u32>() {
+                Ok(n) => {
+                    if n >= 1 && n <= 100 {
+                        Some(n)
+                    } else {
+                        None
+                    }
+                }
+                Err(_) => None,
+            }
+        }
+    solution_explain: "`trim` handles spaces and both kinds of newline. `parse::<u32>()` rejects text and negative numbers by returning `Err`. The `if` inside the `Ok` arm rejects numbers outside the game's range. (Later you will learn shorter ways to write this, such as `.ok()` and `.filter(...)`.)"
+
+  - type: exercise
+    id: ch02-ex-play
+    exercise_dir: ch02-play-game
+    title: "The whole game, as a function"
+    difficulty: medium
+    goal: "Combine the two previous exercises into the complete game: given the secret and the lines the player typed, produce exactly what the game prints."
+    behavior: |
+      `pub fn play(secret: u32, lines: &[&str]) -> Vec<String>` goes through `lines` in order and builds the list of messages the game would print:
+
+      - For a line that is not a valid guess (use the rules of `parse_guess`): add `"Please type a number!"` and go on to the next line.
+      - For a valid guess `n`: add `"You guessed: n"`, then the verdict (`"Too small!"`, `"Too big!"` or `"You win!"`).
+      - After `"You win!"`, stop: later lines are ignored.
+      - If the lines run out before a win, just return what you have.
+
+      `&[&str]` is a list of text lines, and `Vec<String>` is a growable list of Strings. The starter already creates the list and returns it; you only add to it with `output.push(...)`. `format!` works like `println!` but gives back a String instead of printing it.
+    examples:
+      - input: "play(61, &[\"10\", \"80\", \"61\"])"
+        output: "[\"You guessed: 10\", \"Too small!\", \"You guessed: 80\", \"Too big!\", \"You guessed: 61\", \"You win!\"]"
+      - input: "play(5, &[\"x\", \"5\", \"9\"])"
+        output: "[\"Please type a number!\", \"You guessed: 5\", \"You win!\"]"
+    hints:
+      - "Copy your `verdict` and `parse_guess` functions into this file. Splitting work into functions you already trust is half the job."
+      - "`for line in lines { ... }` visits every line. Use `match parse_guess(line) { Some(n) => ..., None => ... }`."
+      - "`output.push(format!(\"You guessed: {n}\"));` and `output.push(verdict(n, secret).to_string());` (`to_string` turns fixed text into a String)."
+      - "After pushing the verdict, `if n == secret { break; }`."
+    rust:
+      starter: |
+        /// Plays a whole game with the given secret and typed lines,
+        /// returning every message the game prints, in order.
+        pub fn play(secret: u32, lines: &[&str]) -> Vec<String> {
+            let mut output = Vec::new();
+            for line in lines {
+                // TODO: handle one typed line.
+                // Add messages with output.push(String::from("...")) or output.push(format!(...)).
+                let _ = (line, secret);
+            }
+            output
+        }
+      tests: |
+        use super::*;
+
+        fn strings(v: &[&str]) -> Vec<String> {
+            v.iter().map(|s| s.to_string()).collect()
+        }
+
+        #[test]
+        fn three_guesses_until_a_win() {
+            assert_eq!(
+                play(61, &["10", "80", "61"]),
+                strings(&["You guessed: 10", "Too small!", "You guessed: 80", "Too big!", "You guessed: 61", "You win!"]),
+            );
+        }
+
+        #[test]
+        fn bad_input_gets_a_second_chance() {
+            assert_eq!(
+                play(5, &["x", "5", "9"]),
+                strings(&["Please type a number!", "You guessed: 5", "You win!"]),
+            );
+        }
+
+        #[test]
+        fn lines_after_the_win_are_ignored() {
+            assert_eq!(play(3, &["3", "4", "5"]), strings(&["You guessed: 3", "You win!"]));
+        }
+
+        #[test]
+        fn running_out_of_lines_without_winning() {
+            assert_eq!(
+                play(50, &["20\n", "", "200"]),
+                strings(&["You guessed: 20", "Too small!", "Please type a number!", "Please type a number!"]),
+            );
+        }
+
+        #[test]
+        fn no_lines_no_messages() {
+            assert_eq!(play(50, &[]), Vec::<String>::new());
+        }
+      solution: |
+        use std::cmp::Ordering;
+
+        fn verdict(guess: u32, secret: u32) -> &'static str {
+            match guess.cmp(&secret) {
+                Ordering::Less => "Too small!",
+                Ordering::Greater => "Too big!",
+                Ordering::Equal => "You win!",
+            }
+        }
+
+        fn parse_guess(line: &str) -> Option<u32> {
+            match line.trim().parse::<u32>() {
+                Ok(n) if (1..=100).contains(&n) => Some(n),
+                _ => None,
+            }
+        }
+
+        /// Plays a whole game with the given secret and typed lines,
+        /// returning every message the game prints, in order.
+        pub fn play(secret: u32, lines: &[&str]) -> Vec<String> {
+            let mut output = Vec::new();
+            for line in lines {
+                match parse_guess(line) {
+                    None => output.push(String::from("Please type a number!")),
+                    Some(n) => {
+                        output.push(format!("You guessed: {n}"));
+                        output.push(verdict(n, secret).to_string());
+                        if n == secret {
+                            break;
+                        }
+                    }
+                }
+            }
+            output
+        }
+    solution_explain: "The solution reuses the two earlier functions. `parse_guess` uses a **match guard** (`Ok(n) if ...`), a pattern with an extra condition, which chapter 19 covers; the `if` version from the previous exercise works just as well."
+
+  - type: text
+    title: "Bonus: reading command-line arguments"
+    md: |
+      *Programming Rust* ends its first program by reading numbers from the **command line**, the words typed after the program's name. `std::env::args()` gives them as Strings; the first one is the program's own name, so `.skip(1)` drops it. You will build a full command-line tool in chapter 12.
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    code: |
+      use std::env;
+
+      fn main() {
+          let mut total: u64 = 0;
+          for arg in env::args().skip(1) {
+              let n: u64 = arg.parse().expect("each argument must be a number");
+              total += n;
+          }
+          println!("Sum: {total}");
+      }
+    output: |
+      $ cargo run -- 4 8 15
+      Sum: 27
+    explain: "`cargo run -- 4 8 15`: everything after `--` is passed to your program instead of to Cargo."
+
+  - type: quiz
+    id: ch02-quiz-loop
+    title: Check yourself
+    questions:
+      - type: single
+        q: "What does `continue` do inside a `loop`?"
+        options: ["Ends the loop for good", "Skips the rest of this round and starts the next one", "Ends the whole program", "Repeats the current line"]
+        answer: 1
+        explanation: "`continue` jumps to the start of the next round; `break` leaves the loop."
+      - type: single
+        q: "In `Err(_) => continue`, what does `_` mean?"
+        options: ["The error is printed", "Match any error, without giving it a name", "Only match empty input", "The arm is optional"]
+        answer: 1
+        explanation: "`_` is a catch-all pattern that ignores the value."
+      - type: truefalse
+        q: "Without a `break`, a `loop` runs until the program is stopped from outside."
+        answer: true
+        explanation: "`loop` repeats forever by design (or until a `break`, a `return`, or a panic)."
+      - type: single
+        q: "The player types `abc`. Which version of the game keeps running?"
+        options:
+          - "`let guess: u32 = guess.trim().parse().expect(\"Please type a number!\");`"
+          - "`let guess: u32 = match guess.trim().parse() { Ok(num) => num, Err(_) => continue };`"
+          - "Both"
+          - "Neither"
+        answer: 1
+        explanation: "`expect` panics on `Err`, ending the program. The `match` version continues the loop."
+      - type: single
+        q: "What is printed?"
+        code: |
+          let mut n = 0;
+          loop {
+              n += 1;
+              if n == 3 {
+                  break;
+              }
+          }
+          println!("{n}");
+        lang: rust
+        options: ["0", "2", "3", "It never stops"]
+        answer: 2
+        explanation: "`n` goes 1, 2, 3; at 3 the loop breaks and 3 is printed."
+      - type: fill
+        q: "Which macro is like `println!` but returns a String instead of printing?"
+        answer: ["format!", "format"]
+        explanation: "`format!(\"You guessed: {n}\")` builds the String."
+
+  - type: summary
+    points:
+      - "`loop { ... }` repeats forever; `break` leaves it, `continue` starts the next round."
+      - "A `match` arm can run several statements inside `{ }`."
+      - "`match value.parse() { Ok(num) => num, Err(_) => continue }` handles bad input instead of panicking."
+      - "`Ok(num)` binds the inner value to `num`; `_` matches anything and ignores it."
+      - "Logic in small functions that return values can be checked with unit tests (`#[test]`, `assert_eq!`, `cargo test`)."
+      - "`std::env::args()` gives the command-line arguments as Strings."
+terms:
+  - term: loop
+    def: "Repeats its block forever, until `break` (or `return`) leaves it."
+  - term: break
+    def: "Ends the innermost loop immediately."
+  - term: continue
+    def: "Skips the rest of the current round of a loop and starts the next one."
+  - term: unit test
+    def: "A small function marked `#[test]` that calls your code and checks the result; `cargo test` runs them all."
+  - term: Option
+    def: "A value that is either `Some(value)` or `None`: Rust's way of saying 'there may be no value' without null."
+  - term: Vec
+    def: "A growable list of values of one type, like `Vec<String>`."

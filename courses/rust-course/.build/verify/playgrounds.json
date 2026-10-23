@@ -1,0 +1,38 @@
+{
+ "ch01-play-bounds": {
+  "solution_code": null,
+  "starter_ok": "panic"
+ },
+ "ch01-play-hello": {
+  "solution_code": "fn main() {\n    println!(\"Hello, Rustacean!\");\n}\n",
+  "starter_ok": "run"
+ },
+ "ch01-play-three-greetings": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch02-play-compare": {
+  "solution_code": "use std::cmp::Ordering;\n\nfn main() {\n    let secret_number: u32 = 38;\n    let typed = String::from(\"38\\n\");\n\n    let guess: u32 = typed.trim().parse().expect(\"Please type a number!\");\n    println!(\"You guessed: {guess}\");\n\n    match guess.cmp(&secret_number) {\n        Ordering::Less => println!(\"Too small!\"),\n        Ordering::Greater => println!(\"Too big!\"),\n        Ordering::Equal => println!(\"You win!\"),\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch02-play-loop": {
+  "solution_code": "use std::cmp::Ordering;\n\nfn main() {\n    let secret_number: u32 = 61;\n    let inputs = [\"oops\", \"10\", \"80\", \"61\", \"99\"];\n\n    for typed in inputs {\n        let guess: u32 = match typed.trim().parse() {\n            Ok(num) => num,\n            Err(_) => {\n                println!(\"Please type a number!\");\n                continue;\n            }\n        };\n\n        println!(\"You guessed: {guess}\");\n\n        match guess.cmp(&secret_number) {\n            Ordering::Less => println!(\"Too small!\"),\n            Ordering::Greater => println!(\"Too big!\"),\n            Ordering::Equal => {\n                println!(\"You win!\");\n                break;\n            }\n        }\n    }\n}\n",
+  "starter_ok": "run"
+ },
+ "ch02-play-mutable": {
+  "solution_code": "fn main() {\n    let mut count = 1;\n    count = 2;\n    println!(\"{count}\");\n}\n",
+  "starter_ok": "compile_error"
+ },
+ "ch02-play-newline": {
+  "solution_code": "fn main() {\n    let mut guess = String::new();\n    guess.push_str(\"42\\n\");\n\n    println!(\"{:?}\", guess);\n    println!(\"[{}]\", guess.trim());\n}\n",
+  "starter_ok": "run"
+ },
+ "ch02-play-parse-fail": {
+  "solution_code": null,
+  "starter_ok": "panic"
+ },
+ "ch02-play-placeholders": {
+  "solution_code": "fn main() {\n    let x = 5;\n    let y = 10;\n\n    println!(\"x = {x} and y = {y}\");\n    println!(\"{} + {} = {}\", x, y, x + y);\n}\n",
+  "starter_ok": "run"
+ }
+}

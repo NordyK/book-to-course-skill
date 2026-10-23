@@ -24,3 +24,18 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
 ## Log
 
 - 2026-10-23: Skills installed. Six PDFs extracted; three are editions of TRPL (2018, 2021, 2024) → 2024 is the spine, the other two marked duplicates. Merged 25-chapter plan written (`.build/plan.md`). Course scaffold created.
+
+## 2026-10-23 (continued)
+
+- Chapter 1 done and the custom player is built (reading column + Verification Console, mobile bottom sheet,
+  progress v2 with activity log, study time, streak, export/import). serve.py gained `/api/run` and file-writing
+  `/api/run-tests`. Draft PR: NordyK/book-to-course-skill#2.
+- Authoring pipeline: `.build/tools/yaml2json.py` now writes Rust exercise folders from the `rust:` key of an
+  `exercise` block, and moves playground `solution_code` / `starter_ok` into `.build/verify/playgrounds.json`.
+  `.build/tools/verify_playgrounds.py` compiles every playground (starter must run unless `starter_ok` says it should
+  panic or fail to compile) and checks each solution against `expected_output`.
+- Per-chapter loop: write YAML → `yaml2json.py` → `build_course.py .` → `CARGO_TARGET_DIR=$PWD/.cargo-target
+  verify_exercises.py .` → `verify_playgrounds.py` → `course_state.py . set chNN done` → WORKLOG entry → commit, push.
+- Chapter 2 done (Guessing Game): 3 lessons + test; exercises ch02-compare, ch02-parse-guess, ch02-play-game
+  (all verified: fail on starter, pass on solution); 6 playgrounds verified.
+- impeccable: critique running next; log of every command goes in `design-log.md`.

@@ -45,6 +45,7 @@ blocks:
 
   - type: playground
     id: ch01-play-bounds
+    starter_ok: panic
     title: "See it yourself: Rust checks array access"
     lang: rust
     md: |

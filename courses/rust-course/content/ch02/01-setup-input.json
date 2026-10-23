@@ -1,0 +1,297 @@
+{
+  "title": "Reading what the player types",
+  "summary": "Set up the game project and read a guess from the keyboard. Along the way you meet variables, mutability, String and Result.",
+  "minutes": 22,
+  "source": {
+    "chapter": "ch02",
+    "sections": [
+      "TRPL 2 Setting Up a New Project",
+      "TRPL 2 Processing a Guess",
+      "TRPL 2 Storing Values with Variables",
+      "TRPL 2 Receiving User Input",
+      "TRPL 2 Handling Potential Failure with Result",
+      "TRPL 2 Printing Values with println! Placeholders"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "Over the next three lessons you will build a classic beginner game. The program picks a secret number between 1 and 100. The player types a guess. The program says whether the guess was too small or too big. When the guess is right, the program congratulates the player and stops.\n\nThe game is small, but it uses a little of almost everything: **variables**, **user input**, **libraries**, **comparisons**, **loops** and **error handling**. You will meet each idea briefly here, then properly in later chapters. Don't worry if a detail feels fuzzy; the goal now is to see how the pieces fit.\n"
+    },
+    {
+      "type": "flow",
+      "title": "How the finished game works",
+      "nodes": [
+        {
+          "label": "Pick a secret",
+          "detail": "The program picks a random number from 1 to 100 and keeps it hidden."
+        },
+        {
+          "label": "Ask for a guess",
+          "detail": "It prints `Please input your guess.` and waits for the player to type a line and press Enter."
+        },
+        {
+          "label": "Turn text into a number",
+          "detail": "What the player typed is **text**, like `\"42\\n\"`. It has to become the number `42` before it can be compared. If it is not a number, the game asks again."
+        },
+        {
+          "label": "Compare",
+          "detail": "Is the guess smaller than, bigger than, or equal to the secret? The game prints `Too small!`, `Too big!` or `You win!`."
+        },
+        {
+          "label": "Repeat or stop",
+          "detail": "On a wrong guess the game goes back to *Ask for a guess*. On the right guess it stops."
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "title": "A new project",
+      "md": "Create the project with Cargo, exactly as in chapter 1:\n"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "file": "terminal",
+      "code": "cargo new guessing_game\ncd guessing_game\ncargo run\n",
+      "output": "Hello, world!\n"
+    },
+    {
+      "type": "text",
+      "title": "The first version",
+      "md": "Replace everything in `src/main.rs` with the program below. It asks for a guess, reads it, and prints it back. Read it once top to bottom; then we take it apart line by line.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/main.rs",
+      "code": "use std::io;\n\nfn main() {\n    println!(\"Guess the number!\");\n\n    println!(\"Please input your guess.\");\n\n    let mut guess = String::new();\n\n    io::stdin()\n        .read_line(&mut guess)\n        .expect(\"Failed to read line\");\n\n    println!(\"You guessed: {guess}\");\n}\n"
+    },
+    {
+      "type": "stepper",
+      "title": "Line by line",
+      "lang": "rust",
+      "steps": [
+        {
+          "title": "Bring in the input/output library",
+          "md": "Rust loads only a small set of names into every program automatically (the **prelude**). Anything else you name with `use`. `std` is the **standard library** that comes with Rust, and `io` is its part for input and output. After this line, `io::stdin()` works.\n",
+          "code": "use std::io;\n",
+          "highlight": [
+            1
+          ]
+        },
+        {
+          "title": "Print two messages",
+          "md": "`println!` prints a line, as you saw in chapter 1. Nothing new here.",
+          "code": "println!(\"Guess the number!\");\nprintln!(\"Please input your guess.\");\n"
+        },
+        {
+          "title": "A variable that can change",
+          "md": "`let` creates a **variable**: a name for a value. In Rust, variables are **immutable** by default: once given a value, they keep it. Adding `mut` (short for *mutable*) allows changing it later. We need `mut` because reading the input will *fill* this variable.\n\n`String::new()` makes a new, empty **String**, Rust's growable text type. The `::` means `new` belongs to the `String` type. A function that belongs to a type like this is called an **associated function**.\n",
+          "code": "let mut guess = String::new();\n",
+          "highlight": [
+            1
+          ]
+        },
+        {
+          "title": "Read a line from the keyboard",
+          "md": "`io::stdin()` gives a handle to the program's **standard input**: by default, the keyboard in the terminal. `.read_line(...)` waits until the user presses Enter and **appends** what was typed to a String.\n\n`&mut guess` hands over the variable so `read_line` can write into it. The `&` makes it a **reference**: `read_line` gets access to `guess` without taking it over, and `mut` says the access allows changing it. References are the subject of chapter 4; for now, read `&mut guess` as *lend `guess` out for writing*.\n",
+          "code": "io::stdin()\n    .read_line(&mut guess)\n",
+          "highlight": [
+            2
+          ]
+        },
+        {
+          "title": "Deal with possible failure",
+          "md": "Reading can fail (for example if the input is not valid text). So `read_line` does not just return a value: it returns a **Result**, which is either `Ok` (it worked) or `Err` (it failed, with an explanation).\n\n`.expect(\"...\")` says: if this is `Err`, stop the program and show this message; if it is `Ok`, give me the value inside. Stopping like this is called a **panic**. It is fine for a first program; later lessons show how to recover instead.\n",
+          "code": "io::stdin()\n    .read_line(&mut guess)\n    .expect(\"Failed to read line\");\n",
+          "highlight": [
+            3
+          ]
+        },
+        {
+          "title": "Print with a placeholder",
+          "md": "Curly brackets inside the text are **placeholders**. `{guess}` is replaced by the value of the variable `guess`. To print the result of an expression instead, leave the brackets empty and put the expression after the text: `println!(\"x + y = {}\", x + y);`.\n",
+          "code": "println!(\"You guessed: {guess}\");\n",
+          "highlight": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "type": "callout",
+      "kind": "warning",
+      "title": "Forgot expect? You get a warning",
+      "md": "If you delete `.expect(...)`, the program still compiles, but Rust warns: `unused Result that must be used`. The compiler is reminding you that an error could happen and you have not decided what to do about it. Rust makes ignoring errors something you have to do on purpose.\n"
+    },
+    {
+      "type": "code",
+      "lang": "bash",
+      "file": "terminal",
+      "title": "Try the program",
+      "code": "$ cargo run\n   Compiling guessing_game v0.1.0 (file:///projects/guessing_game)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.44s\n     Running `target/debug/guessing_game`\nGuess the number!\nPlease input your guess.\n6\nYou guessed: 6\n",
+      "highlight": [
+        7,
+        8
+      ]
+    },
+    {
+      "type": "callout",
+      "kind": "note",
+      "title": "Why the page's console uses a fixed input",
+      "md": "The console in this page runs the program for you, but it cannot type into it. So playgrounds in this chapter put the \"typed\" text straight into the String instead of reading the keyboard. To play the real game, run it with `cargo run` in a terminal.\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch02-play-placeholders",
+      "title": "Placeholders",
+      "lang": "rust",
+      "md": "Run this program. Then add a line that uses empty `{}` placeholders to print `5 + 10 = 15`, calculating the sum in Rust rather than typing 15.",
+      "task": "Make the program print exactly two lines: `x = 5 and y = 10`, then `5 + 10 = 15`.",
+      "code": "fn main() {\n    let x = 5;\n    let y = 10;\n\n    println!(\"x = {x} and y = {y}\");\n    // add your line here\n}\n",
+      "expected_output": "x = 5 and y = 10\n5 + 10 = 15\n",
+      "hints": [
+        "`println!(\"{} + {} = {}\", x, y, x + y);` fills the three empty placeholders in order.",
+        "Inside named placeholders like `{x}` you can only write a variable name, not `x + y`. That is why the sum needs an empty `{}`."
+      ]
+    },
+    {
+      "type": "reveal",
+      "prompt": "This program does not compile. Without running it, which line does the compiler complain about, and why?\n\n```rust\nfn main() {\n    let count = 1;\n    count = 2;\n    println!(\"{count}\");\n}\n```",
+      "md": "Line 3, `count = 2;`. `count` was created without `mut`, so it is immutable and cannot be given a new value. The error is `cannot assign twice to immutable variable`, and the compiler even suggests the fix: `let mut count = 1;`.\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch02-play-mutable",
+      "title": "Fix the immutable variable",
+      "lang": "rust",
+      "task": "Make this compile without removing any line, so it prints `2`.",
+      "code": "fn main() {\n    let count = 1;\n    count = 2;\n    println!(\"{count}\");\n}\n",
+      "expected_output": "2",
+      "hints": [
+        "Press Run first and read the compiler's error message: it tells you the fix.",
+        "Add `mut` after `let`."
+      ]
+    },
+    {
+      "type": "text",
+      "title": "What read_line really puts in the String",
+      "md": "When the player types `6` and presses Enter, the String does not contain just `6`. It contains `6` followed by a **newline** character, written `\\n` in Rust (on Windows, `\\r\\n`). That is why `You guessed: 6` is followed by an empty line in the terminal: the newline is printed too. The next lesson removes it with `trim` before turning the text into a number.\n"
+    },
+    {
+      "type": "playground",
+      "id": "ch02-play-newline",
+      "title": "See the hidden newline",
+      "lang": "rust",
+      "md": "Here the typed line is written into the String by hand. `{:?}` is a **debug** placeholder: it shows a value the way a programmer would write it, so the `\\n` becomes visible. Run it, then change the second `println!` so it prints the guess *without* the newline by using `guess.trim()`.",
+      "task": "Print `\"42\\n\"` (with the quotes, from the debug placeholder) and then `[42]`.",
+      "code": "fn main() {\n    let mut guess = String::new();\n    guess.push_str(\"42\\n\"); // pretend the player typed 42 and pressed Enter\n\n    println!(\"{:?}\", guess);\n    println!(\"[{}]\", guess);\n}\n",
+      "expected_output": "\"42\\n\"\n[42]\n",
+      "hints": [
+        "`trim()` gives back the text without spaces or newlines at the start and end.",
+        "Change the last line to `println!(\"[{}]\", guess.trim());`."
+      ]
+    },
+    {
+      "type": "quiz",
+      "id": "ch02-quiz-input",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "Why is the variable declared as `let mut guess` and not `let guess`?",
+          "options": [
+            "`String` values must always be mutable.",
+            "`read_line` writes into the variable, so it has to be changeable.",
+            "`mut` makes the variable visible to other functions.",
+            "Without `mut`, the program would read numbers only."
+          ],
+          "answer": 1,
+          "explanation": "Variables are immutable by default. `read_line(&mut guess)` adds the typed text to `guess`, which changes it, so `guess` must be declared `mut`."
+        },
+        {
+          "type": "fill",
+          "q": "Complete the line so the program stops with the message `Failed to read line` if reading fails: `io::stdin().read_line(&mut guess).______(\"Failed to read line\");`",
+          "answer": [
+            "expect"
+          ],
+          "explanation": "`expect` returns the value inside `Ok`, or panics with your message on `Err`."
+        },
+        {
+          "type": "truefalse",
+          "q": "After the player types `7` and presses Enter, `guess` contains exactly the text `7`.",
+          "answer": false,
+          "explanation": "It contains `7\\n` (or `7\\r\\n` on Windows): Enter is part of what `read_line` reads."
+        },
+        {
+          "type": "single",
+          "q": "What does this print?",
+          "code": "let a = 3;\nlet b = 4;\nprintln!(\"{a} * {b} = {}\", a * b);\n",
+          "lang": "rust",
+          "options": [
+            "`{a} * {b} = 12`",
+            "`3 * 4 = {}`",
+            "`3 * 4 = 12`",
+            "Nothing: it does not compile"
+          ],
+          "answer": 2,
+          "explanation": "Named placeholders take variables; the empty `{}` takes the expression `a * b` listed after the text."
+        },
+        {
+          "type": "order",
+          "q": "Put the steps of reading a guess in the order they happen in the program.",
+          "items": [
+            "Create an empty, mutable String",
+            "Get a handle to standard input",
+            "Read a line into the String",
+            "Panic if reading failed, otherwise continue",
+            "Print the guess"
+          ],
+          "explanation": "`String::new()`, `io::stdin()`, `.read_line(&mut guess)`, `.expect(...)`, then `println!`."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "`use std::io;` brings the standard library's input/output module into scope.",
+        "`let` makes a variable; it is immutable unless you write `let mut`.",
+        "`String::new()` creates an empty, growable text value; `::` calls a function that belongs to a type.",
+        "`read_line(&mut guess)` appends the typed line, newline included, to `guess`.",
+        "`read_line` returns a `Result` (`Ok` or `Err`); `.expect(\"msg\")` unwraps it or panics with your message.",
+        "`{name}` prints a variable; `{}` prints the next expression after the text; `{:?}` shows the debug form."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "variable",
+      "def": "A name bound to a value with `let`. Immutable by default; `let mut` makes it changeable."
+    },
+    {
+      "term": "String",
+      "def": "Rust's growable, owned UTF-8 text type. `String::new()` makes an empty one."
+    },
+    {
+      "term": "associated function",
+      "def": "A function that belongs to a type and is called with `::`, like `String::new()`."
+    },
+    {
+      "term": "Result",
+      "def": "A value that is either `Ok(value)` for success or `Err(error)` for failure. Rust uses it for anything that can fail."
+    },
+    {
+      "term": "panic",
+      "def": "Stopping the program immediately with an error message, for example when `expect` meets an `Err`."
+    },
+    {
+      "term": "reference",
+      "def": "A way to let code use a value without taking it over, written `&value` (read-only) or `&mut value` (may change it)."
+    },
+    {
+      "term": "prelude",
+      "def": "The short list of names Rust brings into every program automatically, such as `String` and `println!`."
+    }
+  ]
+}

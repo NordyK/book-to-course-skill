@@ -131,6 +131,10 @@ blocks:
 
   - type: playground
     id: ch01-play-hello
+    solution_code: |
+      fn main() {
+          println!("Hello, Rustacean!");
+      }
     title: "Your turn: change the message"
     lang: rust
     task: "Make the program print exactly `Hello, Rustacean!` (Rust programmers call themselves Rustaceans)."

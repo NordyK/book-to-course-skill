@@ -1,0 +1,8 @@
+title: "Your First Program: a Guessing Game"
+summary: Build a complete little game. You read input from the keyboard, compare numbers, repeat until the player wins, and cope with bad input.
+goals:
+  - Read a line of text typed by the user and turn it into a number
+  - Use a crate (a library) from crates.io in a Cargo project
+  - Compare values with `match` and `Ordering`
+  - Repeat work with `loop`, and leave it with `break`
+  - Handle invalid input without crashing, using `match` on a `Result`
