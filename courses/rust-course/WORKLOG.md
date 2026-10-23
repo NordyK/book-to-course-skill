@@ -138,3 +138,8 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
 - Lessons: 01-single-threaded (listener, reading requests, responses, routing and the refactor, all served on 127.0.0.1:0 with an in-process client), 02-thread-pool (slow-request timing demo, compiler-driven ThreadPool stepper, E0382 for a shared receiver, full pool demo, the while-let lock trap), 03-graceful-shutdown (E0507 and drain, closing the channel with Option::take, Drop demo, the book's final main.rs and sample output, catch_unwind for panicking jobs, where to go next), 99-test (10 questions).
 - Exercises: ch25-http (parser, router, response, handle_connection), ch25-pool (build/new/size/execute, barrier-based parallelism test), ch25-shutdown (Drop, shutdown, join, PoolClosed, panic counters). Playgrounds: ch25-play-routes, ch25-play-whilelet, ch25-play-drop.
 - All 25 chapters done; 61 exercises verified (fail on starter, pass on solution).
+
+## Final review (done)
+- Re-ran every check across all 25 chapters: 83 playgrounds OK, 61 exercises fail on starter and pass on solution, every runnable code block prints what the lesson shows (the one known exception is ch02's `cargo run -- 4 8 15`, which needs arguments).
+- Browser smoke test of chapters 23–25 on desktop and phone, no page errors.
+- Mobile fix: long inline `code` spans (e.g. `catch_unwind(AssertUnwindSafe(job))`) pushed lessons wider than a 390 px phone; inline code now wraps (`overflow-wrap: anywhere`). All 106 lessons checked at 390 px with no horizontal scroll.

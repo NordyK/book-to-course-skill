@@ -231,7 +231,7 @@ h1, h2, .block-h { text-wrap: balance; }
 .prose ul, .prose ol { padding-left: 22px; margin: 0 0 14px; }
 .prose li { margin: 4px 0; }
 .prose blockquote { margin: 12px 0; padding: 4px 0 4px 16px; border-left: 1px solid var(--registry-blue); color: var(--muted); }
-code { font: 400 .88em/1.4 var(--font-mono); background: var(--surface-alt); border: 1px solid var(--rule); padding: .05em .35em; border-radius: var(--r-ctl); }
+code { font: 400 .88em/1.4 var(--font-mono); background: var(--surface-alt); border: 1px solid var(--rule); padding: .05em .35em; border-radius: var(--r-ctl); overflow-wrap: anywhere; }
 .prose strong { font-weight: 500; }
 
 .callout { border: 1px solid var(--rule-strong); padding: var(--pad); background: var(--surface); }
