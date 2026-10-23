@@ -78,3 +78,7 @@ Read this first, then run `python3 ~/.claude/skills/book-to-course/scripts/cours
 - Chapter 12 done (minigrep project): args and files, refactor to Config::build/run/lib.rs, TDD search, IGNORE_CASE +
   eprintln! + writing to any Write; 10-question test; exercise ch12-minigrep (whole tested library), verified;
   3 playgrounds (args are simulated, since the console cannot pass real arguments).
+- Chapter 13 done (Closures and Iterators): closures (capture modes, move, Fn traits, taking/returning closures),
+  iterators (trait, iter/iter_mut/into_iter, consumers, adapters, laziness stepper, own Iterator), minigrep with
+  iterators + zero-cost; 12-question test; exercises ch13-closures, ch13-iterators (verified); 4 playgrounds.
+  Compiler *warnings* go in a separate `lang: text` block (the checks compile with warnings off).

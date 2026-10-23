@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created": "2026-10-23T02:32:57+00:00",
-  "updated": "2026-10-23T03:56:12+00:00",
+  "updated": "2026-10-23T04:00:20+00:00",
   "book": {
     "title": "Rust: From First Program to Systems Programming",
     "author": "Merged from 5 books (see .build/plan.md)",
@@ -124,8 +124,8 @@
       "title": "Closures and Iterators",
       "words": 32543,
       "file": "chapters/ch13.md",
-      "status": "pending",
-      "lessons_built": 0,
+      "status": "done",
+      "lessons_built": 4,
       "note": ""
     },
     {
@@ -296,6 +296,10 @@
     {
       "at": "2026-10-23T03:56:12+00:00",
       "msg": "ch12 → done"
+    },
+    {
+      "at": "2026-10-23T04:00:20+00:00",
+      "msg": "ch13 → done"
     }
   ]
 }

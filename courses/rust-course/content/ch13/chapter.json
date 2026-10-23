@@ -1,0 +1,10 @@
+{
+  "title": "Closures and Iterators",
+  "summary": "Rust's functional features: closures that capture their environment, the Fn traits that describe how, and iterators with their adapters and consumers, then minigrep rewritten with them and a look at why they cost nothing.",
+  "goals": [
+    "Write closures, predict how they capture (borrow, mutable borrow, move), and use move",
+    "Explain FnOnce, FnMut and Fn and choose the right bound for a closure parameter",
+    "Use the Iterator trait, adapters like map, filter, zip and enumerate, and consumers like sum, collect and fold",
+    "Implement Iterator for your own type and rewrite loops as iterator chains without losing speed"
+  ]
+}

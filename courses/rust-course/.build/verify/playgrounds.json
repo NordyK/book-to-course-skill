@@ -174,5 +174,17 @@
  "ch12-play-search-numbers": {
   "solution_code": "fn search_numbered<'a>(query: &str, contents: &'a str) -> Vec<(usize, &'a str)> {\n    let mut results = Vec::new();\n    for (i, line) in contents.lines().enumerate() {\n        if line.contains(query) {\n            results.push((i + 1, line));\n        }\n    }\n    results\n}\n\nfn main() {\n    let contents = \"Rust:\\nsafe, fast, productive.\\nPick three.\\nTrust me.\";\n    assert_eq!(search_numbered(\"duct\", contents), vec![(2, \"safe, fast, productive.\")]);\n    assert_eq!(search_numbered(\"ust\", contents), vec![(1, \"Rust:\"), (4, \"Trust me.\")]);\n    assert_eq!(search_numbered(\"zzz\", contents), vec![]);\n    for (n, line) in search_numbered(\"duct\", contents) {\n        println!(\"{n}: {line}\");\n    }\n}\n",
   "starter_ok": "panic"
+ },
+ "ch13-play-build-iter": {
+  "solution_code": "struct Config {\n    query: String,\n    file_path: String,\n}\n\nimpl Config {\n    fn build(mut args: impl Iterator<Item = String>) -> Result<Config, &'static str> {\n        args.next();\n        let query = args.next().ok_or(\"Didn't get a query string\")?;\n        let file_path = args.next().ok_or(\"Didn't get a file path\")?;\n        Ok(Config { query, file_path })\n    }\n}\n\nfn main() {\n    let runs = [vec![\"mg\", \"frog\", \"poem.txt\"], vec![\"mg\", \"frog\"], vec![\"mg\"]];\n    for run in runs {\n        let args: Vec<String> = run.iter().map(|s| s.to_string()).collect();\n        match Config::build(args.into_iter()) {\n            Ok(c) => println!(\"{} in {}\", c.query, c.file_path),\n            Err(e) => println!(\"error: {e}\"),\n        }\n    }\n}\n",
+  "starter_ok": "panic"
+ },
+ "ch13-play-chains": {
+  "solution_code": null,
+  "starter_ok": "run"
+ },
+ "ch13-play-closures": {
+  "solution_code": "fn apply_discounts<F: Fn(f64) -> f64>(prices: &[f64], rule: F) -> Vec<f64> {\n    let mut out = Vec::new();\n    for &p in prices {\n        out.push(rule(p));\n    }\n    out\n}\n\nfn main() {\n    let prices = [50.0, 120.0, 200.0];\n    let coupon = 15.0;\n\n    let bulk = |p: f64| if p > 100.0 { p * 0.9 } else { p };\n    let fixed = |p: f64| (p - coupon).max(0.0);\n\n    println!(\"{:?}\", apply_discounts(&prices, bulk));\n    println!(\"{:?}\", apply_discounts(&prices, fixed));\n}\n",
+  "starter_ok": "run"
  }
 }
