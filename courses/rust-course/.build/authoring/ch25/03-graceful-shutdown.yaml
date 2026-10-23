@@ -1,0 +1,639 @@
+title: "Graceful shutdown and where to go next"
+summary: "Implementing Drop for the ThreadPool, the cannot-move-out-of-a-mutable-reference error and Vec::drain, closing the channel with Option::take so workers leave their loops, the final server that stops after two requests, keeping workers alive when a job panics, and ideas for taking the project and your Rust further."
+minutes: 40
+source:
+  chapter: ch25
+  sections: ["TRPL 21.3 Graceful Shutdown and Cleanup", "TRPL 21.3 Implementing the Drop Trait on ThreadPool", "TRPL 21.3 Signaling to the Threads to Stop Listening for Jobs", "TRPL 21 Summary", "CR XV Idiomatic Rust", "CR XVII Final Words"]
+blocks:
+  - type: text
+    md: |
+      The pool works, but stopping it is crude: Ctrl-C kills the process, and every thread dies on the spot, even one halfway through writing a response. A **graceful shutdown** lets each worker finish the job it has, then stop, and the program waits for all of them. In Rust the natural place for cleanup is **`Drop`** (chapter 15): when the `ThreadPool` goes out of scope, it should join its threads.
+
+  - type: text
+    title: "First attempt: join in Drop"
+    md: |
+      `JoinHandle::join` takes `self`, it consumes the handle. But `drop` only gets `&mut self`, so iterating gives `&mut Worker`, and we cannot move the handle out from behind a mutable reference:
+
+  - type: code
+    lang: rust
+    output_label: Compiler output
+    code: |
+      use std::thread;
+
+      struct Worker {
+          id: usize,
+          thread: thread::JoinHandle<()>,
+      }
+
+      struct ThreadPool {
+          workers: Vec<Worker>,
+      }
+
+      impl Drop for ThreadPool {
+          fn drop(&mut self) {
+              for worker in &mut self.workers {
+                  println!("Shutting down worker {}", worker.id);
+                  worker.thread.join().unwrap();
+              }
+          }
+      }
+
+      fn main() {}
+    output: |
+      error[E0507]: cannot move out of `worker.thread` which is behind a mutable reference
+        --> src/main.rs:16:13
+         |
+      16 |             worker.thread.join().unwrap();
+         |             ^^^^^^^^^^^^^ ------ `worker.thread` moved due to this method call
+         |             |
+         |             move occurs because `worker.thread` has type `JoinHandle<()>`, which does not implement the `Copy` trait
+         |
+      note: `JoinHandle::<T>::join` takes ownership of the receiver `self`, which moves `worker.thread`
+        --> /rustc/2d8144b7880597b6e6d3dfd63a9a9efae3f533d3/library/std/src/thread/join_handle.rs:149:16
+    explain: "The compiler even suggests the classic fix: wrap the handle in an `Option` and `take()` it. The book prefers not to, because then every other use of `thread` has to deal with an `Option` that is only ever `None` during drop."
+
+  - type: text
+    md: |
+      The cleaner fix is **`Vec::drain(..)`**: it removes every element from the vector and yields them **by value**, so each worker, and its handle, is ours to consume:
+
+      ```rust
+      for worker in self.workers.drain(..) {
+          println!("Shutting down worker {}", worker.id);
+          worker.thread.join().unwrap();
+      }
+      ```
+
+      That compiles, and then the program **hangs**: each worker loops forever waiting on `recv`, so `join` never returns. The workers need to be told to stop.
+
+  - type: text
+    title: Closing the channel
+    md: |
+      When every `Sender` is dropped, the channel is closed and `recv` returns `Err`. So `Drop` first drops the pool's sender, then joins the workers, and each worker leaves its loop when `recv` fails. To move the sender out of `&mut self`, the pool stores it as **`Option<Sender<Job>>`** and calls `take()`; here an `Option` is the right tool, because the sender really does go away while the pool still exists. The order inside `drop` matters: drop the sender first, or the joins wait forever.
+
+  - type: code
+    lang: rust
+    code: |
+      use std::sync::atomic::{AtomicUsize, Ordering};
+      use std::sync::{Arc, Mutex, mpsc};
+      use std::thread;
+      use std::time::Duration;
+
+      type Job = Box<dyn FnOnce() + Send + 'static>;
+
+      pub struct ThreadPool {
+          workers: Vec<Worker>,
+          sender: Option<mpsc::Sender<Job>>,
+      }
+
+      impl ThreadPool {
+          pub fn new(size: usize) -> ThreadPool {
+              assert!(size > 0);
+              let (sender, receiver) = mpsc::channel();
+              let receiver = Arc::new(Mutex::new(receiver));
+              let workers = (0..size).map(|id| Worker::new(id, Arc::clone(&receiver))).collect();
+              ThreadPool { workers, sender: Some(sender) }
+          }
+
+          pub fn execute<F>(&self, f: F)
+          where
+              F: FnOnce() + Send + 'static,
+          {
+              self.sender.as_ref().unwrap().send(Box::new(f)).unwrap();
+          }
+      }
+
+      impl Drop for ThreadPool {
+          fn drop(&mut self) {
+              drop(self.sender.take()); // close the channel
+              for worker in self.workers.drain(..) {
+                  worker.thread.join().unwrap(); // wait for its last job
+              }
+          }
+      }
+
+      #[allow(dead_code)]
+      struct Worker {
+          id: usize,
+          thread: thread::JoinHandle<()>,
+      }
+
+      impl Worker {
+          fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
+              let thread = thread::spawn(move || loop {
+                  let message = receiver.lock().unwrap().recv();
+                  match message {
+                      Ok(job) => job(),
+                      Err(_) => break, // channel closed: shut down
+                  }
+              });
+              Worker { id, thread }
+          }
+      }
+
+      fn main() {
+          let finished = Arc::new(AtomicUsize::new(0));
+          {
+              let pool = ThreadPool::new(4);
+              for _ in 0..8 {
+                  let finished = Arc::clone(&finished);
+                  pool.execute(move || {
+                      thread::sleep(Duration::from_millis(50));
+                      finished.fetch_add(1, Ordering::SeqCst);
+                  });
+              }
+              println!("queued 8 jobs, finished so far: {}", finished.load(Ordering::SeqCst));
+          } // pool dropped here: the channel closes, the queue drains, every worker is joined
+          println!("after the pool is dropped: {}", finished.load(Ordering::SeqCst));
+      }
+    output: |
+      queued 8 jobs, finished so far: 0
+      after the pool is dropped: 8
+    explain: "Jobs already in the channel are still delivered after the sender is dropped; `recv` only fails once the queue is empty. So dropping the pool finishes all queued work, not just the jobs in progress."
+
+  - type: text
+    title: The finished server
+    md: |
+      To see the shutdown happen, the book makes `main` accept only two requests, with `listener.incoming().take(2)`. After the loop, `pool` goes out of scope and `Drop` runs. With the book's messages added to the worker and to `drop`, the whole program is:
+
+  - type: code
+    lang: rust
+    file: src/main.rs
+    code: |
+      use hello::ThreadPool;
+      use std::{
+          fs,
+          io::{BufReader, prelude::*},
+          net::{TcpListener, TcpStream},
+          thread,
+          time::Duration,
+      };
+
+      fn main() {
+          let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
+          let pool = ThreadPool::new(4);
+
+          for stream in listener.incoming().take(2) {
+              let stream = stream.unwrap();
+              pool.execute(|| {
+                  handle_connection(stream);
+              });
+          }
+
+          println!("Shutting down.");
+      }
+
+      fn handle_connection(mut stream: TcpStream) {
+          let buf_reader = BufReader::new(&stream);
+          let request_line = buf_reader.lines().next().unwrap().unwrap();
+
+          let (status_line, filename) = match &request_line[..] {
+              "GET / HTTP/1.1" => ("HTTP/1.1 200 OK", "hello.html"),
+              "GET /sleep HTTP/1.1" => {
+                  thread::sleep(Duration::from_secs(5));
+                  ("HTTP/1.1 200 OK", "hello.html")
+              }
+              _ => ("HTTP/1.1 404 NOT FOUND", "404.html"),
+          };
+
+          let contents = fs::read_to_string(filename).unwrap();
+          let length = contents.len();
+          let response = format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
+          stream.write_all(response.as_bytes()).unwrap();
+      }
+    explain: "This is the book's final `main.rs`; the library is the pool above, with `println!(\"Worker {id} got a job; executing.\")` in the worker, `println!(\"Worker {id} disconnected; shutting down.\")` before its `break`, and `println!(\"Shutting down worker {}\", worker.id)` in `drop`. It needs `hello.html` and `404.html` next to `Cargo.toml` and a browser, so run it on your own machine."
+
+  - type: text
+    md: |
+      Making two requests prints something like the following. The order varies from run to run, because the four workers are real threads; the shape does not: two jobs are executed, `Shutting down.` appears when `main` leaves the loop, every worker reports that its channel closed, and every worker is joined.
+
+  - type: code
+    lang: text
+    code: |
+      Worker 0 got a job; executing.
+      Shutting down.
+      Shutting down worker 0
+      Worker 3 got a job; executing.
+      Worker 1 disconnected; shutting down.
+      Worker 2 disconnected; shutting down.
+      Worker 3 disconnected; shutting down.
+      Worker 0 disconnected; shutting down.
+      Shutting down worker 1
+      Shutting down worker 2
+      Shutting down worker 3
+    explain: "Worker 3 took the second request while `main` was already waiting to join worker 0: shutdown does not cut off work in progress."
+
+  - type: callout
+    kind: tip
+    title: "One more failure mode: panicking jobs"
+    md: "If a job panics, the panic unwinds through the worker's loop and that thread dies; the pool silently gets smaller, and when the last worker dies, queued jobs are never run. Worse, a panic while a worker holds the `Mutex` poisons it, and every other worker's `lock().unwrap()` panics too. Since our worker releases the lock before running the job, poisoning cannot happen here, and running each job inside `std::panic::catch_unwind(AssertUnwindSafe(job))` keeps the worker alive. The exercise asks for exactly that."
+
+  - type: playground
+    id: ch25-play-drop
+    title: "Wait for the workers"
+    lang: rust
+    md: |
+      This pool has no `Drop`, so `main` reads the counter as soon as the pool goes out of scope, while the workers are still busy. Implement `Drop for ThreadPool`: close the channel with `self.sender.take()`, then join every worker taken out with `self.workers.drain(..)`.
+    task: "Print `finished 5 of 5 jobs`."
+    code: |
+      use std::sync::atomic::{AtomicUsize, Ordering};
+      use std::sync::{Arc, Mutex, mpsc};
+      use std::thread;
+      use std::time::Duration;
+
+      type Job = Box<dyn FnOnce() + Send + 'static>;
+
+      struct ThreadPool {
+          workers: Vec<thread::JoinHandle<()>>,
+          sender: Option<mpsc::Sender<Job>>,
+      }
+
+      impl ThreadPool {
+          fn new(size: usize) -> ThreadPool {
+              let (sender, receiver) = mpsc::channel::<Job>();
+              let receiver = Arc::new(Mutex::new(receiver));
+              let workers = (0..size)
+                  .map(|_| {
+                      let receiver = Arc::clone(&receiver);
+                      thread::spawn(move || loop {
+                          let message = receiver.lock().unwrap().recv();
+                          match message {
+                              Ok(job) => job(),
+                              Err(_) => break,
+                          }
+                      })
+                  })
+                  .collect();
+              ThreadPool { workers, sender: Some(sender) }
+          }
+
+          fn execute(&self, f: impl FnOnce() + Send + 'static) {
+              self.sender.as_ref().unwrap().send(Box::new(f)).unwrap();
+          }
+      }
+
+      // TODO: impl Drop for ThreadPool
+
+      fn main() {
+          let done = Arc::new(AtomicUsize::new(0));
+          {
+              let pool = ThreadPool::new(2);
+              for _ in 0..5 {
+                  let done = Arc::clone(&done);
+                  pool.execute(move || {
+                      thread::sleep(Duration::from_millis(40));
+                      done.fetch_add(1, Ordering::SeqCst);
+                  });
+              }
+          }
+          println!("finished {} of 5 jobs", done.load(Ordering::SeqCst));
+      }
+    expected_output: |
+      finished 5 of 5 jobs
+    solution_code: |
+      use std::sync::atomic::{AtomicUsize, Ordering};
+      use std::sync::{Arc, Mutex, mpsc};
+      use std::thread;
+      use std::time::Duration;
+
+      type Job = Box<dyn FnOnce() + Send + 'static>;
+
+      struct ThreadPool {
+          workers: Vec<thread::JoinHandle<()>>,
+          sender: Option<mpsc::Sender<Job>>,
+      }
+
+      impl ThreadPool {
+          fn new(size: usize) -> ThreadPool {
+              let (sender, receiver) = mpsc::channel::<Job>();
+              let receiver = Arc::new(Mutex::new(receiver));
+              let workers = (0..size)
+                  .map(|_| {
+                      let receiver = Arc::clone(&receiver);
+                      thread::spawn(move || loop {
+                          let message = receiver.lock().unwrap().recv();
+                          match message {
+                              Ok(job) => job(),
+                              Err(_) => break,
+                          }
+                      })
+                  })
+                  .collect();
+              ThreadPool { workers, sender: Some(sender) }
+          }
+
+          fn execute(&self, f: impl FnOnce() + Send + 'static) {
+              self.sender.as_ref().unwrap().send(Box::new(f)).unwrap();
+          }
+      }
+
+      impl Drop for ThreadPool {
+          fn drop(&mut self) {
+              drop(self.sender.take());
+              for worker in self.workers.drain(..) {
+                  worker.join().unwrap();
+              }
+          }
+      }
+
+      fn main() {
+          let done = Arc::new(AtomicUsize::new(0));
+          {
+              let pool = ThreadPool::new(2);
+              for _ in 0..5 {
+                  let done = Arc::clone(&done);
+                  pool.execute(move || {
+                      thread::sleep(Duration::from_millis(40));
+                      done.fetch_add(1, Ordering::SeqCst);
+                  });
+              }
+          }
+          println!("finished {} of 5 jobs", done.load(Ordering::SeqCst));
+      }
+    hints:
+      - "`impl Drop for ThreadPool { fn drop(&mut self) { ... } }`"
+      - "Drop the sender before joining: `drop(self.sender.take());` then `for worker in self.workers.drain(..) { worker.join().unwrap(); }`."
+
+  - type: exercise
+    id: ch25-ex-shutdown
+    exercise_dir: ch25-shutdown
+    title: "A pool that shuts down cleanly and survives panics"
+    difficulty: hard
+    goal: "Finish the thread pool: graceful shutdown in Drop, an explicit shutdown, counters, and workers that keep going when a job panics."
+    behavior: |
+      - `ThreadPool::new(size)` panics for 0.
+      - `execute(&self, f) -> Result<(), PoolClosed>`: queues the job, or returns `Err(PoolClosed)` after `shutdown`.
+      - Every job runs inside `catch_unwind`, so a panicking job does not kill its worker. `completed()` counts jobs that returned normally and `panicked()` counts jobs that panicked.
+      - `shutdown(&mut self)`: close the channel and join every worker, so every job queued before the call has finished when it returns. Calling it twice is fine.
+      - `join(self) -> (usize, usize)`: shut down and return `(completed, panicked)`.
+      - `Drop` shuts down the same way.
+    examples:
+      - input: "pool of 2; 3 jobs that panic and 5 that return; pool.join()"
+        output: "(5, 3)"
+    hints:
+      - "Share two `Arc<AtomicUsize>` counters with the workers."
+      - "Inside the worker: `match panic::catch_unwind(AssertUnwindSafe(job)) { Ok(()) => completed.fetch_add(1, ...), Err(_) => panicked.fetch_add(1, ...) };`."
+      - "`shutdown`: `drop(self.sender.take());` then join everything from `self.workers.drain(..)`. Both are no-ops the second time."
+      - "`join(mut self)` can call `self.shutdown()` and then read the counters; `Drop` still runs afterwards and does nothing."
+    rust:
+      starter: |
+        use std::panic::{self, AssertUnwindSafe};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Mutex, mpsc};
+        use std::thread;
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct PoolClosed;
+
+        type Job = Box<dyn FnOnce() + Send + 'static>;
+
+        pub struct ThreadPool {
+            workers: Vec<thread::JoinHandle<()>>,
+            sender: Option<mpsc::Sender<Job>>,
+            completed: Arc<AtomicUsize>,
+            panicked: Arc<AtomicUsize>,
+        }
+
+        impl ThreadPool {
+            pub fn new(size: usize) -> ThreadPool {
+                todo!()
+            }
+
+            pub fn execute<F>(&self, f: F) -> Result<(), PoolClosed>
+            where
+                F: FnOnce() + Send + 'static,
+            {
+                todo!()
+            }
+
+            pub fn completed(&self) -> usize {
+                todo!()
+            }
+
+            pub fn panicked(&self) -> usize {
+                todo!()
+            }
+
+            pub fn shutdown(&mut self) {
+                todo!()
+            }
+
+            pub fn join(mut self) -> (usize, usize) {
+                todo!()
+            }
+        }
+
+        impl Drop for ThreadPool {
+            fn drop(&mut self) {
+                // TODO
+            }
+        }
+      tests: |
+        use super::*;
+        use std::time::Duration;
+
+        #[test]
+        #[should_panic]
+        fn zero_threads_panics() {
+            ThreadPool::new(0);
+        }
+
+        #[test]
+        fn drop_waits_for_every_job() {
+            let counter = Arc::new(AtomicUsize::new(0));
+            let pool = ThreadPool::new(3);
+            for _ in 0..20 {
+                let counter = Arc::clone(&counter);
+                pool.execute(move || {
+                    thread::sleep(Duration::from_millis(2));
+                    counter.fetch_add(1, Ordering::SeqCst);
+                })
+                .unwrap();
+            }
+            drop(pool);
+            assert_eq!(counter.load(Ordering::SeqCst), 20);
+        }
+
+        #[test]
+        fn queued_jobs_run_before_shutdown_returns() {
+            let mut pool = ThreadPool::new(1);
+            pool.execute(|| thread::sleep(Duration::from_millis(50))).unwrap();
+            for _ in 0..5 {
+                pool.execute(|| {}).unwrap();
+            }
+            pool.shutdown();
+            assert_eq!(pool.completed(), 6);
+            assert_eq!(pool.panicked(), 0);
+        }
+
+        #[test]
+        fn execute_after_shutdown_is_an_error() {
+            let mut pool = ThreadPool::new(2);
+            pool.shutdown();
+            assert_eq!(pool.execute(|| {}), Err(PoolClosed));
+            pool.shutdown(); // twice is fine
+        }
+
+        #[test]
+        fn panicking_jobs_do_not_kill_workers() {
+            let pool = ThreadPool::new(2);
+            for _ in 0..3 {
+                pool.execute(|| panic!("job failed on purpose")).unwrap();
+            }
+            for _ in 0..5 {
+                pool.execute(|| thread::sleep(Duration::from_millis(1))).unwrap();
+            }
+            assert_eq!(pool.join(), (5, 3));
+        }
+
+        #[test]
+        fn counts_are_live() {
+            let pool = ThreadPool::new(2);
+            let (tx, rx) = mpsc::channel();
+            pool.execute(move || tx.send(()).unwrap()).unwrap();
+            rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let mut waited = 0;
+            while pool.completed() < 1 && waited < 500 {
+                thread::sleep(Duration::from_millis(1));
+                waited += 1;
+            }
+            assert_eq!(pool.completed(), 1);
+        }
+      solution: |
+        use std::panic::{self, AssertUnwindSafe};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Mutex, mpsc};
+        use std::thread;
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct PoolClosed;
+
+        type Job = Box<dyn FnOnce() + Send + 'static>;
+
+        pub struct ThreadPool {
+            workers: Vec<thread::JoinHandle<()>>,
+            sender: Option<mpsc::Sender<Job>>,
+            completed: Arc<AtomicUsize>,
+            panicked: Arc<AtomicUsize>,
+        }
+
+        impl ThreadPool {
+            pub fn new(size: usize) -> ThreadPool {
+                assert!(size > 0, "a thread pool needs at least one thread");
+                let (sender, receiver) = mpsc::channel::<Job>();
+                let receiver = Arc::new(Mutex::new(receiver));
+                let completed = Arc::new(AtomicUsize::new(0));
+                let panicked = Arc::new(AtomicUsize::new(0));
+                let workers = (0..size)
+                    .map(|_| {
+                        let receiver = Arc::clone(&receiver);
+                        let completed = Arc::clone(&completed);
+                        let panicked = Arc::clone(&panicked);
+                        thread::spawn(move || loop {
+                            let message = receiver.lock().unwrap().recv();
+                            let Ok(job) = message else { break };
+                            match panic::catch_unwind(AssertUnwindSafe(job)) {
+                                Ok(()) => completed.fetch_add(1, Ordering::SeqCst),
+                                Err(_) => panicked.fetch_add(1, Ordering::SeqCst),
+                            };
+                        })
+                    })
+                    .collect();
+                ThreadPool { workers, sender: Some(sender), completed, panicked }
+            }
+
+            pub fn execute<F>(&self, f: F) -> Result<(), PoolClosed>
+            where
+                F: FnOnce() + Send + 'static,
+            {
+                let sender = self.sender.as_ref().ok_or(PoolClosed)?;
+                sender.send(Box::new(f)).map_err(|_| PoolClosed)
+            }
+
+            pub fn completed(&self) -> usize {
+                self.completed.load(Ordering::SeqCst)
+            }
+
+            pub fn panicked(&self) -> usize {
+                self.panicked.load(Ordering::SeqCst)
+            }
+
+            pub fn shutdown(&mut self) {
+                drop(self.sender.take());
+                for worker in self.workers.drain(..) {
+                    worker.join().expect("workers catch job panics, so they do not panic themselves");
+                }
+            }
+
+            pub fn join(mut self) -> (usize, usize) {
+                self.shutdown();
+                (self.completed(), self.panicked())
+            }
+        }
+
+        impl Drop for ThreadPool {
+            fn drop(&mut self) {
+                self.shutdown();
+            }
+        }
+    solution_explain: "`shutdown` is idempotent because both `Option::take` and `drain` leave nothing behind, so `join` and `Drop` can share it. `catch_unwind` turns a job's panic into a value, which keeps the worker looping; `AssertUnwindSafe` is needed because a boxed `FnOnce` is not known to be unwind-safe, and it is fine here since the job's state is gone after a panic. The lock is released before the job runs, so a panic can never poison it."
+
+  - type: text
+    title: Where to go from here
+    md: |
+      The book closes with ideas for improving the server, each a good exercise in a part of this course:
+
+      - Add documentation to `ThreadPool` and its public methods, and tests of the library (chapters 11 and 14).
+      - Replace the `unwrap` calls with real error handling (chapter 9), and handle a client that sends garbage (you did in the first exercise).
+      - Use the pool for something other than web requests.
+      - Compare with production crates: **`rayon`** for data-parallel thread pools, **`tokio`** and **`axum`** or **`hyper`** for async servers that handle tens of thousands of connections (chapter 17), and **`signal-hook`** to shut down on Ctrl-C (chapter 24).
+
+      *Comprehensive Rust*'s idiomatic-Rust day adds habits worth keeping: run **`cargo clippy`** and **`rustfmt`** on every project, follow the **Rust API Guidelines** for naming and conversions (`new`, `build`, `as_`, `to_`, `into_`), make invalid states unrepresentable with types (chapters 5, 18 and 24), and prefer returning `Result` to panicking in libraries.
+
+      You started this course with `println!("Hello, world!")`. You can now read and write ownership-checked code, model data with enums and traits, write tests, build concurrent and async programs, use unsafe code and FFI responsibly, and work below the standard library. The best next step is a project of your own.
+
+  - type: quiz
+    id: ch25-quiz-shutdown
+    title: Check yourself
+    questions:
+      - type: single
+        q: "Why does `worker.thread.join()` fail to compile inside `drop(&mut self)` when iterating `&mut self.workers`?"
+        options: ["join is unsafe", "join takes the handle by value, and we only have a mutable reference", "Drop cannot call functions", "Threads are not Send"]
+        answer: 1
+        explanation: "drain(..) gives the workers by value."
+      - type: single
+        q: "Why must `drop` drop the sender before joining?"
+        options: ["Order does not matter", "Otherwise workers wait on recv forever and join never returns", "To free memory sooner", "The sender is not Send"]
+        answer: 1
+        explanation: "Closing the channel makes recv return Err."
+      - type: single
+        q: "After the sender is dropped, what happens to jobs still in the channel?"
+        options: ["They are discarded", "They are still received and run; recv fails only when the queue is empty", "They panic", "They run on the main thread"]
+        answer: 1
+        explanation: "Shutdown finishes the queue."
+      - type: single
+        q: "Why is the sender stored as `Option<Sender<Job>>`?"
+        options: ["Senders can be null", "So Drop can move it out with take() while the pool still exists", "For speed", "Channels require it"]
+        answer: 1
+        explanation: "take() leaves None behind."
+      - type: single
+        q: "What keeps a worker alive when a job panics?"
+        options: ["Mutex poisoning", "Running the job inside catch_unwind", "Joining it", "Using while let"]
+        answer: 1
+        explanation: "The panic becomes an Err value."
+
+  - type: summary
+    points:
+      - "Graceful shutdown belongs in Drop: close the channel, then join every worker."
+      - "join consumes the handle; Vec::drain(..) hands out workers by value from &mut self."
+      - "Store the sender as Option and take() it; recv returns Err once the channel is closed and empty."
+      - "Release the lock before running a job, and run jobs inside catch_unwind so a panic cannot kill or poison the pool."
+      - "Next: rayon, tokio and axum in practice, clippy and rustfmt always, and a project of your own."
+terms:
+  - term: graceful shutdown
+    def: "Stopping a program by letting work in progress finish and releasing resources, instead of killing it."
+  - term: Vec::drain
+    def: "A method that removes a range of elements from a vector and yields them by value."
+  - term: Option::take
+    def: "Moves the value out of an Option, leaving None in its place."
+  - term: catch_unwind
+    def: "Runs a closure and turns a panic inside it into an Err value."

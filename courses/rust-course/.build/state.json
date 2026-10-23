@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created": "2026-10-23T02:32:57+00:00",
-  "updated": "2026-10-23T05:07:54+00:00",
+  "updated": "2026-10-23T05:16:03+00:00",
   "book": {
     "title": "Rust: From First Program to Systems Programming",
     "author": "Merged from 5 books (see .build/plan.md)",
@@ -232,8 +232,8 @@
       "title": "Final Project: a Multithreaded Web Server",
       "words": 39913,
       "file": "chapters/ch25.md",
-      "status": "pending",
-      "lessons_built": 0,
+      "status": "done",
+      "lessons_built": 4,
       "note": ""
     }
   ],
@@ -344,6 +344,10 @@
     {
       "at": "2026-10-23T05:07:54+00:00",
       "msg": "ch24 → done"
+    },
+    {
+      "at": "2026-10-23T05:16:03+00:00",
+      "msg": "ch25 → done"
     }
   ]
 }

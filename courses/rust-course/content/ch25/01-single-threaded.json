@@ -1,0 +1,228 @@
+{
+  "title": "A single-threaded web server",
+  "summary": "The project plan, listening for TCP connections, reading an HTTP request line by line, writing a response with a status line, headers and body, returning HTML, routing between a page and a 404, and the refactor that removes the duplication.",
+  "minutes": 35,
+  "source": {
+    "chapter": "ch25",
+    "sections": [
+      "TRPL 21 Final Project: Building a Multithreaded Web Server",
+      "TRPL 21.1 Building a Single-Threaded Web Server",
+      "TRPL 21.1 Listening to the TCP Connection",
+      "TRPL 21.1 Reading the Request",
+      "TRPL 21.1 A Closer Look at an HTTP Request",
+      "TRPL 21.1 Writing a Response",
+      "TRPL 21.1 Returning Real HTML",
+      "TRPL 21.1 Validating the Request and Selectively Responding",
+      "TRPL 21.1 A Touch of Refactoring"
+    ]
+  },
+  "blocks": [
+    {
+      "type": "text",
+      "md": "The Rust book ends with a project that uses almost everything in this course: a web server that says \"hello\" in a browser, written with **only the standard library**. The plan:\n\n1. Learn a little about TCP and HTTP (chapter 23 already covered most of it).\n2. Listen for TCP connections on a socket.\n3. Parse a small number of HTTP requests.\n4. Create a proper HTTP response.\n5. Improve the throughput of the server with a **thread pool** (lesson 2), then shut it down cleanly (lesson 3).\n\nReal servers use crates like `hyper`, `axum` or `actix-web`, which are async (chapter 17) and far more complete. Building one by hand shows what those crates do for you.\n"
+    },
+    {
+      "type": "text",
+      "title": "Listening for connections",
+      "md": "`TcpListener::bind` claims a port, and `incoming()` yields a `TcpStream` for every connection attempt. The book binds to `127.0.0.1:7878` (\"rust\" typed on a phone keypad), and you then open `http://127.0.0.1:7878` in a browser. This version runs forever, so it is shown here but not run:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "file": "src/main.rs",
+      "code": "use std::net::TcpListener;\n\nfn main() {\n    let listener = TcpListener::bind(\"127.0.0.1:7878\").unwrap();\n\n    for stream in listener.incoming() {\n        let stream = stream.unwrap();\n        println!(\"Connection established!\");\n    }\n}\n",
+      "explain": "A browser often opens several connections (for the page and for `favicon.ico`, or to retry), so you see the message more than once per page load. When `stream` goes out of scope at the end of the loop body, the connection is closed. Binding fails if another program already uses the port, or if the port number is below 1024 and you are not an administrator."
+    },
+    {
+      "type": "text",
+      "title": "Reading the request",
+      "md": "A browser sends text lines separated by `\\r\\n`, ending with an empty line. Wrapping a reference to the stream in a **`BufReader`** gives us `lines()`; we stop at the first empty line, the end of the headers. In the console there is no browser, so every example here starts the server on a free port (`127.0.0.1:0`) and plays the browser from a second thread.\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::io::{BufRead, BufReader, Read, Write};\nuse std::net::{TcpListener, TcpStream};\nuse std::thread;\n\nfn handle_connection(mut stream: TcpStream) {\n    let buf_reader = BufReader::new(&stream);\n    let http_request: Vec<_> = buf_reader\n        .lines()\n        .map(|result| result.unwrap())\n        .take_while(|line| !line.is_empty())\n        .collect();\n\n    println!(\"Request: {http_request:#?}\");\n    stream.write_all(b\"HTTP/1.1 200 OK\\r\\n\\r\\n\").unwrap();\n}\n\nfn main() {\n    let listener = TcpListener::bind(\"127.0.0.1:0\").unwrap();\n    let addr = listener.local_addr().unwrap();\n\n    let browser = thread::spawn(move || {\n        let mut s = TcpStream::connect(addr).unwrap();\n        s.write_all(b\"GET / HTTP/1.1\\r\\nHost: 127.0.0.1\\r\\nUser-Agent: course\\r\\nAccept: text/html\\r\\n\\r\\n\").unwrap();\n        let mut reply = String::new();\n        s.read_to_string(&mut reply).unwrap();\n        reply\n    });\n\n    let (stream, _) = listener.accept().unwrap();\n    handle_connection(stream);\n    println!(\"browser received {:?}\", browser.join().unwrap());\n}\n",
+      "output": "Request: [\n    \"GET / HTTP/1.1\",\n    \"Host: 127.0.0.1\",\n    \"User-Agent: course\",\n    \"Accept: text/html\",\n]\nbrowser received \"HTTP/1.1 200 OK\\r\\n\\r\\n\"\n",
+      "explain": "`{:#?}` pretty-prints the vector one line per element. The response is the smallest valid one: a status line and the empty line that ends the (empty) headers."
+    },
+    {
+      "type": "table",
+      "title": "The shape of HTTP",
+      "headers": [
+        "Part",
+        "Request",
+        "Response"
+      ],
+      "rows": [
+        [
+          "first line",
+          "`Method Request-URI HTTP-Version`, e.g. `GET / HTTP/1.1`",
+          "`HTTP-Version Status-Code Reason-Phrase`, e.g. `HTTP/1.1 200 OK`"
+        ],
+        [
+          "headers",
+          "`Host: ...`, `User-Agent: ...`",
+          "`Content-Length: ...`, `Content-Type: ...`"
+        ],
+        [
+          "empty line",
+          "`\\r\\n`",
+          "`\\r\\n`"
+        ],
+        [
+          "body",
+          "empty for GET",
+          "the HTML page"
+        ]
+      ]
+    },
+    {
+      "type": "text",
+      "title": "Returning HTML and routing",
+      "md": "The book puts the pages in `hello.html` and `404.html` and loads them with `fs::read_to_string`. To keep everything in one file here, the pages are constants (you could also use `include_str!(\"hello.html\")`, which embeds a file at compile time). The server now looks only at the **request line**: `GET /` gets the page, anything else gets a `404 NOT FOUND`. `Content-Length` tells the client how many bytes of body follow.\n\nThe book first writes this as `if request_line == \"GET / HTTP/1.1\" { ... } else { ... }`, notices that both branches build the response the same way, and refactors so the branches only choose a **status line and a page**:\n"
+    },
+    {
+      "type": "code",
+      "lang": "rust",
+      "code": "use std::io::{BufRead, BufReader, Read, Write};\nuse std::net::{SocketAddr, TcpListener, TcpStream};\nuse std::thread;\n\nconst HELLO: &str = \"<html><body><h1>Hello!</h1><p>Hi from Rust</p></body></html>\";\nconst NOT_FOUND: &str = \"<html><body><h1>Oops!</h1><p>Sorry, I don't know what you're asking for.</p></body></html>\";\n\nfn handle_connection(mut stream: TcpStream) {\n    let request: Vec<String> = BufReader::new(&stream)\n        .lines()\n        .map(|line| line.unwrap())\n        .take_while(|line| !line.is_empty())\n        .collect();\n\n    let (status_line, contents) = if request[0] == \"GET / HTTP/1.1\" {\n        (\"HTTP/1.1 200 OK\", HELLO)\n    } else {\n        (\"HTTP/1.1 404 NOT FOUND\", NOT_FOUND)\n    };\n\n    let length = contents.len();\n    let response = format!(\"{status_line}\\r\\nContent-Length: {length}\\r\\n\\r\\n{contents}\");\n    stream.write_all(response.as_bytes()).unwrap();\n}\n\nfn get(addr: SocketAddr, path: &str) -> String {\n    let mut s = TcpStream::connect(addr).unwrap();\n    write!(s, \"GET {path} HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n\").unwrap();\n    let mut reply = String::new();\n    s.read_to_string(&mut reply).unwrap();\n    reply\n}\n\nfn main() {\n    let listener = TcpListener::bind(\"127.0.0.1:0\").unwrap();\n    let addr = listener.local_addr().unwrap();\n    let server = thread::spawn(move || {\n        for stream in listener.incoming().take(2) {\n            handle_connection(stream.unwrap());\n        }\n    });\n\n    for path in [\"/\", \"/missing\"] {\n        let reply = get(addr, path);\n        let (head, body) = reply.split_once(\"\\r\\n\\r\\n\").unwrap();\n        println!(\"{path}  ->  {}\", head.replace(\"\\r\\n\", \" / \"));\n        println!(\"{body}\\n\");\n    }\n    server.join().unwrap();\n}\n",
+      "output": "/  ->  HTTP/1.1 200 OK / Content-Length: 60\n<html><body><h1>Hello!</h1><p>Hi from Rust</p></body></html>\n\n/missing  ->  HTTP/1.1 404 NOT FOUND / Content-Length: 90\n<html><body><h1>Oops!</h1><p>Sorry, I don't know what you're asking for.</p></body></html>\n",
+      "explain": "`take(2)` makes the server stop after two connections so the program ends. The server reads the whole header block before answering: closing a socket with unread data still in it makes the operating system reset the connection, and the client could lose the reply."
+    },
+    {
+      "type": "callout",
+      "kind": "note",
+      "title": "Try it with a real browser",
+      "md": "On your own machine, bind to `127.0.0.1:7878`, replace the `take(2)` loop with `for stream in listener.incoming()`, run `cargo run`, and open `http://127.0.0.1:7878` and `http://127.0.0.1:7878/something-else`. Press Ctrl-C to stop the server. `curl -v http://127.0.0.1:7878` shows the raw request and response."
+    },
+    {
+      "type": "playground",
+      "id": "ch25-play-routes",
+      "title": "Add a route",
+      "lang": "rust",
+      "md": "`respond` turns a request line into a full HTTP response. Add a route: `GET /about HTTP/1.1` should answer `200 OK` with the body `<h1>About</h1>`. Keep the status line and body choice in one `match`, the way the book's refactor does.\n",
+      "task": "Print `200 OK 15`, `200 OK 14`, `404 NOT FOUND 9`.",
+      "code": "fn respond(request_line: &str) -> String {\n    let (status, body) = match request_line {\n        \"GET / HTTP/1.1\" => (\"200 OK\", \"<h1>Hello!</h1>\"),\n        _ => (\"404 NOT FOUND\", \"not found\"),\n    };\n    format!(\"HTTP/1.1 {status}\\r\\nContent-Length: {}\\r\\n\\r\\n{body}\", body.len())\n}\n\nfn main() {\n    for line in [\"GET / HTTP/1.1\", \"GET /about HTTP/1.1\", \"GET /nope HTTP/1.1\"] {\n        let response = respond(line);\n        let status = response.lines().next().unwrap().trim_start_matches(\"HTTP/1.1 \");\n        let length = response.split(\"\\r\\n\\r\\n\").nth(1).unwrap().len();\n        println!(\"{status} {length}\");\n    }\n}\n",
+      "expected_output": "200 OK 15\n200 OK 14\n404 NOT FOUND 9\n",
+      "hints": [
+        "Add one arm before `_`: `\"GET /about HTTP/1.1\" => (\"200 OK\", \"<h1>About</h1>\"),`."
+      ]
+    },
+    {
+      "type": "exercise",
+      "id": "ch25-ex-http",
+      "exercise_dir": "ch25-http",
+      "title": "A small HTTP library",
+      "difficulty": "hard",
+      "goal": "Turn the book's single function into a parser, a router and a response type, and serve them over a real TcpStream.",
+      "behavior": "- `pub fn read_request<R: BufRead>(reader: R) -> Option<Request>`: read the request line and the headers up to the empty line (or the end of input). Lines may end in `\\r\\n` or `\\n`. Return `None` for no request line, or a request line that is not exactly three words with a version starting `HTTP/`. Skip header lines without a `:`; trim spaces around header values.\n- `Request::header(&self, name) -> Option<&str>`: case-insensitive lookup.\n- `pub fn reason(status: u16) -> &'static str`: `\"OK\"`, `\"BAD REQUEST\"`, `\"NOT FOUND\"`, `\"METHOD NOT ALLOWED\"` for 200, 400, 404, 405, otherwise `\"\"`.\n- `Response::to_http(&self) -> String`: `HTTP/1.1 {status} {reason}\\r\\nContent-Length: {bytes}\\r\\nContent-Type: text/html\\r\\n\\r\\n{body}`.\n- `pub fn route(req: &Request) -> Response`: any method other than GET gets 405 with `METHOD_NOT_ALLOWED_HTML`. Then, ignoring a query string after `?`: `/` gets 200 `HELLO_HTML`; `/health` gets 200 `\"ok\"`; `/hello` gets 200 `<p>Hello, NAME!</p>` where NAME is the `name` query parameter, or `stranger` without one; anything else 404 `NOT_FOUND_HTML`.\n- `pub fn handle_connection(stream: TcpStream)`: read a request, route it (or answer 400 with `BAD_REQUEST_HTML` if it cannot be parsed) and write the response.\n",
+      "examples": [
+        {
+          "input": "GET /hello?lang=en&name=Ada HTTP/1.1",
+          "output": "200, body <p>Hello, Ada!</p>"
+        }
+      ],
+      "hints": [
+        "Take lines with `reader.lines()`, and strip a trailing `\\r` with `line.trim_end_matches('\\r')`.",
+        "`let parts: Vec<&str> = line.split_whitespace().collect();` then check `parts.len() == 3 && parts[2].starts_with(\"HTTP/\")`.",
+        "`let (path, query) = req.path.split_once('?').unwrap_or((&req.path, \"\"));` and find the name with `query.split('&').find_map(|kv| kv.strip_prefix(\"name=\"))`.",
+        "`Content-Length` is `body.len()`, which counts bytes, so `é` counts 2."
+      ],
+      "solution_explain": "Splitting the book's `handle_connection` into `read_request`, `route` and `Response::to_http` makes each part testable without a network, and `read_request` takes any `BufRead`, so tests feed it byte strings. Only `handle_connection` touches the socket. A real server would also limit the header size and percent-decode the query string."
+    },
+    {
+      "type": "quiz",
+      "id": "ch25-quiz-single",
+      "title": "Check yourself",
+      "questions": [
+        {
+          "type": "single",
+          "q": "What ends the headers of an HTTP request?",
+          "options": [
+            "A NUL byte",
+            "An empty line",
+            "The Content-Length header",
+            "Closing the connection"
+          ],
+          "answer": 1,
+          "explanation": "\\r\\n on its own line."
+        },
+        {
+          "type": "single",
+          "q": "Which is a valid HTTP response status line?",
+          "options": [
+            "GET / HTTP/1.1",
+            "HTTP/1.1 200 OK",
+            "200 OK HTTP/1.1",
+            "OK 200"
+          ],
+          "answer": 1,
+          "explanation": "Version, code, reason."
+        },
+        {
+          "type": "single",
+          "q": "What does Content-Length count?",
+          "options": [
+            "Characters of the whole response",
+            "Bytes of the body",
+            "Lines of the body",
+            "Headers"
+          ],
+          "answer": 1,
+          "explanation": "Bytes, so use body.len()."
+        },
+        {
+          "type": "single",
+          "q": "Why read the whole header block before answering?",
+          "options": [
+            "Speed",
+            "Closing a socket with unread data can reset the connection and lose the reply",
+            "HTTP requires an echo",
+            "To fill the buffer"
+          ],
+          "answer": 1,
+          "explanation": "The OS sends a reset instead of a normal close."
+        },
+        {
+          "type": "single",
+          "q": "What did the book's refactor change?",
+          "options": [
+            "It added threads",
+            "The if/else only chooses the status line and page; the response is built once",
+            "It removed Content-Length",
+            "It made the server async"
+          ],
+          "answer": 1,
+          "explanation": "Less duplication."
+        }
+      ]
+    },
+    {
+      "type": "summary",
+      "points": [
+        "TcpListener::bind and incoming() accept connections; each is a TcpStream.",
+        "BufReader::lines() reads the request until the empty line.",
+        "A response is a status line, headers, an empty line and a body; Content-Length is the body's byte count.",
+        "Route by the request line, and build the response in one place.",
+        "Separating parsing, routing and formatting makes the server testable without a network."
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "term": "request line",
+      "def": "The first line of an HTTP request: method, target and version, like GET / HTTP/1.1."
+    },
+    {
+      "term": "status line",
+      "def": "The first line of an HTTP response: version, status code and reason, like HTTP/1.1 404 NOT FOUND."
+    },
+    {
+      "term": "Content-Length",
+      "def": "A header giving the size of the body in bytes."
+    },
+    {
+      "term": "routing",
+      "def": "Choosing which code answers a request, usually by method and path."
+    }
+  ]
+}
